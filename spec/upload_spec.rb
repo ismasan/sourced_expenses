@@ -47,7 +47,7 @@ RSpec.describe 'Uploading a document' do
   end
 
   it 'refuses a file over the size limit' do
-    expect { upload('x' * (Commands::MAX_UPLOAD_BYTES + 1)) }.not_to(change { uploaded_documents.size })
+    expect { upload('x' * (Expenses::Upload::MAX_BYTES + 1)) }.not_to(change { uploaded_documents.size })
 
     expect(last_response.body).to include('web_upload_file-cmd-file-errors', 'That file is over 20 MB')
   end

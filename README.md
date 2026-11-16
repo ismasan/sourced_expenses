@@ -90,7 +90,10 @@ bin/sid sourced messages correlation <id>         # the causal tree a message be
 bin/sid sourced groups list                       # consumer groups (expenses.scanner…) and their status
 bin/sid sourced groups start <group>              # restart a failed one
 bin/sid system graph                              # the app's components and their dependencies
+bin/sid expenses upload ~/receipts/*.pdf          # upload documents to scan, as the upload form does
 ```
+
+`bin/sid expenses upload` takes PDFs and photos (JPEG, PNG or WebP, by extension) up to 20 MB, as the form does. It stores each one, dispatches its `UploadDocument` and prints the page to watch it scan; a file it can't take is skipped, and the exit status says so. `--reference-date YYYY-MM-DD` reads the documents' dates against another day than today. The running app does the scanning: without it, uploads wait in the store. The app's own commands live in `cli/`, registered by `config/components/cli.rb` only when `bin/sid` runs.
 
 ## Layout
 
@@ -103,6 +106,7 @@ bin/sid system graph                              # the app's components and the
 | `web/ui/` | Pages and the layout, in the `UI` namespace |
 | `web/ui/components/` | Components used by pages, in `UI::Components` |
 | `web/public/` | Static files |
+| `cli/` | The app's own `bin/sid` commands (`bin/sid expenses …`) |
 | `db/migrations/` | Database migrations, run with `bin/sid db migrations run`. Add one with `bin/sid db migrations add <name>` |
 | `storage/` | Runtime data, including the SQLite database. Not committed. |
 | `falcon.rb` | Falcon server settings |

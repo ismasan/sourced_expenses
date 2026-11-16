@@ -22,10 +22,8 @@ class App < Sidereal::App
   # the web command carries the Tempfile and is never stored.
   handle Commands::UploadFile do |cmd|
     file = cmd.payload.file
-    file_id = file_store.put(file.filename, file.tempfile)
-    document = E::UploadDocument.new(
-      payload: { filename: file.filename, content_type: file.type, file_ref: file_id, filing_country: }
-    )
+    document = Expenses::Upload.store(file_store, filename: file.filename, content_type: file.type, io: file.tempfile,
+                                                  filing_country:)
     dispatch document
     browser.redirect "/submissions/#{document.payload.expense_id}"
   end

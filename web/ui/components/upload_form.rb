@@ -53,7 +53,7 @@ module UI
               span(class: 'upload__drop') { ' Or pick one:' }
             end
             div(class: 'upload__pick') do
-              f.file_field :file, accept: Commands::ACCEPTED_UPLOAD_TYPES.join(','), required: true,
+              f.file_field :file, accept: Expenses::Upload::ACCEPTED_TYPES.join(','), required: true,
                                   'aria-label': 'Receipt or invoice'
               # !! because the indicator signal starts as "", and data-attr only
               # drops an attribute for false or null.
