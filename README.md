@@ -38,6 +38,17 @@ The migrations in `db/migrations/` are committed and `storage/` isn't, so runnin
 
 `bin/dev` runs `bundle exec falcon host` and reloads the app whenever a Ruby file changes. Reloading needs a file watcher: [watchexec](https://github.com/watchexec/watchexec) (`brew install watchexec`) or fswatch. Without one, the server still runs. In production, run `bundle exec falcon host`.
 
+## Docker
+
+The `Dockerfile` builds the app with everything it shells out to (ImageMagick, and Ghostscript for PDFs), for Intel or ARM:
+
+```sh
+docker build -t sourced-expenses .
+docker run --rm -p 9292:9292 --env-file .env -v sourced-expenses:/app/storage sourced-expenses
+```
+
+`OPENAI_API_KEY` comes from the environment at run time (`--env-file .env`, or `-e OPENAI_API_KEY=…`); the image never contains `.env`. The database and uploads live in `/app/storage`, so the named volume keeps them between runs, and each start runs any migrations not run yet (`bin/docker-entrypoint`). `COUNT` sets the worker processes, as with `bin/dev`. Docker's env files take values as written, so leave them unquoted.
+
 ## Test
 
 ```sh

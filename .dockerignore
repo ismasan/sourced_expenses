@@ -1,0 +1,19 @@
+# Secrets and local data never go into the image.
+.env
+.env.*
+storage/*
+!storage/.keep
+
+# Not needed to run the app.
+.git
+.github
+spec
+.rspec
+.DS_Store
+.claude
+.agents
+skills
+bin/dev
+bin/sid
+Dockerfile
+.dockerignore

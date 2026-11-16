@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#
+# The Docker image's entrypoint: brings the database up to date, creating it
+# on the first run, then runs the command (falcon host, by default).
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+bundle exec sequel -m db/migrations sqlite://storage/db.db
+
+exec "$@"
