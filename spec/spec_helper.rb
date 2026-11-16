@@ -59,6 +59,8 @@ class FakeExchangeRates
 end
 FAKE_RATES = FakeExchangeRates.new
 Sidereal.config.config!('exchange_rates') { FAKE_RATES }
+# Specs total in GBP, whatever REPORTING_CURRENCY (or .env) says.
+Sidereal.config.config!('reporting_currency') { 'GBP' }
 Sidereal.config.build!
 
 Sequel.extension :migration

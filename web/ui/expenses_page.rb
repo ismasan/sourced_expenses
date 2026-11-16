@@ -5,8 +5,8 @@ module UI
   # by state (UI::StateFilter), and by the expense's date, a whole month or
   # any range. Live: it re-renders whenever the read model commits.
   #
-  # The header has the total in US dollars of the filed expenses in the
-  # dates chosen, whatever the states, or this month's without dates.
+  # The header has the total in the reporting currency of the filed
+  # expenses in the dates chosen, whatever the states, or this month's without dates.
   #
   # The filters and the page number are in the query string
   # (?state[]=filed&from=2025-11-01&to=2025-11-30&page=2), typed by the
@@ -25,7 +25,7 @@ module UI
       page: Types::Integer[1..].default(1)
     )
 
-    on Expenses::Submissions::Projected, Expenses::USDLedger::Projected
+    on Expenses::Submissions::Projected, Expenses::Ledger::Projected
 
     def channel_name = 'expenses.>'
 
@@ -49,15 +49,16 @@ module UI
         rows, total = Expenses::Submissions.page(db, **filters, page:, per_page: PER_PAGE)
       end
       new(rows:, total:, **filters, page:, counts: Expenses::Submissions.counts(db, **filters.slice(:from, :to)),
-          months: Expenses::Submissions.months(db), usd_total: usd_total(db, **filters))
+          months: Expenses::Submissions.months(db), ledger_total: ledger_total(db, **filters))
     end
 
     # The filed expenses in the dates chosen, or this month's.
-    def self.usd_total(db, from:, to:, **)
-      from || to ? Expenses::USDLedger.total(db, from:, to:) : Expenses::USDLedger.month(db)
+    def self.ledger_total(db, from:, to:, **)
+      currency = Sidereal.config['reporting_currency']
+      from || to ? Expenses::Ledger.total(db, currency, from:, to:) : Expenses::Ledger.month(db, currency)
     end
 
-    def initialize(rows:, total:, states:, from:, to:, page:, counts:, months:, usd_total:)
+    def initialize(rows:, total:, states:, from:, to:, page:, counts:, months:, ledger_total:)
       @rows = rows
       @total = total
       @states = states
@@ -66,14 +67,14 @@ module UI
       @page = page
       @counts = counts
       @months = months
-      @usd_total = usd_total
+      @ledger_total = ledger_total
     end
 
     def view_template
       div(id: 'expenses-page', class: 'expenses-page') do
         header(class: 'expenses-page__header') do
           h1(class: 'expenses-page__title') { 'All expenses' }
-          render Components::USDTotal.new(@usd_total)
+          render Components::LedgerTotal.new(@ledger_total)
         end
 
         # One plain GET form for every filter, the states in the sidebar and

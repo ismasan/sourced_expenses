@@ -13,7 +13,7 @@ RSpec.describe 'The expense lists' do
   around do |example|
     db.transaction(rollback: :always, auto_savepoint: true) do
       db[:submissions].delete
-      db[:usd_ledger].delete
+      db[:ledger].delete
       example.run
     end
   end
@@ -26,10 +26,10 @@ RSpec.describe 'The expense lists' do
   end
 
   # A filed expense dated +on+, in the list and the ledger.
-  def filed(filename, on:, usd_cents:, paths: %w[filed filed.vat_confirmed], at: Time.now)
+  def filed(filename, on:, cents:, paths: %w[filed filed.vat_confirmed], at: Time.now)
     submission(filename, *paths, on:, at:).tap do |expense_id|
-      db[:usd_ledger].insert(expense_id:, incurred_on: on, currency: 'EUR', amount_cents: usd_cents, usd_cents:,
-                             updated_at: Time.now)
+      db[:ledger].insert(expense_id:, incurred_on: on, currency: 'EUR', amount_cents: cents, reporting_currency: 'GBP',
+                         reporting_cents: cents, updated_at: Time.now)
     end
   end
 
@@ -72,12 +72,12 @@ RSpec.describe 'The expense lists' do
     expect(filenames(last_response.body)).to eq(%w[icon.png vat.pdf review.pdf])
   end
 
-  it "shows this month's total in US dollars on the home page too" do
-    db[:usd_ledger].insert(expense_id: SecureRandom.uuid, incurred_on: Date.today, currency: 'EUR', amount_cents: 2420,
-                           usd_cents: 2810, updated_at: Time.now)
+  it "shows this month's total in the reporting currency on the home page too" do
+    db[:ledger].insert(expense_id: SecureRandom.uuid, incurred_on: Date.today, currency: 'EUR', amount_cents: 2420,
+                       reporting_currency: 'GBP', reporting_cents: 2113, updated_at: Time.now)
     get '/'
 
-    expect(last_response.body).to include('id="usd-total"', Date.today.strftime('%B %Y'), '28.10 USD', '1 expense filed')
+    expect(last_response.body).to include('id="ledger-total"', Date.today.strftime('%B %Y'), '21.13 GBP', '1 expense filed')
   end
 
   it 'says so when nothing needs a person' do
@@ -104,18 +104,19 @@ RSpec.describe 'The expense lists' do
     expect(last_response.body).to include('&quot;params&quot;:{&quot;state&quot;:[&quot;scanning&quot;,&quot;filed&quot;]}')
   end
 
-  it "shows this month's total in US dollars" do
+  it "shows this month's total in the reporting currency" do
     today = Date.today
-    db[:usd_ledger].insert(expense_id: SecureRandom.uuid, incurred_on: today, currency: 'EUR', amount_cents: 2420, usd_cents: 2810,
-                           updated_at: Time.now)
-    db[:usd_ledger].insert(expense_id: SecureRandom.uuid, incurred_on: today, currency: 'USD', amount_cents: 120_000,
-                           usd_cents: 120_000, updated_at: Time.now)
-    db[:usd_ledger].insert(expense_id: SecureRandom.uuid, incurred_on: today, currency: 'SEK', amount_cents: 9900, updated_at: Time.now)
-    db[:usd_ledger].insert(expense_id: SecureRandom.uuid, incurred_on: today.prev_month, currency: 'USD', amount_cents: 500,
-                           usd_cents: 500, updated_at: Time.now)
+    db[:ledger].insert(expense_id: SecureRandom.uuid, incurred_on: today, currency: 'EUR', amount_cents: 2420,
+                       reporting_currency: 'GBP', reporting_cents: 2113, updated_at: Time.now)
+    db[:ledger].insert(expense_id: SecureRandom.uuid, incurred_on: today, currency: 'GBP', amount_cents: 120_000, updated_at: Time.now)
+    db[:ledger].insert(expense_id: SecureRandom.uuid, incurred_on: today, currency: 'SEK', amount_cents: 9900, updated_at: Time.now)
+    db[:ledger].insert(expense_id: SecureRandom.uuid, incurred_on: today, currency: 'EUR', amount_cents: 1000,
+                       reporting_currency: 'USD', reporting_cents: 1161, updated_at: Time.now)
+    db[:ledger].insert(expense_id: SecureRandom.uuid, incurred_on: today.prev_month, currency: 'GBP', amount_cents: 500,
+                       updated_at: Time.now)
     get '/expenses'
 
-    expect(last_response.body).to include(today.strftime('%B %Y'), '1,228.10 USD', '3 expenses filed, 1 not in US dollars yet')
+    expect(last_response.body).to include(today.strftime('%B %Y'), '1,221.13 GBP', '4 expenses filed, 2 not in GBP yet')
   end
 
   it 'refuses a state it does not know, or a page below 1' do
@@ -145,10 +146,10 @@ RSpec.describe 'The expense lists' do
     let(:nov) { Date.new(2025, 11, 1) }
 
     before do
-      filed('early.pdf', on: nov + 2, usd_cents: 1000, at: Time.now - 40)
-      filed('vat.pdf', on: nov + 9, usd_cents: 5000, paths: %w[filed filed.vat_needs_review], at: Time.now - 30)
-      filed('late.pdf', on: nov + 20, usd_cents: 2000, at: Time.now - 20)
-      filed('december.pdf', on: Date.new(2025, 12, 3), usd_cents: 4000, at: Time.now - 10)
+      filed('early.pdf', on: nov + 2, cents: 1000, at: Time.now - 40)
+      filed('vat.pdf', on: nov + 9, cents: 5000, paths: %w[filed filed.vat_needs_review], at: Time.now - 30)
+      filed('late.pdf', on: nov + 20, cents: 2000, at: Time.now - 20)
+      filed('december.pdf', on: Date.new(2025, 12, 3), cents: 4000, at: Time.now - 10)
       submission('reading.pdf', 'scanning', 'scanning.extracting')
     end
 
@@ -193,30 +194,30 @@ RSpec.describe 'The expense lists' do
       expect(last_response.body).to match(%r{value="filed"[^>]*>.*?filter__count">2<}m)
     end
 
-    it 'totals every filed expense in the range, in US dollars, whatever the states' do
+    it 'totals every filed expense in the range, in the reporting currency, whatever the states' do
       ['', 'state[]=filed&', 'state[]=scanning&'].each do |states|
         get "/expenses?#{states}from=2025-11-01&to=2025-11-30"
 
-        expect(last_response.body).to include('id="usd-total"', 'November 2025', '80.00 USD', '3 expenses filed')
+        expect(last_response.body).to include('id="ledger-total"', 'November 2025', '80.00 GBP', '3 expenses filed')
       end
     end
 
     it 'names a range that is not a whole month' do
       get '/expenses?from=2025-11-02&to=2025-11-21'
-      expect(last_response.body).to include('2 Nov 2025 – 21 Nov 2025', '80.00 USD')
+      expect(last_response.body).to include('2 Nov 2025 – 21 Nov 2025', '80.00 GBP')
 
       get '/expenses?from=2025-11-15'
-      expect(last_response.body).to include('Since 15 Nov 2025', '60.00 USD')
+      expect(last_response.body).to include('Since 15 Nov 2025', '60.00 GBP')
     end
 
     it "shows this month's total without dates" do
       get '/expenses?state[]=filed'
 
-      expect(last_response.body).to include(Date.today.strftime('%B %Y'), '0.00 USD')
+      expect(last_response.body).to include(Date.today.strftime('%B %Y'), '0.00 GBP')
     end
 
     it 'keeps the dates in the pager' do
-      30.times { |i| filed("r#{i}.pdf", on: nov + 1, usd_cents: 100, at: Time.now - 100 - i) }
+      30.times { |i| filed("r#{i}.pdf", on: nov + 1, cents: 100, at: Time.now - 100 - i) }
       get '/expenses?state[]=filed&from=2025-11-01&to=2025-11-30'
 
       expect(last_response.body).to include('href="/expenses?state[]=filed&from=2025-11-01&to=2025-11-30&page=2" rel="next"')

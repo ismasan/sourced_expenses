@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Currency exchange rates (ExchangeRates): Frankfurter's, by default.
-# Expenses::USDConverter gets them with `dep :exchange_rates`; specs replace
+# Expenses::CurrencyConverter gets them with `dep :exchange_rates`; specs replace
 # them with a fake.
 #
 #   EXCHANGE_RATES_URL=https://frankfurter.example.com/v1 bin/dev

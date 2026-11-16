@@ -103,21 +103,22 @@ RSpec.describe 'A submission' do
     expect(body).to match(%r{<button type="submit" class="button" aria-pressed="false">Import</button>})
   end
 
-  describe 'the total in US dollars' do
+  describe 'the total in the reporting currency' do
     let(:save) do
       cmd(Expenses::Expense::SaveExpense, description: 'Lunch', net_price_cents: 2000, tax_amount_cents: 420,
                                           currency: 'EUR', incurred_on: Date.new(2026, 8, 7), supplier_country_code: 'NL')
     end
 
     it 'is on its way once filed' do
-      expect(at(*scanned, save)).to include('In US dollars', 'Converting…')
+      expect(at(*scanned, save)).to include('In GBP', 'Converting…')
     end
 
     it 'shows once converted, with the rate' do
-      usd = cmd(Expenses::Expense::RecordUSDAmount, currency: 'EUR', amount_cents: 2420, incurred_on: Date.new(2026, 8, 7),
-                                                    usd_cents: 2810, rate: 1.1612, rate_date: Date.new(2026, 8, 7))
+      converted = cmd(Expenses::Expense::RecordConversion, currency: 'EUR', amount_cents: 2420, incurred_on: Date.new(2026, 8, 7),
+                                                           reporting_currency: 'GBP', reporting_cents: 2113, rate: 0.8731,
+                                                           rate_date: Date.new(2026, 8, 7))
 
-      expect(at(*scanned, save, usd)).to include('28.10 USD', 'at 1.1612 on 7 Aug 2026')
+      expect(at(*scanned, save, converted)).to include('21.13 GBP', 'at 0.8731 on 7 Aug 2026')
     end
   end
 

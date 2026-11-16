@@ -18,9 +18,11 @@ https://github.com/user-attachments/assets/f7cdf4bd-398e-4f86-91e8-ebcdb6a1345f
 
 `Expenses::Scanner` is the worker for scanning: when an expense enters one of its waiting states, it does that step (`Expenses::ScanSteps`, with the write-up's prompts in `Expenses::Prompts`) and reports back with the step's `Complete…` or `Fail…`. It's a consumer group of its own, so a model call never holds up the machine, and turns what a step can expect to go wrong (the model, the image, a missing file, an answer that doesn't fit) into `Fail…` with a reason safe to show. Images over 500 KB are shrunk with ImageMagick first. `Expenses::Submissions` is the read model the home page lists, and the list re-renders whenever it commits.
 
-`Expenses::USDConverter` converts each filed expense's total (VAT included) to US dollars at the European Central Bank's rate for its date, from the [Frankfurter API](https://frankfurter.dev), and records it on the expense (`USDAmountRecorded`, or `USDConversionFailed` with a reason). Expenses already in USD are left alone. A correction to the amount, currency or date converts again. It's a consumer group of its own too, and on a store with expenses already filed it catches up on them when it first starts.
+`Expenses::CurrencyConverter` converts each filed expense's total (VAT included) to the reporting currency at the European Central Bank's rate for its date, from the [Frankfurter API](https://frankfurter.dev), and records it on the expense (`ConversionRecorded`, or `ConversionFailed` with a reason), saying which currency it converted to. The reporting currency is `REPORTING_CURRENCY`, `GBP` by default. Expenses already in it are left alone. A correction to the amount, currency or date converts again. It's a consumer group of its own too, and on a store with expenses already filed it catches up on them when it first starts.
 
-`Expenses::USDLedger` is the read model for totals in US dollars: one row per filed expense (table `usd_ledger`), with its USD amount once converted. Expenses in USD count as they are; a correction to the total clears the USD amount until it's converted again; voided expenses leave it. `USDLedger.month(db, date)` totals a month by the expenses' own dates, saying how many aren't converted yet. The All expenses page shows this month's.
+`Expenses::Ledger` is the read model for totals in the reporting currency: one row per filed expense (table `ledger`), with its conversion once recorded and the currency it's in. A correction to the total clears the conversion until it's converted again; voided expenses leave it. `Ledger.month(db, currency, date)` totals a month in `currency` by the expenses' own dates: expenses in that currency count as they are, those converted to it count converted, and it says how many aren't in it yet. The All expenses page shows this month's.
+
+Changing `REPORTING_CURRENCY` on a store with expenses converted already: `bin/sid sourced groups reset expenses.currency_converter` converts them again. Until then they count as not converted; the ledger needs no reset.
 
 Uploads land in `FileStore::Disk` (`storage/uploads/`), by the MD5 of their bytes.
 
@@ -36,7 +38,7 @@ bin/sid db migrations run
 bin/dev
 ```
 
-Scanning needs `OPENAI_API_KEY`, from the environment or `.env` (never committed), and ImageMagick's `magick` (`brew install imagemagick`). `OPENAI_MODEL` picks another model than `gpt-4.1`. Specs fake the model and never call OpenAI. Exchange rates need no key; `EXCHANGE_RATES_URL` points at another Frankfurter instance, and specs fake them too.
+Scanning needs `OPENAI_API_KEY`, from the environment or `.env` (never committed), and ImageMagick's `magick` (`brew install imagemagick`). `OPENAI_MODEL` picks another model than `gpt-4.1`. Specs fake the model and never call OpenAI. Exchange rates need no key; `EXCHANGE_RATES_URL` points at another Frankfurter instance, and specs fake them too. `REPORTING_CURRENCY` (an ISO code, `GBP` by default) is the currency totals are in.
 
 Then open <http://localhost:9292>. `PORT`, `HOST` and `COUNT` (worker processes) can be set in the environment.
 

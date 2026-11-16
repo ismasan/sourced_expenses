@@ -2,7 +2,7 @@
 
 module Expenses
   # How an expense's Document is evolved from its events: the upload, each
-  # scan's results, the form, the filed expense and its USD amount.
+  # scan's results, the form, the filed expense and its total in the reporting currency.
   #
   # Shared by whoever needs the document: the Expense machine (its guards and
   # handlers decide on it) and the Scanner (each step works on it). Each
@@ -72,7 +72,7 @@ module Expenses
     evolve E::ExpenseFiled do |doc, evt|
       doc.filed = evt.payload.to_h.except(:expense_id)
       doc.draft = doc.filed
-      doc.forget_stale_usd
+      doc.forget_stale_conversion
     end
 
     evolve E::VatTreatmentInferred do |doc, evt|
@@ -84,13 +84,13 @@ module Expenses
       doc.vat_treatment_confirmed = true
     end
 
-    evolve E::USDAmountRecorded do |doc, evt|
-      doc.usd = evt.payload.to_h.except(:expense_id)
-      doc.usd_failure = nil
+    evolve E::ConversionRecorded do |doc, evt|
+      doc.converted = evt.payload.to_h.except(:expense_id)
+      doc.conversion_failure = nil
     end
 
-    evolve E::USDConversionFailed do |doc, evt|
-      doc.usd_failure = evt.payload.to_h.except(:expense_id)
+    evolve E::ConversionFailed do |doc, evt|
+      doc.conversion_failure = evt.payload.to_h.except(:expense_id)
     end
   end
 end

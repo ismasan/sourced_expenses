@@ -294,17 +294,18 @@ module UI
 
     # ---- Filed ----
 
-    # The total in US dollars, once Expenses::USDConverter has it: nothing
-    # to show for an expense in dollars already.
-    def render_usd(filed)
-      return if filed[:currency] == 'USD'
+    # The total in the reporting currency, once Expenses::CurrencyConverter
+    # has it: nothing to show for an expense in that currency already.
+    def render_conversion(filed)
+      currency = Sidereal.config['reporting_currency']
+      return if filed[:currency] == currency
 
-      dt { 'In US dollars' }
+      dt { "In #{currency}" }
       dd do
-        if (usd = @doc.usd)
-          plain format('%.2f USD', usd[:usd_cents] / 100.0)
-          span(class: 'filed__note') { " at #{usd[:rate]} on #{usd[:rate_date].strftime('%-d %b %Y')}" }
-        elsif (failure = @doc.usd_failure)
+        if (converted = @doc.converted) && converted[:reporting_currency] == currency
+          plain format('%.2f %s', converted[:reporting_cents] / 100.0, currency)
+          span(class: 'filed__note') { " at #{converted[:rate]} on #{converted[:rate_date].strftime('%-d %b %Y')}" }
+        elsif (failure = @doc.conversion_failure) && failure[:reporting_currency] == currency
           span(class: 'filed__note') { "Not converted: #{failure[:reason]}" }
         else
           span(class: 'filed__note') { 'Converting…' }
@@ -325,7 +326,7 @@ module UI
         dd { filed[:description] }
         dt { 'Total' }
         dd { format('%.2f %s', (filed[:net_price_cents] + filed[:tax_amount_cents]) / 100.0, filed[:currency]) }
-        render_usd(filed)
+        render_conversion(filed)
         dt { 'Of which VAT' }
         dd { format('%.2f %s', filed[:tax_amount_cents] / 100.0, filed[:currency]) }
         dt { 'Date' }

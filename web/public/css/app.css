@@ -787,12 +787,12 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
   letter-spacing: -0.035em;
   margin: 0;
 }
-/* The total in USD (this month, or the range chosen): the figure big, what it covers under it. */
-.usd-total { text-align: right; }
-@media (max-width: 40rem) { .usd-total { text-align: left; } }
-.usd-total__title { margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--ink-2); }
-.usd-total__amount { margin: 0; font-size: 1.75rem; font-weight: 900; letter-spacing: -0.02em; line-height: 1.15; }
-.usd-total__note { margin: 0; font-size: 0.9rem; color: var(--ink-2); }
+/* The total in the reporting currency (this month, or the range chosen): the figure big, what it covers under it. */
+.ledger-total { text-align: right; }
+@media (max-width: 40rem) { .ledger-total { text-align: left; } }
+.ledger-total__title { margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--ink-2); }
+.ledger-total__amount { margin: 0; font-size: 1.75rem; font-weight: 900; letter-spacing: -0.02em; line-height: 1.15; }
+.ledger-total__note { margin: 0; font-size: 0.9rem; color: var(--ink-2); }
 .expenses-page__body {
   display: grid;
   grid-template-columns: 15rem minmax(0, 1fr);

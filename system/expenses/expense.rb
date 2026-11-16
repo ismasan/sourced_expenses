@@ -80,24 +80,27 @@ module Expenses
 
     DiscardDocument = Command(:discard_document)
 
-    # The filed total in US dollars, from Expenses::USDConverter: the
-    # amount it converted (currency, amount_cents, incurred_on), what it
-    # came to and at what rate. Only records data: refused once the expense
-    # isn't filed, and ignored if the filed amount has changed since.
-    RecordUSDAmount = Command(:record_usd_amount) do
+    # The filed total in the reporting currency, from
+    # Expenses::CurrencyConverter: the amount it converted (currency,
+    # amount_cents, incurred_on), what it came to in which currency, and at
+    # what rate. Only records data: refused once the expense isn't filed,
+    # and ignored if the filed amount has changed since.
+    RecordConversion = Command(:record_conversion) do
       attribute :currency, CurrencyCode
       attribute :amount_cents, Integer
       attribute :incurred_on, Date
-      attribute :usd_cents, Integer
+      attribute :reporting_currency, CurrencyCode
+      attribute :reporting_cents, Integer
       attribute :rate, Types::Numeric
       attribute :rate_date, Date
     end
 
-    # No USD amount for the filed total: why, for a person to read.
-    FailUSDConversion = Command(:fail_usd_conversion) do
+    # No conversion of the filed total: why, for a person to read.
+    FailConversion = Command(:fail_conversion) do
       attribute :currency, CurrencyCode
       attribute :amount_cents, Integer
       attribute :incurred_on, Date
+      attribute :reporting_currency, CurrencyCode
       attribute :reason, Types::String.present
     end
 
@@ -143,19 +146,21 @@ module Expenses
       attribute :reason, String
     end
 
-    USDAmountRecorded = Event(:usd_amount_recorded) do
+    ConversionRecorded = Event(:conversion_recorded) do
       attribute :currency, String
       attribute :amount_cents, Integer
       attribute :incurred_on, Date
-      attribute :usd_cents, Integer
+      attribute :reporting_currency, String
+      attribute :reporting_cents, Integer
       attribute :rate, Types::Numeric
       attribute :rate_date, Date
     end
 
-    USDConversionFailed = Event(:usd_conversion_failed) do
+    ConversionFailed = Event(:conversion_failed) do
       attribute :currency, String
       attribute :amount_cents, Integer
       attribute :incurred_on, Date
+      attribute :reporting_currency, String
       attribute :reason, String
     end
 
@@ -241,20 +246,20 @@ module Expenses
         event ExpenseVoided, reason: cmd.payload.reason
       end
 
-      # The USD amount, for the total as filed now: a conversion of an
-      # amount since corrected is dropped (the correction's comes after it),
-      # and so is one already recorded.
-      command RecordUSDAmount do |doc, cmd|
-        usd = cmd.payload.to_h.except(:expense_id)
-        if doc.converting?(**usd.slice(:currency, :amount_cents, :incurred_on)) && doc.usd != usd
-          event USDAmountRecorded, usd
+      # The conversion, for the total as filed now: one of an amount since
+      # corrected is dropped (the correction's comes after it), and so is
+      # one already recorded.
+      command RecordConversion do |doc, cmd|
+        converted = cmd.payload.to_h.except(:expense_id)
+        if doc.converting?(**converted.slice(:currency, :amount_cents, :incurred_on)) && doc.converted != converted
+          event ConversionRecorded, converted
         end
       end
 
-      command FailUSDConversion do |doc, cmd|
+      command FailConversion do |doc, cmd|
         failure = cmd.payload.to_h.except(:expense_id)
-        if doc.converting?(**failure.slice(:currency, :amount_cents, :incurred_on)) && doc.usd_failure != failure
-          event USDConversionFailed, failure
+        if doc.converting?(**failure.slice(:currency, :amount_cents, :incurred_on)) && doc.conversion_failure != failure
+          event ConversionFailed, failure
         end
       end
     end
