@@ -43,9 +43,7 @@ module Expenses
 
     # What the converter dispatches for +event+: one message, or none.
     def dispatched(event)
-      pairs = UsdConverter.handle_batch({ expense_id: }, [event], history: Sourced::ReadResult.new(messages: [], guard: nil), replaying: false)
-      pairs.flat_map { |actions, _| Array(actions).select { Sourced::Actions::Append === it }.flat_map(&:messages) }
-        .tap { expect(it.size).to be <= 1 }
+      reacted(UsdConverter, event, expense_id:).tap { expect(it.size).to be <= 1 }
     end
 
     def payload(message) = message.payload.to_h.except(:expense_id)
@@ -81,6 +79,42 @@ module Expenses
 
       expect(dispatched(last_filed(first))).to be_empty
       expect(FAKE_RATES.calls).to be_empty
+    end
+
+    it 'skips a filing since voided' do
+      first = history(*reviewing, save)
+      history(cmd(E::VoidExpense, reason: 'Duplicate'), given: first)
+
+      expect(dispatched(last_filed(first))).to be_empty
+      expect(FAKE_RATES.calls).to be_empty
+    end
+
+    it 'converts again a correction that changes the total' do
+      FAKE_RATES.rates['EUR'] = 1.1612
+      filed = history(*reviewing, save)
+      converted = history(cmd(E::RecordUsdAmount, **payload(dispatched(last_filed(filed)).first)), given: filed)
+      corrected = history(save(net_price_cents: 3000), given: converted)
+
+      expect(dispatched(last_filed(corrected)).map { payload(it).slice(:amount_cents, :usd_cents) }).to eq([{ amount_cents: 3420, usd_cents: 3971 }])
+    end
+
+    it 'skips a correction that leaves the converted total alone' do
+      FAKE_RATES.rates['EUR'] = 1.1612
+      filed = history(*reviewing, save)
+      converted = history(cmd(E::RecordUsdAmount, **payload(dispatched(last_filed(filed)).first)), given: filed)
+      FAKE_RATES.reset!
+      corrected = history(save(description: 'Team lunch'), given: converted)
+
+      expect(dispatched(last_filed(corrected))).to be_empty
+      expect(FAKE_RATES.calls).to be_empty
+    end
+
+    it 'tries again a filing whose conversion failed' do
+      FAKE_RATES.rates['EUR'] = 1.1612
+      filed = history(*reviewing, save)
+      history(cmd(E::FailUsdConversion, currency: 'EUR', amount_cents: 2420, incurred_on: date, reason: 'Down'), given: filed)
+
+      expect(dispatched(last_filed(filed)).map(&:class)).to eq([E::RecordUsdAmount])
     end
 
     it 'skips a filing already converted' do

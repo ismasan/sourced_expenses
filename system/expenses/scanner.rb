@@ -16,57 +16,60 @@ module Expenses
 
     dep :llm, :file_store
 
+    # The document each step works on, as the machine sees it.
+    evolve DocumentProjector
+
+    # A reaction's history includes what came after its trigger, so whether
+    # the step is still to do is projection.current?: nothing evolved since.
+    # Discarding appends only the state event, so it's evolved here to count.
+    # Every other way out of a step appends an event the projector evolves
+    # (the step's result, a StepFailed, a rescan's ScanRequested).
+    evolve(Expense::Discarded) { |_doc, _evt| nil }
+
     S = Expense::Scanning
 
-    Step = ::Data.define(:state, :run, :complete, :fail)
-
-    # By the path the machine enters. The first, preparing, comes in on
-    # scanning's own state event: entering scanning enters it too.
-    STEPS = {
-      'scanning.preparing' => Step.new(S::Preparing, :prepare, S::CompletePreparation, S::FailPreparation),
-      'scanning.extracting' => Step.new(S::Extracting, :extract, S::CompleteExtraction, S::FailExtraction),
-      'scanning.verifying' => Step.new(S::Verifying, :verify, S::CompleteVerification, S::FailVerification),
-      'scanning.rechecking_date' => Step.new(S::RecheckingDate, :recheck_date, S::CompleteDateRecheck, S::FailDateRecheck),
-      'scanning.cleaning' => Step.new(S::Cleaning, :clean, S::CompleteCleanup, S::FailCleanup)
-    }.freeze
-
-    OUTPUTS = STEPS.values.flat_map { [it.complete, it.fail] }.reduce(:|)
-
-    # The state events that enter a step: each step's own, plus scanning's
-    # (Scanning.to_state_handle), since entering scanning on an upload or a
-    # rescan appends that one event, with 'scanning.preparing' in its entered
-    # paths. Not every transition: the reaction only has work on these.
-    INPUTS = [S.to_state_handle, *STEPS.values.map(&:state)].reduce(:|)
-
-    reaction INPUTS => OUTPUTS | nil do |_context, entered|
-      path = entered.payload.entered.find { STEPS.key?(it) }
-      next unless path
-
-      step = STEPS.fetch(path)
-      expense_id = entered.payload.expense_id
-      expense, = Sourced.load(Expense, expense_id:)
-      # Moved on since (timed out, discarded, or this is an old event a new
-      # consumer group is catching up on): the step is no one's to do.
-      next unless expense.machine.in?(step.state)
-
-      result = begin
-        { complete: steps.public_send(step.run, expense.context) }
-      rescue ScanSteps::Error => e
-        { fail: e.message }
-      end
-
-      if result[:complete]
-        command = step.complete.new(payload: { expense_id:, **result[:complete] })
-        if command.valid?
-          dispatch(step.complete, command.payload.to_h)
-        else
-          dispatch(step.fail, expense_id:, reason: "The model's answer didn't fit (#{command.errors[:payload].keys.join(', ')})")
-        end
-      else
-        dispatch(step.fail, expense_id:, reason: result[:fail])
-      end
+    # Entering scanning (an upload, or a rescan) enters preparing too, in
+    # scanning's own state event.
+    reaction S.to_state_handle => S::CompletePreparation | S::FailPreparation | nil do |doc, entered|
+      run_step(entered, S::CompletePreparation, S::FailPreparation) { steps.prepare(doc) }
     end
 
-    private def steps = @steps ||= ScanSteps.new(llm:, file_store:)
+    reaction S::Extracting => S::CompleteExtraction | S::FailExtraction | nil do |doc, entered|
+      run_step(entered, S::CompleteExtraction, S::FailExtraction) { steps.extract(doc) }
+    end
+
+    reaction S::Verifying => S::CompleteVerification | S::FailVerification | nil do |doc, entered|
+      run_step(entered, S::CompleteVerification, S::FailVerification) { steps.verify(doc) }
+    end
+
+    reaction S::RecheckingDate => S::CompleteDateRecheck | S::FailDateRecheck | nil do |doc, entered|
+      run_step(entered, S::CompleteDateRecheck, S::FailDateRecheck) { steps.recheck_date(doc) }
+    end
+
+    reaction S::Cleaning => S::CompleteCleanup | S::FailCleanup | nil do |doc, entered|
+      run_step(entered, S::CompleteCleanup, S::FailCleanup) { steps.clean(doc) }
+    end
+
+    private
+
+    # Runs the step in the block and dispatches +complete+ with its result,
+    # or +fail+ with why not. Nothing if the expense has moved on since
+    # +entered+ (done, timed out, discarded, or an old event a new consumer
+    # group is catching up on): the step is no one's to do.
+    def run_step(entered, complete, fail, &)
+      return unless projection.current?(entered)
+
+      expense_id = entered.payload.expense_id
+      command = complete.new(payload: { expense_id:, **yield })
+      if command.valid?
+        dispatch(complete, command.payload.to_h)
+      else
+        dispatch(fail, expense_id:, reason: "The model's answer didn't fit (#{command.errors[:payload].keys.join(', ')})")
+      end
+    rescue ScanSteps::Error => e
+      dispatch(fail, expense_id:, reason: e.message)
+    end
+
+    def steps = @steps ||= ScanSteps.new(llm:, file_store:)
   end
 end

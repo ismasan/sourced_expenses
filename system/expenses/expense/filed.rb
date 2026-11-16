@@ -29,11 +29,6 @@ module Expenses
         attribute :treatment, String
       end
 
-      evolve VatTreatmentConfirmed do |doc, evt|
-        doc.vat_treatment = evt.payload.treatment
-        doc.vat_treatment_confirmed = true
-      end
-
       started InferringVat do
         always VatConfirmed, if: :vat_treatment_confirmed?
         always VatNeedsReview, if: :vat_needs_review?

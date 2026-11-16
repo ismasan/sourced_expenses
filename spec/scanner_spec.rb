@@ -40,9 +40,7 @@ module Expenses
 
     # What the scanner appends for +event+: one message, or none.
     def dispatched(event)
-      pairs = Scanner.handle_batch({ expense_id: }, [event], history: Sourced::ReadResult.new(messages: [], guard: nil), replaying: false)
-      pairs.flat_map { |actions, _| Array(actions).select { Sourced::Actions::Append === it }.flat_map(&:messages) }
-        .tap { expect(it.size).to be <= 1 }
+      reacted(Scanner, event, expense_id:).tap { expect(it.size).to be <= 1 }
     end
 
     it 'prepares a PDF as it is, on entering scanning' do
@@ -54,9 +52,11 @@ module Expenses
     it 'shrinks a large image into a JPEG of its own' do
       big = Dir.mktmpdir do |dir|
         path = File.join(dir, 'big.png')
-        system('magick', '-size', '2400x2400', 'plasma:', path, exception: true)
+        # Over 1 MB, and cheap to make: a larger plasma takes seconds.
+        system('magick', '-size', '500x500', 'plasma:', path, exception: true)
         File.open(path, 'rb') { file_store.put('big.png', it) }
       end
+      expect(file_store.read(big).size).to be > Images::MAX_BYTES
 
       result = dispatched(at(upload(big, content_type: 'image/png')))[0]
       expect(result).to be_a(S::CompletePreparation)
@@ -115,11 +115,26 @@ module Expenses
       expect(FAKE_LLM.calls[0][:file]).to be_nil
     end
 
-    it "does nothing for a state the expense has since left" do
-      event = at(upload)
-      store.append(decided(Expense, { expense_id: }, cmd(Expense::DiscardDocument), given: store.read_all(limit: 1000).to_a.select { it.payload.respond_to?(:expense_id) && it.payload.expense_id == expense_id }).last)
+    describe 'a state the expense has since left' do
+      # The history after +commands+, and then +later+, in the store.
+      def left(commands, *later)
+        before = decided(Expense, { expense_id: }, *commands)
+        store.append(before)
+        store.append(decided(Expense, { expense_id: }, *later, given: before) - before)
+        before.reverse.find { it.is_a?(Sourced::Machine::State) }
+      end
 
-      expect(dispatched(event)).to be_empty
+      it 'does nothing once discarded' do
+        expect(dispatched(left([upload], cmd(Expense::DiscardDocument)))).to be_empty
+      end
+
+      it 'does nothing once the step is done' do
+        expect(dispatched(left([upload], cmd(S::CompletePreparation, processed_file_ref: pdf)))).to be_empty
+      end
+
+      it 'does nothing once timed out' do
+        expect(dispatched(left([upload], cmd(Expense::TimeOutScan)))).to be_empty
+      end
     end
   end
 end

@@ -161,46 +161,9 @@ module Expenses
 
     # ---- Domain state ----
 
-    context { Document.new }
-
-    before_evolve do |doc, evt|
-      doc.expense_id = evt.payload.expense_id
-    end
-
-    evolve DocumentUploaded do |doc, evt|
-      doc.filename = evt.payload.filename
-      doc.content_type = evt.payload.content_type
-      doc.file_ref = evt.payload.file_ref
-      doc.filing_country = evt.payload.filing_country
-    end
-
-    evolve ScanRequested do |doc, evt|
-      doc.start_scan(evt.payload.reference_date)
-    end
-
-    evolve StepFailed do |doc, evt|
-      doc.failure = { step: evt.payload.step, reason: evt.payload.reason }
-    end
-
-    # What was saved is the form from now on.
-    evolve ExpenseFiled do |doc, evt|
-      doc.filed = evt.payload.to_h.except(:expense_id)
-      doc.draft = doc.filed
-      doc.forget_stale_usd
-    end
-
-    evolve UsdAmountRecorded do |doc, evt|
-      doc.usd = evt.payload.to_h.except(:expense_id)
-      doc.usd_failure = nil
-    end
-
-    evolve UsdConversionFailed do |doc, evt|
-      doc.usd_failure = evt.payload.to_h.except(:expense_id)
-    end
-
-    evolve VatTreatmentInferred do |doc, evt|
-      doc.vat_treatment = evt.payload.treatment
-    end
+    # The Document, evolved from the events above and its parts' (the
+    # Scanner reads it the same way).
+    evolve DocumentProjector
 
     # ---- The statechart ----
 

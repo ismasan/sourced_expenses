@@ -142,31 +142,7 @@ module Expenses
         attribute :tax_description, Types::String.nullable
       end
 
-      evolve FilePrepared do |doc, evt|
-        doc.processed_file_ref = evt.payload.processed_file_ref
-      end
-
-      evolve ExtractionRecorded do |doc, evt|
-        doc.extraction = evt.payload.to_h.except(:expense_id)
-      end
-
-      evolve DocumentVerified do |doc, evt|
-        doc.verification = { is_invoice_or_receipt: evt.payload.is_invoice_or_receipt, explanation: evt.payload.explanation }
-      end
-
-      evolve DateRechecked do |doc, evt|
-        doc.date_recheck = evt.payload.to_h.except(:expense_id)
-        doc.correct_date(evt.payload.corrected_date) if evt.payload.corrected_date
-      end
-
-      evolve TextCleaned do |doc, evt|
-        doc.cleanup = { description: evt.payload.description, tax_description: evt.payload.tax_description }
-      end
-
-      # The form, prefilled from what the scan read.
-      evolve Scanned do |doc, _evt|
-        doc.draft = doc.attributes
-      end
+      # Evolved on the Document by DocumentProjector.
 
       # ---- The statechart ----
 

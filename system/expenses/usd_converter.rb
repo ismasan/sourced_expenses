@@ -18,24 +18,41 @@ module Expenses
 
     USD = 'USD'
 
-    reaction Expense::ExpenseFiled => Expense::RecordUsdAmount | Expense::FailUsdConversion | nil do |_context, filed|
+    # Not the whole Document: the USD amount recorded for the total as
+    # filed, if any. Filing again keeps it for the same total.
+    context { { usd: nil } }
+
+    evolve Expense::ExpenseFiled do |state, filed|
+      state[:usd] = nil unless state[:usd] == UsdConverter.amount(filed)
+    end
+
+    evolve Expense::UsdAmountRecorded do |state, recorded|
+      state[:usd] = recorded.payload.to_h.slice(:currency, :amount_cents, :incurred_on)
+    end
+
+    # Nothing to keep: evolved so voiding counts as moving on for
+    # projection.current?. A failure doesn't, so a group catching up tries
+    # those again.
+    evolve(Expense::ExpenseVoided) { |_state, _evt| nil }
+
+    # What's converted: the filed total, VAT included.
+    def self.amount(filed)
+      { currency: filed.payload.currency, amount_cents: filed.payload.net_price_cents + filed.payload.tax_amount_cents,
+        incurred_on: filed.payload.incurred_on }
+    end
+
+    reaction Expense::ExpenseFiled => Expense::RecordUsdAmount | Expense::FailUsdConversion | nil do |state, filed|
       next if filed.payload.currency == USD
+      # Corrected, voided or converted since (a new consumer group catching
+      # up): no call to make. The machine checks again, since the expense
+      # may move on while the rate is fetched.
+      next unless projection.current?(filed)
+
+      amount = self.class.amount(filed)
+      # Filed again with the same total, already converted.
+      next if state[:usd] == amount
 
       expense_id = filed.payload.expense_id
-      amount = {
-        currency: filed.payload.currency,
-        amount_cents: filed.payload.net_price_cents + filed.payload.tax_amount_cents,
-        incurred_on: filed.payload.incurred_on
-      }
-
-      # Corrected since, voided, or converted already (a new consumer group
-      # catching up): no call to make. The machine checks again, since the
-      # expense may move on while the rate is fetched.
-      expense, = Sourced.load(Expense, expense_id:)
-      doc = expense.context
-      next unless expense.machine.in?(Expense::Filed) && doc.converting?(**amount)
-      next if doc.usd&.slice(*amount.keys) == amount
-
       begin
         rate = exchange_rates.rate(from: amount[:currency], to: USD, on: amount[:incurred_on])
         dispatch(Expense::RecordUsdAmount, expense_id:, **amount,
