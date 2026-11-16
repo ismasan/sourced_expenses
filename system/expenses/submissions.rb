@@ -112,12 +112,12 @@ module Expenses
         description: evt.payload.description,
         total_cents: total && (total * 100).round,
         currency: evt.payload.currency,
-        incurred_on: Submissions.date(evt.payload.date)
+        incurred_on: Types.iso_date(evt.payload.date)
       )
     end
 
     evolve Expense::Scanning::DateRechecked do |row, evt|
-      row[:incurred_on] = Submissions.date(evt.payload.corrected_date) if evt.payload.corrected_date
+      row[:incurred_on] = Types.iso_date(evt.payload.corrected_date) if evt.payload.corrected_date
     end
 
     evolve Expense::Scanning::TextCleaned do |row, evt|
@@ -139,12 +139,6 @@ module Expenses
       row = context.slice(*COLUMNS).merge(machine: JSON.generate(context[:machine]))
       db[:submissions].insert_conflict(target: :expense_id, update: row)
                       .insert(row.merge(expense_id: context[:expense_id]))
-    end
-
-    def self.date(value)
-      Date.iso8601(value.to_s)
-    rescue Date::Error
-      nil
     end
   end
 end

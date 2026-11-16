@@ -42,8 +42,9 @@ module ExchangeRates
 
       body = JSON.parse(response.body)
       rate = body.dig('rates', to) or raise Error, "No exchange rate from #{from} to #{to}"
-      Rate.new(rate:, date: Date.iso8601(body.fetch('date')))
-    rescue JSON::ParserError, KeyError, Date::Error
+      date = Types.iso_date(body['date']) or raise Error, 'The exchange rate service sent an answer it could not read'
+      Rate.new(rate:, date:)
+    rescue JSON::ParserError
       raise Error, 'The exchange rate service sent an answer it could not read'
     rescue Timeout::Error, SystemCallError, SocketError, OpenSSL::SSL::SSLError, IOError
       raise Error, 'The exchange rate service could not be reached'

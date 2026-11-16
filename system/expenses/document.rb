@@ -63,7 +63,11 @@ module Expenses
       end
       errors << "Invalid net amount format (#{net})" if !net.nil? && !currency_amount?(net)
       errors << 'Missing currency' if blank?(extraction[:currency])
-      errors << 'Missing date' if blank?(extraction[:date])
+      if blank?(extraction[:date])
+        errors << 'Missing date'
+      elsif extracted_date.nil?
+        errors << "Invalid date format (#{extraction[:date]})"
+      end
       errors << 'Missing description' if blank?(extraction[:description])
       errors << 'Low confidence extraction' if extraction[:confidence] == 'low'
       errors
@@ -184,13 +188,7 @@ module Expenses
       value.is_a?(Numeric) && (value - value.round(2)).abs < 0.0001
     end
 
-    def parse_date(value)
-      return nil if blank?(value)
-
-      Date.parse(value.to_s)
-    rescue Date::Error
-      nil
-    end
+    def parse_date(value) = Types.iso_date(value)
 
     # ISO 3166-1 alpha-2, or nothing. Two letters, at least: checking it's a
     # real country needs a country list.

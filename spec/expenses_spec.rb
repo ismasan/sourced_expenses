@@ -111,6 +111,13 @@ module Expenses
             expect(expense(sparse).context.extraction_errors).to eq(['Missing currency', 'Missing date', 'Missing description'])
           end
 
+          it 'flags a date that is not ISO 8601' do
+            odd = extracted(date: '9 Aug 2026')
+
+            expect(value(odd)).to eq(scanning(Scanning::Verifying))
+            expect(expense(odd).context.extraction_errors).to eq(['Invalid date format (9 Aug 2026)'])
+          end
+
           it 'flags amounts with more than two decimals' do
             expect(value(extracted(total_amount: 24.205))).to eq(scanning(Scanning::Verifying))
           end
@@ -158,8 +165,11 @@ module Expenses
             expect(doc.date_recheck).to include(corrected_date: '2026-08-03', previous_date: '2026-03-11')
           end
 
-          it 'normalises a reading that is not ISO 8601' do
-            expect(expense(recheck('3 Aug 2026')).context.extraction[:date]).to eq('2026-08-03')
+          it 'keeps the first reading over one that is not ISO 8601' do
+            doc = expense(recheck('3 Aug 2026')).context
+
+            expect(doc.extraction[:date]).to eq('2026-03-11')
+            expect(doc.date_recheck).to include(corrected_date: nil)
           end
 
           it 'keeps the first reading over one in the future' do
