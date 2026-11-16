@@ -539,6 +539,7 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 }
 .filed dt { color: var(--ink-2); }
 .filed dd { margin: 0; font-weight: 600; }
+.filed__note { font-weight: 400; color: var(--ink-2); }
 .filed__edit summary { cursor: pointer; font-weight: 700; text-decoration: underline; text-underline-offset: 0.18em; }
 .filed__edit[open] .review-form { margin-top: 1rem; }
 .void-form { padding-top: 1.25rem; border-top: 1px solid var(--rule); }

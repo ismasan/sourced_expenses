@@ -23,7 +23,7 @@ module Expenses
     attr_accessor :expense_id, :filename, :content_type, :file_ref, :filing_country,
                   :reference_date, :processed_file_ref, :extraction, :verification,
                   :date_recheck, :cleanup, :failure, :draft, :filed,
-                  :vat_treatment, :vat_treatment_confirmed
+                  :vat_treatment, :vat_treatment_confirmed, :usd, :usd_failure
     attr_reader :scans
 
     def initialize
@@ -157,6 +157,25 @@ module Expenses
     def vat_needs_review? = vat_treatment == 'foreign_vat'
 
     def vat_treatment_confirmed? = vat_treatment_confirmed == true
+
+    # ---- The filed total in US dollars ----
+
+    # What's converted: the filed expense's total, VAT included.
+    def filed_total_cents = filed && (filed[:net_price_cents] + filed[:tax_amount_cents])
+
+    # Whether a conversion of +amount_cents+ in +currency+ on +incurred_on+
+    # is of the expense as filed now.
+    def converting?(currency:, amount_cents:, incurred_on:)
+      !filed.nil? && currency == filed[:currency] && amount_cents == filed_total_cents &&
+        incurred_on == filed[:incurred_on]
+    end
+
+    # Filing again forgets a USD amount, or a failure, for what's no longer
+    # the filed total. One for the same total stays.
+    def forget_stale_usd
+      self.usd = nil if usd && !converting?(**usd.slice(:currency, :amount_cents, :incurred_on))
+      self.usd_failure = nil if usd_failure && !converting?(**usd_failure.slice(:currency, :amount_cents, :incurred_on))
+    end
 
     private
 

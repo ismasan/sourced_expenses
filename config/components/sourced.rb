@@ -48,4 +48,5 @@ Sidereal.config.config!('sourced.workers.count') { 8 }
 
 Sourced.register(Expenses::Expense)
 Sourced.register(Expenses::Scanner)
+Sourced.register(Expenses::UsdConverter)
 Sourced.register(Expenses::Submissions)

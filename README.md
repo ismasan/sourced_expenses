@@ -12,6 +12,8 @@ A [Sidereal](https://github.com/ismasan/sidereal) + [Sourced](https://github.com
 
 `Expenses::Scanner` is the worker for scanning: when an expense enters one of its waiting states, it does that step (`Expenses::ScanSteps`, with the write-up's prompts in `Expenses::Prompts`) and reports back with the step's `Complete…` or `Fail…`. It's a consumer group of its own, so a model call never holds up the machine, and turns what a step can expect to go wrong (the model, the image, a missing file, an answer that doesn't fit) into `Fail…` with a reason safe to show. Images over 500 KB are shrunk with ImageMagick first. `Expenses::Submissions` is the read model the home page lists, and the list re-renders whenever it commits.
 
+`Expenses::UsdConverter` converts each filed expense's total (VAT included) to US dollars at the European Central Bank's rate for its date, from the [Frankfurter API](https://frankfurter.dev), and records it on the expense (`UsdAmountRecorded`, or `UsdConversionFailed` with a reason). Expenses already in USD are left alone. A correction to the amount, currency or date converts again. It's a consumer group of its own too, and on a store with expenses already filed it catches up on them when it first starts.
+
 Uploads land in `FileStore::Disk` (`storage/uploads/`), by the MD5 of their bytes.
 
 `Sourced::Machine::Mermaid.new(Expenses::Expense).to_s` draws the chart. The Sourced dashboard is mounted at `/sourced`.
@@ -26,7 +28,7 @@ bin/sid db migrations run
 bin/dev
 ```
 
-Scanning needs `OPENAI_API_KEY`, from the environment or `.env` (never committed), and ImageMagick's `magick` (`brew install imagemagick`). `OPENAI_MODEL` picks another model than `gpt-4.1`. Specs fake the model and never call OpenAI.
+Scanning needs `OPENAI_API_KEY`, from the environment or `.env` (never committed), and ImageMagick's `magick` (`brew install imagemagick`). `OPENAI_MODEL` picks another model than `gpt-4.1`. Specs fake the model and never call OpenAI. Exchange rates need no key; `EXCHANGE_RATES_URL` points at another Frankfurter instance, and specs fake them too.
 
 Then open <http://localhost:9292>. `PORT`, `HOST` and `COUNT` (worker processes) can be set in the environment.
 

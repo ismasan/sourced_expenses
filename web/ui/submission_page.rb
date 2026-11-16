@@ -302,6 +302,24 @@ module UI
 
     # ---- Filed ----
 
+    # The total in US dollars, once Expenses::UsdConverter has it: nothing
+    # to show for an expense in dollars already.
+    def render_usd(filed)
+      return if filed[:currency] == 'USD'
+
+      dt { 'In US dollars' }
+      dd do
+        if (usd = @doc.usd)
+          plain format('%.2f USD', usd[:usd_cents] / 100.0)
+          span(class: 'filed__note') { " at #{usd[:rate]} on #{usd[:rate_date].strftime('%-d %b %Y')}" }
+        elsif (failure = @doc.usd_failure)
+          span(class: 'filed__note') { "Not converted: #{failure[:reason]}" }
+        else
+          span(class: 'filed__note') { 'Converting…' }
+        end
+      end
+    end
+
     VAT_LABELS = {
       'domestic' => 'Domestic', 'import' => 'Import', 'reverse_charge' => 'Reverse charge',
       'foreign_vat' => 'Foreign VAT', 'no_vat' => 'No VAT'
@@ -315,6 +333,7 @@ module UI
         dd { filed[:description] }
         dt { 'Total' }
         dd { format('%.2f %s', (filed[:net_price_cents] + filed[:tax_amount_cents]) / 100.0, filed[:currency]) }
+        render_usd(filed)
         dt { 'Of which VAT' }
         dd { format('%.2f %s', filed[:tax_amount_cents] / 100.0, filed[:currency]) }
         dt { 'Date' }

@@ -35,6 +35,30 @@ class FakeLLM
 end
 FAKE_LLM = FakeLLM.new
 Sidereal.config.config!('llm') { FAKE_LLM }
+
+# Exchange rates without the network: +rates+ maps a currency to the rate
+# (or the ExchangeRates::Error) every date gets.
+class FakeExchangeRates
+  attr_reader :calls
+  attr_accessor :rates
+
+  def initialize = reset!
+
+  def reset!
+    @calls = []
+    @rates = {}
+  end
+
+  def rate(from:, to:, on:)
+    @calls << { from:, to:, on: }
+    rate = rates.fetch(from) { raise ExchangeRates::Error, "No exchange rate from #{from} to #{to}" }
+    raise rate if rate.is_a?(Exception)
+
+    ExchangeRates::Rate.new(rate:, date: on)
+  end
+end
+FAKE_RATES = FakeExchangeRates.new
+Sidereal.config.config!('exchange_rates') { FAKE_RATES }
 Sidereal.config.build!
 
 Sequel.extension :migration
@@ -82,6 +106,7 @@ end
 RSpec.configure do |config|
   config.include MachineHelpers
   config.before { FAKE_LLM.reset! }
+  config.before { FAKE_RATES.reset! }
 
   # rspec-expectations config goes here. You can use an alternate
   # assertion/expectation library such as wrong or the stdlib/minitest

@@ -80,6 +80,27 @@ module Expenses
 
     DiscardDocument = Command(:discard_document)
 
+    # The filed total in US dollars, from Expenses::UsdConverter: the
+    # amount it converted (currency, amount_cents, incurred_on), what it
+    # came to and at what rate. Only records data: refused once the expense
+    # isn't filed, and ignored if the filed amount has changed since.
+    RecordUsdAmount = Command(:record_usd_amount) do
+      attribute :currency, CurrencyCode
+      attribute :amount_cents, Integer
+      attribute :incurred_on, Date
+      attribute :usd_cents, Integer
+      attribute :rate, Types::Numeric
+      attribute :rate_date, Date
+    end
+
+    # No USD amount for the filed total: why, for a person to read.
+    FailUsdConversion = Command(:fail_usd_conversion) do
+      attribute :currency, CurrencyCode
+      attribute :amount_cents, Integer
+      attribute :incurred_on, Date
+      attribute :reason, Types::String.present
+    end
+
     # ---- Events ----
 
     DocumentUploaded = Event(:document_uploaded) do
@@ -122,6 +143,22 @@ module Expenses
       attribute :reason, String
     end
 
+    UsdAmountRecorded = Event(:usd_amount_recorded) do
+      attribute :currency, String
+      attribute :amount_cents, Integer
+      attribute :incurred_on, Date
+      attribute :usd_cents, Integer
+      attribute :rate, Types::Numeric
+      attribute :rate_date, Date
+    end
+
+    UsdConversionFailed = Event(:usd_conversion_failed) do
+      attribute :currency, String
+      attribute :amount_cents, Integer
+      attribute :incurred_on, Date
+      attribute :reason, String
+    end
+
     # ---- Domain state ----
 
     context { Document.new }
@@ -149,6 +186,16 @@ module Expenses
     evolve ExpenseFiled do |doc, evt|
       doc.filed = evt.payload.to_h.except(:expense_id)
       doc.draft = doc.filed
+      doc.forget_stale_usd
+    end
+
+    evolve UsdAmountRecorded do |doc, evt|
+      doc.usd = evt.payload.to_h.except(:expense_id)
+      doc.usd_failure = nil
+    end
+
+    evolve UsdConversionFailed do |doc, evt|
+      doc.usd_failure = evt.payload.to_h.except(:expense_id)
     end
 
     evolve VatTreatmentInferred do |doc, evt|
@@ -229,6 +276,23 @@ module Expenses
 
       command VoidExpense => Voided do |_doc, cmd|
         event ExpenseVoided, reason: cmd.payload.reason
+      end
+
+      # The USD amount, for the total as filed now: a conversion of an
+      # amount since corrected is dropped (the correction's comes after it),
+      # and so is one already recorded.
+      command RecordUsdAmount do |doc, cmd|
+        usd = cmd.payload.to_h.except(:expense_id)
+        if doc.converting?(**usd.slice(:currency, :amount_cents, :incurred_on)) && doc.usd != usd
+          event UsdAmountRecorded, usd
+        end
+      end
+
+      command FailUsdConversion do |doc, cmd|
+        failure = cmd.payload.to_h.except(:expense_id)
+        if doc.converting?(**failure.slice(:currency, :amount_cents, :incurred_on)) && doc.usd_failure != failure
+          event UsdConversionFailed, failure
+        end
       end
     end
 
