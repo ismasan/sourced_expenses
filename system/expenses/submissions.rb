@@ -23,12 +23,55 @@ module Expenses
     COLUMNS = %i[filename content_type file_ref machine failure rejection description
                  total_cents currency incurred_on uploaded_at updated_at].freeze
 
+    # The machine's paths are a JSON array: whether +path+ is one of them.
+    def self.in_path(path)
+      Sequel.lit('EXISTS (SELECT 1 FROM json_each(submissions.machine) WHERE value = ?)', path)
+    end
+
+    # Where an expense is, for filtering: one key per state a person tells
+    # apart, each a condition on the machine's paths. The top-level states
+    # exclude each other, so every row is in exactly one. (No paths yet:
+    # the upload is still being stored, which counts as scanning.)
+    STATES = {
+      'scanning' => Sequel.|(in_path('scanning'), { machine: '[]' }),
+      'reviewing' => in_path('reviewing'),
+      'rejected' => in_path('rejected'),
+      'scan_failed' => in_path('scan_failed'),
+      'vat_needs_review' => in_path('filed.vat_needs_review'),
+      'filed' => Sequel.&(in_path('filed'), Sequel.~(in_path('filed.vat_needs_review'))),
+      'discarded' => in_path('discarded'),
+      'voided' => in_path('voided')
+    }.freeze
+
+    # The states waiting for a person.
+    NEEDS_YOU = %w[reviewing vat_needs_review rejected scan_failed].freeze
+
+    # Rows in any of +states+ (STATES keys; all rows when there are none).
+    def self.in_states(db, states = [])
+      conditions = STATES.values_at(*(STATES.keys & states))
+      conditions.empty? ? db[:submissions] : db[:submissions].where(Sequel.|(*conditions))
+    end
+
+    # One page of +states+.
+    # @return [Array(Array<Row>, Integer)] the page's rows, and how many there are in all
+    def self.page(db, states: [], page: 1, per_page: 25)
+      ds = in_states(db, states)
+      rows = ds.reverse(:uploaded_at).limit(per_page, (page - 1) * per_page).map { row(it) }
+      [rows, ds.count]
+    end
+
+    # How many rows are in each of STATES.
+    # @return [Hash{String => Integer}]
+    def self.counts(db)
+      STATES.to_h { |key, _| [key, in_states(db, [key]).count] }
+    end
+
     # The latest uploads first.
     def self.recent(db, limit: 50)
-      db[:submissions].reverse(:uploaded_at).limit(limit).map do |row|
-        Row.new(**row.slice(*Row.members), machine: JSON.parse(row[:machine]))
-      end
+      db[:submissions].reverse(:uploaded_at).limit(limit).map { row(it) }
     end
+
+    def self.row(row) = Row.new(**row.slice(*Row.members), machine: JSON.parse(row[:machine]))
 
     context { { machine: [] } }
 

@@ -29,6 +29,7 @@
 
   --font: "Schibsted Grotesk", system-ui, sans-serif;
   --radius: 4px;
+  --nav-h: 3.5rem;
 }
 
 html { background: var(--paper); }
@@ -49,9 +50,102 @@ a:hover { text-decoration-thickness: 2px; }
 .page {
   max-width: 54rem;
   margin: 0 auto;
-  padding: clamp(2rem, 7vh, 4.5rem) 1.25rem 6rem;
+  padding: clamp(1.75rem, 5vh, 3.5rem) 1.25rem 6rem;
 }
-.page:has(.submission-page) { max-width: 66rem; }
+
+/* ---- The top bar: stuck to the top, the links folding into a menu on a
+   narrow screen (UI::Components::TopNav). ---- */
+
+.topnav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--paper);
+  border-bottom: 1px solid var(--ink);
+}
+.topnav__bar {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  height: var(--nav-h);
+  /* As wide as the page's column below it, so the name lines up with it. */
+  max-width: 54rem;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+body:has(.submission-page) .topnav__bar,
+body:has(.expenses-page) .topnav__bar { max-width: 66rem; }
+.topnav__brand {
+  margin-right: auto;
+  font-size: 1.25rem;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  text-decoration: none;
+}
+.topnav__links { display: flex; gap: 1.5rem; list-style: none; margin: 0; padding: 0; }
+.topnav__links li { margin: 0; }
+.topnav__link {
+  display: block;
+  padding: 0.35rem 0;
+  font-weight: 600;
+  text-decoration: none;
+  /* Top and bottom alike, so the underline doesn't lift the text. */
+  border-block: 3px solid transparent;
+}
+.topnav__link:hover { border-bottom-color: var(--rule); }
+.topnav__link[aria-current="page"] { border-bottom-color: var(--ink); }
+
+.topnav__toggle { display: none; }
+
+@media (max-width: 40rem) {
+  .topnav__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.4rem 0.75rem;
+    font-weight: 700;
+    color: var(--ink);
+    background: var(--paper);
+    border: 2px solid var(--ink);
+    border-radius: var(--radius);
+  }
+  .topnav__toggle:hover, .topnav--open .topnav__toggle { color: var(--paper); background: var(--ink); }
+  /* Three bars, the outer two turning into a cross when it's open. */
+  .topnav__toggle-icon,
+  .topnav__toggle-icon::before,
+  .topnav__toggle-icon::after {
+    width: 1rem;
+    height: 2px;
+    background: currentColor;
+    transition: transform 0.15s, background 0.15s;
+  }
+  .topnav__toggle-icon { position: relative; }
+  .topnav__toggle-icon::before,
+  .topnav__toggle-icon::after { content: ""; position: absolute; left: 0; }
+  .topnav__toggle-icon::before { transform: translateY(-5px); }
+  .topnav__toggle-icon::after { transform: translateY(5px); }
+  .topnav--open .topnav__toggle-icon { background: transparent; }
+  .topnav--open .topnav__toggle-icon::before { transform: rotate(45deg); }
+  .topnav--open .topnav__toggle-icon::after { transform: rotate(-45deg); }
+  .topnav__links {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    gap: 0;
+    padding: 0.5rem 1.25rem 1rem;
+    background: var(--paper);
+    border-bottom: 1px solid var(--ink);
+  }
+  .topnav--open .topnav__links { display: flex; }
+  .topnav__link { padding: 0.75rem 0; border-block: 0; border-bottom: 1px solid var(--rule); }
+  .topnav__link[aria-current="page"] { border-bottom-color: var(--rule); text-decoration: underline; }
+  .topnav__links li:last-child .topnav__link { border-bottom: 0; }
+}
+.page:has(.submission-page),
+.page:has(.expenses-page) { max-width: 66rem; }
 
 /* ---- Buttons and fields ---- */
 
@@ -150,11 +244,6 @@ input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--in
 /* ---- Home: masthead, drop zone, the list ---- */
 
 .masthead {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem 2rem;
-  flex-wrap: wrap;
   margin-bottom: 2rem;
 }
 .masthead__title {
@@ -165,7 +254,6 @@ input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--in
   margin: 0 0 0.9rem;
 }
 .masthead__lead { max-width: 30em; font-size: 1.15rem; color: var(--ink-2); margin: 0; }
-.masthead__link { font-size: 0.95rem; font-weight: 600; padding-top: 0.6rem; }
 
 .upload { margin-bottom: 3.5rem; }
 /* The visible target; the whole page takes the drop. */
@@ -216,7 +304,6 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 }
 
 .submissions__empty { font-size: 1.1rem; color: var(--ink-2); }
-.submissions__group + .submissions__group { margin-top: 2.75rem; }
 .submissions__title {
   display: flex;
   align-items: baseline;
@@ -227,6 +314,7 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
   margin: 0 0 0.6rem;
 }
 .submissions__count { font-size: 1rem; font-weight: 600; color: var(--ink-2); }
+.submissions__more { margin: 1rem 0 0; font-weight: 600; }
 .submissions__list { list-style: none; padding: 0; margin: 0; border-top: 2px solid var(--ink); }
 .submission { margin: 0; border-bottom: 1px solid var(--rule); }
 .submission__link {
@@ -459,7 +547,7 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 /* A past step: a black bar, out of the way of the stage colours. */
 .time-travel {
   position: fixed;
-  top: 0.75rem;
+  top: calc(var(--nav-h) + 0.75rem);
   left: 1.25rem;
   right: 1.25rem;
   z-index: 10;
@@ -652,3 +740,81 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
   .submission__link { grid-template-columns: minmax(0, 1fr); }
   .submission__link .badge { justify-self: start; }
 }
+
+/* ---- All expenses: filters in a sidebar, the list a page at a time ---- */
+
+.expenses-page__title {
+  font-size: clamp(2rem, 6vw, 3rem);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.035em;
+  margin: 0 0 2rem;
+}
+.expenses-page__body {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  gap: 2.5rem;
+  align-items: start;
+}
+@media (max-width: 48rem) { .expenses-page__body { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; } }
+
+.filters { position: sticky; top: calc(var(--nav-h) + 1.25rem); }
+@media (max-width: 48rem) { .filters { position: static; } }
+.filters form > * + * { margin-top: 0.75rem; }
+.filters__group { margin: 0; padding: 0; border: 0; min-width: 0; }
+.filters__legend {
+  width: 100%;
+  margin-bottom: 0.4rem;
+  padding-bottom: 0.4rem;
+  font-size: 1rem;
+  font-weight: 800;
+  border-bottom: 2px solid var(--ink);
+}
+.filter {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0.45rem 0.5rem 0.45rem 0.6rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+  /* The state's stage colour, as on the list's rows. */
+  border-left: 4px solid var(--stage, var(--rule));
+}
+.filter + .filter { margin-top: 2px; }
+.filter:hover { background: var(--wash); }
+.filter:has(:checked) { font-weight: 700; background: var(--wash); }
+.filter:has(:focus-visible) { outline: 3px solid var(--ink); outline-offset: 1px; }
+.filter--working { --stage: var(--working); }
+.filter--yours { --stage: var(--yours); }
+.filter--problem { --stage: var(--problem); }
+.filter--done { --stage: var(--done); }
+.filter--closed { --stage: var(--closed); }
+.filter__count { font-size: 0.85rem; color: var(--ink-2); }
+.filters__clear { display: inline-block; margin-top: 0.75rem; font-size: 0.95rem; font-weight: 600; }
+
+.expenses-page__summary { margin: 0 0 0.6rem; font-weight: 600; color: var(--ink-2); }
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+.pager__where { color: var(--ink-2); font-size: 0.95rem; }
+.pager__link {
+  padding: 0.45rem 0.9rem;
+  font-weight: 700;
+  text-decoration: none;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+}
+.pager__link:hover { color: var(--paper); background: var(--ink); }
+.pager__link--prev::before { content: "‹ "; }
+.pager__link--next::after { content: " ›"; }
+.pager__link--disabled { opacity: 0.25; }
+.pager__link--disabled:hover { color: var(--ink); background: none; }

@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 module UI
-  # The home page: upload a receipt or invoice, and watch every upload go
-  # through its scan.
+  # The home page: upload a receipt or invoice, and the uploads waiting for
+  # a person. Every upload is on the expense list (ExpensesPage).
   class WelcomePage < Sidereal::Page
     path '/'
 
@@ -11,31 +11,32 @@ module UI
     disable_causal_reactivity!
 
     on Expenses::Submissions::Projected do |_evt|
-      browser.patch_elements UI::Components::SubmissionList.new(UI::WelcomePage.submissions)
+      browser.patch_elements UI::Components::NeedsYou.new(*UI::WelcomePage.needs_you)
     end
 
     # Every expense's channel: the list follows them all.
     def channel_name = 'expenses.>'
 
-    def self.submissions = Expenses::Submissions.recent(Sidereal.config['db'])
+    # The latest of the uploads waiting for a person, and how many there are.
+    def self.needs_you
+      Expenses::Submissions.page(Sidereal.config['db'], states: Expenses::Submissions::NEEDS_YOU, per_page: 50)
+    end
 
-    def self.load(_params, _ctx) = new(submissions)
+    def self.load(_params, _ctx) = new(*needs_you)
 
-    def initialize(submissions = [])
-      @submissions = submissions
+    def initialize(rows = [], total = 0)
+      @rows = rows
+      @total = total
     end
 
     def view_template
       div(id: 'welcome-page', class: 'welcome') do
         header(class: 'masthead') do
-          div do
-            h1(class: 'masthead__title') { 'Expenses' }
-            p(class: 'masthead__lead') { 'Drop in a receipt. It’s read for you, and you check it before it’s filed.' }
-          end
-          a(class: 'masthead__link', href: '/sourced') { 'Sourced dashboard' }
+          h1(class: 'masthead__title') { 'Expenses' }
+          p(class: 'masthead__lead') { 'Drop in a receipt. It’s read for you, and you check it before it’s filed.' }
         end
         render UI::Components::UploadForm.new
-        render UI::Components::SubmissionList.new(@submissions)
+        render UI::Components::NeedsYou.new(@rows, @total)
       end
     end
   end

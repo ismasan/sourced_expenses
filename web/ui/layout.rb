@@ -6,6 +6,10 @@ module UI
   class Layout < Sidereal::Components::BasicLayout
     FONTS = 'https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..900;1,400..900&display=swap'
 
+    # The app's params, query string included (see App#params), for the
+    # page's params signal: a live re-render keeps the filters.
+    private def params = context.params
+
     def view_template
       doctype
 
@@ -18,10 +22,11 @@ module UI
           link(rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: true)
           link(rel: 'stylesheet', href: FONTS)
           style { raw safe(STYLES) }
-          link(rel: 'stylesheet', href: '/css/app.css?4')
+          link(rel: 'stylesheet', href: '/css/app.css?6')
         end
 
         body do
+          render Components::TopNav.new(context.request.path_info)
           div(class: 'page') do
             render page
           end
