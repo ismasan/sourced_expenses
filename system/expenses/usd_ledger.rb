@@ -9,6 +9,7 @@ module Expenses
   #
   #   UsdLedger.month(db)                      # this month
   #   UsdLedger.month(db, Date.new(2025, 10))  # October 2025
+  #   UsdLedger.total(db, from:, to:)          # any range
   class UsdLedger < Sourced::Projector::StateStored
     partition_by expense_id: Types::UUID::V4
 
@@ -16,16 +17,28 @@ module Expenses
 
     USD = 'USD'
 
-    # A month's filed expenses: how many, what they come to in USD, and
-    # how many aren't in that total yet, waiting for (or failing) conversion.
-    Month = ::Data.define(:first_day, :usd_cents, :expenses, :unconverted)
+    # Filed expenses dated +from+ to +to+ (nil for no bound): how many, what
+    # they come to in USD, and how many aren't in that total yet, waiting
+    # for (or failing) conversion.
+    Total = ::Data.define(:from, :to, :usd_cents, :expenses, :unconverted) do
+      # Whether it's one whole month.
+      def month? = !from.nil? && !to.nil? && from.day == 1 && to == from.next_month - 1
+    end
 
     # The month +date+ is in, by the expenses' own dates.
-    # @return [Month]
+    # @return [Total]
     def self.month(db, date = Date.today)
-      first_day = Date.new(date.year, date.month, 1)
-      rows = db[:usd_ledger].where(incurred_on: first_day..(first_day.next_month - 1))
-      Month.new(first_day:, usd_cents: rows.sum(:usd_cents).to_i, expenses: rows.count,
+      from = Date.new(date.year, date.month, 1)
+      total(db, from:, to: from.next_month - 1)
+    end
+
+    # Filed expenses dated +from+ to +to+, by their own dates.
+    # @return [Total]
+    def self.total(db, from: nil, to: nil)
+      rows = db[:usd_ledger]
+      rows = rows.where { incurred_on >= from } if from
+      rows = rows.where { incurred_on <= to } if to
+      Total.new(from:, to:, usd_cents: rows.sum(:usd_cents).to_i, expenses: rows.count,
                 unconverted: rows.where(usd_cents: nil).count)
     end
 

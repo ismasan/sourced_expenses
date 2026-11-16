@@ -46,24 +46,37 @@ module Expenses
     # The states waiting for a person.
     NEEDS_YOU = %w[reviewing vat_needs_review rejected scan_failed].freeze
 
-    # Rows in any of +states+ (STATES keys; all rows when there are none).
-    def self.in_states(db, states = [])
+    # Rows in any of +states+ (STATES keys; all rows when there are none),
+    # dated +from+ to +to+ (either may be nil, for no bound). A range leaves
+    # out rows with no date yet: still scanning, or never read.
+    def self.in_states(db, states = [], from: nil, to: nil)
       conditions = STATES.values_at(*(STATES.keys & states))
-      conditions.empty? ? db[:submissions] : db[:submissions].where(Sequel.|(*conditions))
+      ds = conditions.empty? ? db[:submissions] : db[:submissions].where(Sequel.|(*conditions))
+      ds = ds.where { incurred_on >= from } if from
+      ds = ds.where { incurred_on <= to } if to
+      ds
     end
 
-    # One page of +states+.
+    # One page of +states+, dated +from+ to +to+.
     # @return [Array(Array<Row>, Integer)] the page's rows, and how many there are in all
-    def self.page(db, states: [], page: 1, per_page: 25)
-      ds = in_states(db, states)
+    def self.page(db, states: [], from: nil, to: nil, page: 1, per_page: 25)
+      ds = in_states(db, states, from:, to:)
       rows = ds.reverse(:uploaded_at).limit(per_page, (page - 1) * per_page).map { row(it) }
       [rows, ds.count]
     end
 
-    # How many rows are in each of STATES.
+    # How many rows dated +from+ to +to+ are in each of STATES.
     # @return [Hash{String => Integer}]
-    def self.counts(db)
-      STATES.to_h { |key, _| [key, in_states(db, [key]).count] }
+    def self.counts(db, from: nil, to: nil)
+      STATES.to_h { |key, _| [key, in_states(db, [key], from:, to:).count] }
+    end
+
+    # The first day of every month a row is dated in, latest first.
+    # @return [Array<Date>]
+    def self.months(db)
+      db[:submissions].exclude(incurred_on: nil).distinct
+                      .select(Sequel.function(:strftime, '%Y-%m-01', :incurred_on).as(:month))
+                      .reverse(:month).map { Types.iso_date(it[:month]) }
     end
 
     # The latest uploads first.

@@ -106,13 +106,24 @@ module Expenses
                 id: other_month)
 
         expect(UsdLedger.month(db, Date.new(2025, 10, 31))).to eq(
-          UsdLedger::Month.new(first_day: Date.new(2025, 10, 1), usd_cents: 3810, expenses: 3, unconverted: 1)
+          UsdLedger::Total.new(from: Date.new(2025, 10, 1), to: Date.new(2025, 10, 31), usd_cents: 3810, expenses: 3, unconverted: 1)
         )
+      end
+
+      it 'totals any range, open at either end' do
+        a, b, outside = Array.new(3) { SecureRandom.uuid }
+        project(*reviewing(a), save(a), usd(a), id: a)
+        project(*reviewing(b), save(b, currency: 'USD', net_price_cents: 1000, tax_amount_cents: 0), id: b)
+        project(*reviewing(outside), save(outside, incurred_on: Date.new(2025, 11, 1)), id: outside)
+
+        expect(UsdLedger.total(db, from: Date.new(2025, 10, 20), to: Date.new(2025, 10, 31))).to have_attributes(usd_cents: 3810, expenses: 2)
+        expect(UsdLedger.total(db, from: Date.new(2025, 10, 20))).to have_attributes(expenses: 3)
+        expect(UsdLedger.total(db, to: Date.new(2025, 10, 31))).to have_attributes(expenses: 2)
       end
 
       it 'is empty for a month with nothing filed' do
         expect(UsdLedger.month(db, Date.new(2020, 2, 10))).to eq(
-          UsdLedger::Month.new(first_day: Date.new(2020, 2, 1), usd_cents: 0, expenses: 0, unconverted: 0)
+          UsdLedger::Total.new(from: Date.new(2020, 2, 1), to: Date.new(2020, 2, 29), usd_cents: 0, expenses: 0, unconverted: 0)
         )
       end
     end

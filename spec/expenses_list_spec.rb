@@ -18,9 +18,19 @@ RSpec.describe 'The expense lists' do
     end
   end
 
-  def submission(filename, *paths, at: Time.now)
-    db[:submissions].insert(expense_id: SecureRandom.uuid, filename:, machine: JSON.generate(paths),
-                            uploaded_at: at, updated_at: at)
+  def submission(filename, *paths, at: Time.now, on: nil)
+    SecureRandom.uuid.tap do |expense_id|
+      db[:submissions].insert(expense_id:, filename:, machine: JSON.generate(paths), incurred_on: on,
+                              uploaded_at: at, updated_at: at)
+    end
+  end
+
+  # A filed expense dated +on+, in the list and the ledger.
+  def filed(filename, on:, usd_cents:, paths: %w[filed filed.vat_confirmed], at: Time.now)
+    submission(filename, *paths, on:, at:).tap do |expense_id|
+      db[:usd_ledger].insert(expense_id:, incurred_on: on, currency: 'EUR', amount_cents: usd_cents, usd_cents:,
+                             updated_at: Time.now)
+    end
   end
 
   def seed
@@ -67,7 +77,7 @@ RSpec.describe 'The expense lists' do
                            usd_cents: 2810, updated_at: Time.now)
     get '/'
 
-    expect(last_response.body).to include('id="month-total"', Date.today.strftime('%B %Y'), '28.10 USD', '1 expense filed')
+    expect(last_response.body).to include('id="usd-total"', Date.today.strftime('%B %Y'), '28.10 USD', '1 expense filed')
   end
 
   it 'says so when nothing needs a person' do
@@ -129,5 +139,87 @@ RSpec.describe 'The expense lists' do
     get '/expenses?page=9'
 
     expect(last_response.body).to include('26–30 of 30', 'Page 2 of 2')
+  end
+
+  describe 'by date' do
+    let(:nov) { Date.new(2025, 11, 1) }
+
+    before do
+      filed('early.pdf', on: nov + 2, usd_cents: 1000, at: Time.now - 40)
+      filed('vat.pdf', on: nov + 9, usd_cents: 5000, paths: %w[filed filed.vat_needs_review], at: Time.now - 30)
+      filed('late.pdf', on: nov + 20, usd_cents: 2000, at: Time.now - 20)
+      filed('december.pdf', on: Date.new(2025, 12, 3), usd_cents: 4000, at: Time.now - 10)
+      submission('reading.pdf', 'scanning', 'scanning.extracting')
+    end
+
+    it 'lists those dated in the range, leaving out ones with no date yet' do
+      get '/expenses?from=2025-11-01&to=2025-11-30'
+
+      expect(filenames(last_response.body)).to eq(%w[late.pdf vat.pdf early.pdf])
+      expect(last_response.body).to include('<option value="2025-11-01/2025-11-30" selected>November 2025</option>')
+    end
+
+    it 'takes a range open at either end' do
+      get '/expenses?from=2025-11-15'
+      expect(filenames(last_response.body)).to eq(%w[december.pdf late.pdf])
+
+      get '/expenses?to=2025-11-15'
+      expect(filenames(last_response.body)).to eq(%w[vat.pdf early.pdf])
+      expect(last_response.body).to include('Custom dates')
+    end
+
+    it 'takes emptied date fields as no dates' do
+      get '/expenses?from=&to=&state[]=filed'
+
+      expect(last_response.status).to eq(200)
+      expect(filenames(last_response.body)).to eq(%w[december.pdf late.pdf early.pdf])
+    end
+
+    it 'lists nothing for a range that ends before it starts' do
+      get '/expenses?from=2025-11-30&to=2025-11-01'
+
+      expect(last_response.body).to include('No expenses match the filters')
+    end
+
+    it 'refuses a date that is not YYYY-MM-DD' do
+      get '/expenses?from=1%20Nov%202025'
+
+      expect(last_response.status).to eq(400)
+    end
+
+    it 'counts the states in the range' do
+      get '/expenses?from=2025-11-01&to=2025-11-30'
+
+      expect(last_response.body).to match(%r{value="filed"[^>]*>.*?filter__count">2<}m)
+    end
+
+    it 'totals every filed expense in the range, in US dollars, whatever the states' do
+      ['', 'state[]=filed&', 'state[]=scanning&'].each do |states|
+        get "/expenses?#{states}from=2025-11-01&to=2025-11-30"
+
+        expect(last_response.body).to include('id="usd-total"', 'November 2025', '80.00 USD', '3 expenses filed')
+      end
+    end
+
+    it 'names a range that is not a whole month' do
+      get '/expenses?from=2025-11-02&to=2025-11-21'
+      expect(last_response.body).to include('2 Nov 2025 – 21 Nov 2025', '80.00 USD')
+
+      get '/expenses?from=2025-11-15'
+      expect(last_response.body).to include('Since 15 Nov 2025', '60.00 USD')
+    end
+
+    it "shows this month's total without dates" do
+      get '/expenses?state[]=filed'
+
+      expect(last_response.body).to include(Date.today.strftime('%B %Y'), '0.00 USD')
+    end
+
+    it 'keeps the dates in the pager' do
+      30.times { |i| filed("r#{i}.pdf", on: nov + 1, usd_cents: 100, at: Time.now - 100 - i) }
+      get '/expenses?state[]=filed&from=2025-11-01&to=2025-11-30'
+
+      expect(last_response.body).to include('href="/expenses?state[]=filed&from=2025-11-01&to=2025-11-30&page=2" rel="next"')
+    end
   end
 end

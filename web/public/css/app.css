@@ -778,12 +778,12 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
   letter-spacing: -0.035em;
   margin: 0;
 }
-/* This month's total in USD: the figure big, what it covers under it. */
-.month-total { text-align: right; }
-@media (max-width: 40rem) { .month-total { text-align: left; } }
-.month-total__title { margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--ink-2); }
-.month-total__amount { margin: 0; font-size: 1.75rem; font-weight: 900; letter-spacing: -0.02em; line-height: 1.15; }
-.month-total__note { margin: 0; font-size: 0.9rem; color: var(--ink-2); }
+/* The total in USD (this month, or the range chosen): the figure big, what it covers under it. */
+.usd-total { text-align: right; }
+@media (max-width: 40rem) { .usd-total { text-align: left; } }
+.usd-total__title { margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--ink-2); }
+.usd-total__amount { margin: 0; font-size: 1.75rem; font-weight: 900; letter-spacing: -0.02em; line-height: 1.15; }
+.usd-total__note { margin: 0; font-size: 0.9rem; color: var(--ink-2); }
 .expenses-page__body {
   display: grid;
   grid-template-columns: 15rem minmax(0, 1fr);
@@ -791,10 +791,23 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
   align-items: start;
 }
 @media (max-width: 48rem) { .expenses-page__body { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; } }
+/* The body is the filters' form: no gap between the sidebar and the list from BasicLayout's form spacing. */
+.expenses-page__body > * + * { margin-top: 0; }
+/* Side by side, the State heading and the date row are one row: the
+   heading as tall as a date label and field (--date-row), its text and its
+   rule at the bottom, level with the fields' bottom edges. */
+.expenses-page { --date-row: calc(1.25rem + 0.25rem + 2.75rem); }
+@media (min-width: 48.0625rem) {
+  .filters__group:first-child > .filters__legend {
+    box-sizing: border-box;
+    display: flex;
+    align-items: flex-end;
+    min-height: var(--date-row);
+  }
+}
 
 .filters { position: sticky; top: calc(var(--nav-h) + 1.25rem); }
 @media (max-width: 48rem) { .filters { position: static; } }
-.filters form > * + * { margin-top: 0.75rem; }
 .filters__group { margin: 0; padding: 0; border: 0; min-width: 0; }
 .filters__legend {
   width: 100%;
@@ -829,6 +842,47 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 .filter--closed { --stage: var(--closed); }
 .filter__count { font-size: 0.85rem; color: var(--ink-2); }
 .filters__clear { display: inline-block; margin-top: 0.75rem; font-size: 0.95rem; font-weight: 600; }
+.filters noscript { display: block; margin-top: 0.75rem; }
+
+/* The dates, in a row above the list: a month, or From and To. */
+.date-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem 1rem;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.date-filters__field { display: block; margin: 0; flex: 0 1 11rem; min-width: 0; }
+.date-filters__field--month { flex-basis: 13rem; }
+.date-filters__label { display: block; margin-bottom: 0.25rem; font-size: 0.85rem; line-height: 1.25rem; font-weight: 700; color: var(--ink-2); }
+.date-filters input { min-width: 0; }
+/* Without the browsers' own look (Safari's grey list, and its date text set
+   at the top of the box), the month list and the date fields size alike
+   from their padding and line height, so they and their labels line up. */
+.date-filters select,
+.date-filters input {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.65rem;
+  line-height: 1.6;
+}
+.date-filters select {
+  padding-right: 2.25rem;
+  background: var(--paper) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23111' stroke-width='2'/%3E%3C/svg%3E") no-repeat right 0.8rem center;
+  cursor: pointer;
+}
+/* Safari sets a date's parts at the top of the box, on a line box of their
+   own: a fixed height, and centred as flex items instead. */
+.date-filters input { display: flex; align-items: center; height: 2.75rem; min-height: 0; padding-block: 0; }
+@media (max-width: 40rem) {
+  .date-filters__field { flex: 1 1 calc(50% - 0.5rem); }
+  .date-filters__field--month { flex-basis: 100%; }
+}
 
 .expenses-page__summary { margin: 0 0 0.6rem; font-weight: 600; color: var(--ink-2); }
 
@@ -852,3 +906,15 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 .pager__link--next::after { content: " ›"; }
 .pager__link--disabled { opacity: 0.25; }
 .pager__link--disabled:hover { color: var(--ink); background: none; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
