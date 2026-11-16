@@ -14,6 +14,8 @@ A [Sidereal](https://github.com/ismasan/sidereal) + [Sourced](https://github.com
 
 `Expenses::UsdConverter` converts each filed expense's total (VAT included) to US dollars at the European Central Bank's rate for its date, from the [Frankfurter API](https://frankfurter.dev), and records it on the expense (`UsdAmountRecorded`, or `UsdConversionFailed` with a reason). Expenses already in USD are left alone. A correction to the amount, currency or date converts again. It's a consumer group of its own too, and on a store with expenses already filed it catches up on them when it first starts.
 
+`Expenses::UsdLedger` is the read model for totals in US dollars: one row per filed expense (table `usd_ledger`), with its USD amount once converted. Expenses in USD count as they are; a correction to the total clears the USD amount until it's converted again; voided expenses leave it. `UsdLedger.month(db, date)` totals a month by the expenses' own dates, saying how many aren't converted yet. The All expenses page shows this month's.
+
 Uploads land in `FileStore::Disk` (`storage/uploads/`), by the MD5 of their bytes.
 
 `Sourced::Machine::Mermaid.new(Expenses::Expense).to_s` draws the chart. The Sourced dashboard is mounted at `/sourced`.

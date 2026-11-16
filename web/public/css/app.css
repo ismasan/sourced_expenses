@@ -45,6 +45,15 @@ body {
 
 a { color: var(--ink); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.18em; }
 a:hover { text-decoration-thickness: 2px; }
+/* Links styled as rows, tabs or buttons: no underline, hovered or not
+   (BasicLayout's a:hover would outrank their own text-decoration). */
+.submission__link:hover,
+.topnav__brand:hover,
+.topnav__link:hover,
+.tabs__tab:hover,
+.pager__link:hover,
+.history__link:hover,
+.history__arrow:hover { text-decoration: none; }
 :focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
 
 .page {
@@ -243,7 +252,13 @@ input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--in
 
 /* ---- Home: masthead, drop zone, the list ---- */
 
+/* The title and lead, with this month's total on the right. */
 .masthead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem 2rem;
+  flex-wrap: wrap;
   margin-bottom: 2rem;
 }
 .masthead__title {
@@ -320,8 +335,8 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 .submission__link {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.2rem 1rem;
-  align-items: center;
+  gap: 0.3rem 1.5rem;
+  align-items: baseline;
   padding: 0.85rem 0.9rem 0.85rem 1.1rem;
   color: var(--ink);
   text-decoration: none;
@@ -331,18 +346,26 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 .submission__link:hover { background: var(--wash); }
 .submission__link:hover .submission__file { text-decoration: underline; }
 .submission__link:focus-visible { outline-offset: -3px; }
+/* Left: the status, then the file; under them, what was read or why it
+   stopped, from the same left edge as the badge. */
+.submission__head { grid-column: 1; grid-row: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.6rem; min-width: 0; }
 .submission__file { font-weight: 700; overflow-wrap: anywhere; }
-.submission__summary,
-.submission__reason { grid-column: 1 / -1; font-size: 0.95rem; color: var(--ink-2); }
+.submission__description,
+.submission__reason { grid-column: 1; grid-row: 2; font-size: 0.95rem; color: var(--ink-2); }
 .submission__reason {
+  grid-column: 1 / -1;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.submission__summary { display: flex; flex-wrap: wrap; gap: 0 1.25rem; }
-.submission__description { flex: 1 1 18rem; min-width: 0; }
-.submission__amount { font-weight: 700; color: var(--ink); }
+/* Right: the amount over its date, lined up row to row. */
+.submission__amount,
+.submission__date { grid-column: 2; text-align: right; white-space: nowrap; }
+.submission__amount { grid-row: 1; font-weight: 700; }
+.submission__date { grid-row: 2; font-size: 0.95rem; color: var(--ink-2); }
+/* In a list row: the file name's size, with room above and below. */
+.badge--small { padding: 0.25rem 0.55rem; font-size: inherit; line-height: 1.2; border-width: 1.5px; }
 .submission--working { --stage: var(--working); }
 .submission--yours { --stage: var(--yours); }
 .submission--problem { --stage: var(--problem); }
@@ -737,20 +760,30 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 .history__payload { font-size: 0.8rem; color: var(--ink-2); overflow-wrap: anywhere; }
 .history__time { font-size: 0.75rem; color: var(--ink-2); }
 
-@media (max-width: 30rem) {
-  .submission__link { grid-template-columns: minmax(0, 1fr); }
-  .submission__link .badge { justify-self: start; }
-}
 
 /* ---- All expenses: filters in a sidebar, the list a page at a time ---- */
 
+.expenses-page__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem 2rem;
+  flex-wrap: wrap;
+  margin-bottom: 2rem;
+}
 .expenses-page__title {
   font-size: clamp(2rem, 6vw, 3rem);
   font-weight: 900;
   line-height: 1;
   letter-spacing: -0.035em;
-  margin: 0 0 2rem;
+  margin: 0;
 }
+/* This month's total in USD: the figure big, what it covers under it. */
+.month-total { text-align: right; }
+@media (max-width: 40rem) { .month-total { text-align: left; } }
+.month-total__title { margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--ink-2); }
+.month-total__amount { margin: 0; font-size: 1.75rem; font-weight: 900; letter-spacing: -0.02em; line-height: 1.15; }
+.month-total__note { margin: 0; font-size: 0.9rem; color: var(--ink-2); }
 .expenses-page__body {
   display: grid;
   grid-template-columns: 15rem minmax(0, 1fr);

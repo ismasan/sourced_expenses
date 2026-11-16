@@ -14,7 +14,7 @@ module UI
 
     PER_PAGE = 25
 
-    on Expenses::Submissions::Projected
+    on Expenses::Submissions::Projected, Expenses::UsdLedger::Projected
 
     def channel_name = 'expenses.>'
 
@@ -35,10 +35,11 @@ module UI
         page = [(total + PER_PAGE - 1) / PER_PAGE, 1].max
         rows, total = Expenses::Submissions.page(db, states:, page:, per_page: PER_PAGE)
       end
-      new(rows:, total:, states:, page:, counts: Expenses::Submissions.counts(db))
+      new(rows:, total:, states:, page:, counts: Expenses::Submissions.counts(db), month: Expenses::UsdLedger.month(db))
     end
 
-    def initialize(rows:, total:, states:, page:, counts:)
+    def initialize(rows:, total:, states:, page:, counts:, month:)
+      @month = month
       @rows = rows
       @total = total
       @states = states
@@ -48,7 +49,10 @@ module UI
 
     def view_template
       div(id: 'expenses-page', class: 'expenses-page') do
-        h1(class: 'expenses-page__title') { 'All expenses' }
+        header(class: 'expenses-page__header') do
+          h1(class: 'expenses-page__title') { 'All expenses' }
+          render Components::MonthTotal.new(@month)
+        end
 
         div(class: 'expenses-page__body') do
           render_filters

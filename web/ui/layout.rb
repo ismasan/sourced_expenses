@@ -22,7 +22,7 @@ module UI
           link(rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: true)
           link(rel: 'stylesheet', href: FONTS)
           style { raw safe(STYLES) }
-          link(rel: 'stylesheet', href: '/css/app.css?6')
+          link(rel: 'stylesheet', href: '/css/app.css?8')
         end
 
         body do
