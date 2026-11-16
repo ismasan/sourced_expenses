@@ -252,7 +252,7 @@ module UI
         field('VAT description') { f.text_field :tax_description, placeholder: 'BTW 21%' }
         div(class: 'review-form__row') do
           field('Date') { f.date_field :incurred_on }
-          field('Supplier country') { f.text_field :supplier_country_code, maxlength: 2, placeholder: 'NL' }
+          field('Supplier country') { f.text_field :supplier_country_code, maxlength: 2, placeholder: 'GB' }
         end
         field('Payment reference') { f.text_field :payment_reference }
         label(class: 'review-form__check') do

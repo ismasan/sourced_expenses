@@ -16,5 +16,6 @@ Sidereal.config.tap do |c|
 
   # The country of the company whose books these are: every upload is filed
   # there, and it decides the VAT treatment. One company per app, for now.
-  c.declare('expenses.filing_country', Sidereal::Types::String) { ENV.fetch('FILING_COUNTRY', 'NL') }
+  # An ISO code, GB unless FILING_COUNTRY says otherwise.
+  c.declare('expenses.filing_country', Sidereal::Types::String) { ENV.fetch('FILING_COUNTRY', 'GB') }
 end

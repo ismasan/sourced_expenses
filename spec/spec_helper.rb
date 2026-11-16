@@ -61,6 +61,9 @@ FAKE_RATES = FakeExchangeRates.new
 Sidereal.config.config!('exchange_rates') { FAKE_RATES }
 # Specs total in GBP, whatever REPORTING_CURRENCY (or .env) says.
 Sidereal.config.config!('reporting_currency') { 'GBP' }
+# And file in the Netherlands, as their (Dutch) receipts are, whatever
+# FILING_COUNTRY says.
+Sidereal.config.config!('expenses.filing_country') { 'NL' }
 Sidereal.config.build!
 
 Sequel.extension :migration

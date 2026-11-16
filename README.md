@@ -38,7 +38,7 @@ bin/sid db migrations run
 bin/dev
 ```
 
-Scanning needs `OPENAI_API_KEY`, from the environment or `.env` (never committed), and ImageMagick's `magick` (`brew install imagemagick`). `OPENAI_MODEL` picks another model than `gpt-4.1`. Specs fake the model and never call OpenAI. Exchange rates need no key; `EXCHANGE_RATES_URL` points at another Frankfurter instance, and specs fake them too. `REPORTING_CURRENCY` (an ISO code, `GBP` by default) is the currency totals are in.
+Scanning needs `OPENAI_API_KEY`, from the environment or `.env` (never committed), and ImageMagick's `magick` (`brew install imagemagick`). `OPENAI_MODEL` picks another model than `gpt-4.1`. Specs fake the model and never call OpenAI. Exchange rates need no key; `EXCHANGE_RATES_URL` points at another Frankfurter instance, and specs fake them too. `REPORTING_CURRENCY` (an ISO code, `GBP` by default) is the currency totals are in, and `FILING_COUNTRY` (`GB` by default) the country whose books these are, which decides each expense's VAT treatment.
 
 Then open <http://localhost:9292>. `PORT`, `HOST` and `COUNT` (worker processes) can be set in the environment.
 
