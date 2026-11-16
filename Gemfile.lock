@@ -1,17 +1,6 @@
 GIT
-  remote: https://github.com/ismasan/sourced.git
-  revision: 45a677e5bb359d88d4b793532b90db2c1d965f16
-  specs:
-    sourced (0.0.1)
-      async
-      plumb (>= 0.4.1)
-      sequel
-      sourced-component (~> 0.1, >= 0.1.1)
-      sourced-message (>= 0.5.3)
-      sqlite3 (>= 2.10.2)
-
-PATH
-  remote: ../../gems/sidereal
+  remote: https://github.com/ismasan/sidereal.git
+  revision: c7a20b8b2ce8c9d0be318cbd1373913585ae13fb
   specs:
     sidereal (0.1.0)
       async
@@ -25,14 +14,27 @@ PATH
       sourced-message (>= 0.4.0)
       tsort
 
-PATH
-  remote: ../../gems/sourced-ui
+GIT
+  remote: https://github.com/ismasan/sourced-ui.git
+  revision: 7ba6450fffc6951395fb5b14b50a71e6ca4e53de
   specs:
     sourced-ui (0.1.0)
       logger
       phlex
       sidereal
       sourced
+
+GIT
+  remote: https://github.com/ismasan/sourced.git
+  revision: 45a677e5bb359d88d4b793532b90db2c1d965f16
+  specs:
+    sourced (0.0.1)
+      async
+      plumb (>= 0.4.1)
+      sequel
+      sourced-component (~> 0.1, >= 0.1.1)
+      sourced-message (>= 0.5.3)
+      sqlite3 (>= 2.10.2)
 
 GEM
   remote: https://rubygems.org/

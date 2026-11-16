@@ -2,12 +2,13 @@
 
 source 'https://rubygems.org'
 
-gem 'sidereal', path: '../../gems/sidereal'
+gem 'sidereal', github: 'ismasan/sidereal'
+# gem 'sidereal', path: '../../gems/sidereal'
 gem 'sourced', github: 'ismasan/sourced'
 # gem 'sourced', path: '../../gems/sourced'
 # The Sourced dashboard, mounted at /sourced in config.ru.
-gem 'sourced-ui', path: '../../gems/sourced-ui'
-# gem 'sourced-ui', github: 'ismasan/sourced-ui'
+gem 'sourced-ui', github: 'ismasan/sourced-ui'
+# gem 'sourced-ui', path: '../../gems/sourced-ui'
 gem 'falcon'
 # Reads the uploads (system/expenses/scanner.rb). See config/components/llm.rb.
 gem 'ruby_llm'
