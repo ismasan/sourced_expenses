@@ -14,8 +14,8 @@ module UI
       browser.patch_elements UI::Components::NeedsYou.new(*UI::WelcomePage.needs_you)
     end
 
-    on Expenses::UsdLedger::Projected do |_evt|
-      browser.patch_elements UI::Components::UsdTotal.current
+    on Expenses::USDLedger::Projected do |_evt|
+      browser.patch_elements UI::Components::USDTotal.current
     end
 
     # Every expense's channel: the list follows them all.
@@ -40,7 +40,7 @@ module UI
             h1(class: 'masthead__title') { 'Expenses' }
             p(class: 'masthead__lead') { 'Drop in a receipt. It’s read for you, and you check it before it’s filed.' }
           end
-          render UI::Components::UsdTotal.current
+          render UI::Components::USDTotal.current
         end
         render UI::Components::UploadForm.new
         render UI::Components::NeedsYou.new(@rows, @total)

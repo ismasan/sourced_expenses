@@ -114,7 +114,7 @@ RSpec.describe 'A submission' do
     end
 
     it 'shows once converted, with the rate' do
-      usd = cmd(Expenses::Expense::RecordUsdAmount, currency: 'EUR', amount_cents: 2420, incurred_on: Date.new(2026, 8, 7),
+      usd = cmd(Expenses::Expense::RecordUSDAmount, currency: 'EUR', amount_cents: 2420, incurred_on: Date.new(2026, 8, 7),
                                                     usd_cents: 2810, rate: 1.1612, rate_date: Date.new(2026, 8, 7))
 
       expect(at(*scanned, save, usd)).to include('28.10 USD', 'at 1.1612 on 7 Aug 2026')

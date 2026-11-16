@@ -84,12 +84,12 @@ module Expenses
       doc.vat_treatment_confirmed = true
     end
 
-    evolve E::UsdAmountRecorded do |doc, evt|
+    evolve E::USDAmountRecorded do |doc, evt|
       doc.usd = evt.payload.to_h.except(:expense_id)
       doc.usd_failure = nil
     end
 
-    evolve E::UsdConversionFailed do |doc, evt|
+    evolve E::USDConversionFailed do |doc, evt|
       doc.usd_failure = evt.payload.to_h.except(:expense_id)
     end
   end

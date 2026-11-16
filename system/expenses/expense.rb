@@ -80,11 +80,11 @@ module Expenses
 
     DiscardDocument = Command(:discard_document)
 
-    # The filed total in US dollars, from Expenses::UsdConverter: the
+    # The filed total in US dollars, from Expenses::USDConverter: the
     # amount it converted (currency, amount_cents, incurred_on), what it
     # came to and at what rate. Only records data: refused once the expense
     # isn't filed, and ignored if the filed amount has changed since.
-    RecordUsdAmount = Command(:record_usd_amount) do
+    RecordUSDAmount = Command(:record_usd_amount) do
       attribute :currency, CurrencyCode
       attribute :amount_cents, Integer
       attribute :incurred_on, Date
@@ -94,7 +94,7 @@ module Expenses
     end
 
     # No USD amount for the filed total: why, for a person to read.
-    FailUsdConversion = Command(:fail_usd_conversion) do
+    FailUSDConversion = Command(:fail_usd_conversion) do
       attribute :currency, CurrencyCode
       attribute :amount_cents, Integer
       attribute :incurred_on, Date
@@ -143,7 +143,7 @@ module Expenses
       attribute :reason, String
     end
 
-    UsdAmountRecorded = Event(:usd_amount_recorded) do
+    USDAmountRecorded = Event(:usd_amount_recorded) do
       attribute :currency, String
       attribute :amount_cents, Integer
       attribute :incurred_on, Date
@@ -152,7 +152,7 @@ module Expenses
       attribute :rate_date, Date
     end
 
-    UsdConversionFailed = Event(:usd_conversion_failed) do
+    USDConversionFailed = Event(:usd_conversion_failed) do
       attribute :currency, String
       attribute :amount_cents, Integer
       attribute :incurred_on, Date
@@ -244,17 +244,17 @@ module Expenses
       # The USD amount, for the total as filed now: a conversion of an
       # amount since corrected is dropped (the correction's comes after it),
       # and so is one already recorded.
-      command RecordUsdAmount do |doc, cmd|
+      command RecordUSDAmount do |doc, cmd|
         usd = cmd.payload.to_h.except(:expense_id)
         if doc.converting?(**usd.slice(:currency, :amount_cents, :incurred_on)) && doc.usd != usd
-          event UsdAmountRecorded, usd
+          event USDAmountRecorded, usd
         end
       end
 
-      command FailUsdConversion do |doc, cmd|
+      command FailUSDConversion do |doc, cmd|
         failure = cmd.payload.to_h.except(:expense_id)
         if doc.converting?(**failure.slice(:currency, :amount_cents, :incurred_on)) && doc.usd_failure != failure
-          event UsdConversionFailed, failure
+          event USDConversionFailed, failure
         end
       end
     end

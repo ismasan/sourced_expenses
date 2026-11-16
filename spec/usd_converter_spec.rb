@@ -3,7 +3,7 @@
 require 'sourced/testing/rspec'
 
 module Expenses
-  RSpec.describe UsdConverter do
+  RSpec.describe USDConverter do
     include Sourced::Testing::RSpec
 
     E = Expense
@@ -43,7 +43,7 @@ module Expenses
 
     # What the converter dispatches for +event+: one message, or none.
     def dispatched(event)
-      reacted(UsdConverter, event, expense_id:).tap { expect(it.size).to be <= 1 }
+      reacted(USDConverter, event, expense_id:).tap { expect(it.size).to be <= 1 }
     end
 
     def payload(message) = message.payload.to_h.except(:expense_id)
@@ -53,7 +53,7 @@ module Expenses
       filed = history(*reviewing, save)
 
       expect(dispatched(last_filed(filed)).map { [it.class, payload(it)] }).to eq([
-        [E::RecordUsdAmount, { currency: 'EUR', amount_cents: 2420, incurred_on: date, usd_cents: 2810, rate: 1.1612, rate_date: date }]
+        [E::RecordUSDAmount, { currency: 'EUR', amount_cents: 2420, incurred_on: date, usd_cents: 2810, rate: 1.1612, rate_date: date }]
       ])
       expect(FAKE_RATES.calls).to eq([{ from: 'EUR', to: 'USD', on: date }])
     end
@@ -69,7 +69,7 @@ module Expenses
       filed = history(*reviewing, save(currency: 'XOF'))
 
       expect(dispatched(last_filed(filed)).map { [it.class, it.payload.reason] }).to eq([
-        [E::FailUsdConversion, 'No exchange rate from XOF to USD']
+        [E::FailUSDConversion, 'No exchange rate from XOF to USD']
       ])
     end
 
@@ -92,7 +92,7 @@ module Expenses
     it 'converts again a correction that changes the total' do
       FAKE_RATES.rates['EUR'] = 1.1612
       filed = history(*reviewing, save)
-      converted = history(cmd(E::RecordUsdAmount, **payload(dispatched(last_filed(filed)).first)), given: filed)
+      converted = history(cmd(E::RecordUSDAmount, **payload(dispatched(last_filed(filed)).first)), given: filed)
       corrected = history(save(net_price_cents: 3000), given: converted)
 
       expect(dispatched(last_filed(corrected)).map { payload(it).slice(:amount_cents, :usd_cents) }).to eq([{ amount_cents: 3420, usd_cents: 3971 }])
@@ -101,7 +101,7 @@ module Expenses
     it 'skips a correction that leaves the converted total alone' do
       FAKE_RATES.rates['EUR'] = 1.1612
       filed = history(*reviewing, save)
-      converted = history(cmd(E::RecordUsdAmount, **payload(dispatched(last_filed(filed)).first)), given: filed)
+      converted = history(cmd(E::RecordUSDAmount, **payload(dispatched(last_filed(filed)).first)), given: filed)
       FAKE_RATES.reset!
       corrected = history(save(description: 'Team lunch'), given: converted)
 
@@ -112,15 +112,15 @@ module Expenses
     it 'tries again a filing whose conversion failed' do
       FAKE_RATES.rates['EUR'] = 1.1612
       filed = history(*reviewing, save)
-      history(cmd(E::FailUsdConversion, currency: 'EUR', amount_cents: 2420, incurred_on: date, reason: 'Down'), given: filed)
+      history(cmd(E::FailUSDConversion, currency: 'EUR', amount_cents: 2420, incurred_on: date, reason: 'Down'), given: filed)
 
-      expect(dispatched(last_filed(filed)).map(&:class)).to eq([E::RecordUsdAmount])
+      expect(dispatched(last_filed(filed)).map(&:class)).to eq([E::RecordUSDAmount])
     end
 
     it 'skips a filing already converted' do
       FAKE_RATES.rates['EUR'] = 1.1612
       filed = history(*reviewing, save)
-      history(cmd(E::RecordUsdAmount, **payload(dispatched(last_filed(filed)).first)), given: filed)
+      history(cmd(E::RecordUSDAmount, **payload(dispatched(last_filed(filed)).first)), given: filed)
       FAKE_RATES.reset!
 
       expect(dispatched(last_filed(filed))).to be_empty
@@ -135,45 +135,45 @@ module Expenses
       end
 
       it 'records the USD amount' do
-        after = decided(Expense, { expense_id: }, *reviewing, save, cmd(E::RecordUsdAmount, **usd))
+        after = decided(Expense, { expense_id: }, *reviewing, save, cmd(E::RecordUSDAmount, **usd))
 
-        expect(after.last).to be_a(E::UsdAmountRecorded)
+        expect(after.last).to be_a(E::USDAmountRecorded)
         expect(expense(after).context.usd).to eq(usd)
       end
 
       it 'records it once' do
-        after = decided(Expense, { expense_id: }, *reviewing, save, cmd(E::RecordUsdAmount, **usd), cmd(E::RecordUsdAmount, **usd))
+        after = decided(Expense, { expense_id: }, *reviewing, save, cmd(E::RecordUSDAmount, **usd), cmd(E::RecordUSDAmount, **usd))
 
-        expect(after.grep(E::UsdAmountRecorded).size).to eq(1)
+        expect(after.grep(E::USDAmountRecorded).size).to eq(1)
       end
 
       it 'drops one for an amount since corrected, and forgets the old one on correcting' do
-        after = decided(Expense, { expense_id: }, *reviewing, save, cmd(E::RecordUsdAmount, **usd), save(net_price_cents: 3000),
-                        cmd(E::RecordUsdAmount, **usd))
+        after = decided(Expense, { expense_id: }, *reviewing, save, cmd(E::RecordUSDAmount, **usd), save(net_price_cents: 3000),
+                        cmd(E::RecordUSDAmount, **usd))
 
-        expect(after.grep(E::UsdAmountRecorded).size).to eq(1)
+        expect(after.grep(E::USDAmountRecorded).size).to eq(1)
         expect(expense(after).context.usd).to be_nil
       end
 
       it 'keeps it when a correction leaves the total alone' do
-        after = decided(Expense, { expense_id: }, *reviewing, save, cmd(E::RecordUsdAmount, **usd), save(description: 'Team lunch'))
+        after = decided(Expense, { expense_id: }, *reviewing, save, cmd(E::RecordUSDAmount, **usd), save(description: 'Team lunch'))
 
         expect(expense(after).context.usd).to eq(usd)
       end
 
       it 'records a failure, and forgets it once converted' do
         failure = usd.slice(:currency, :amount_cents, :incurred_on).merge(reason: 'The exchange rate service could not be reached')
-        failed = decided(Expense, { expense_id: }, *reviewing, save, cmd(E::FailUsdConversion, **failure))
+        failed = decided(Expense, { expense_id: }, *reviewing, save, cmd(E::FailUSDConversion, **failure))
         expect(expense(failed).context.usd_failure).to eq(failure)
 
-        converted = decided(Expense, { expense_id: }, cmd(E::RecordUsdAmount, **usd), given: failed)
+        converted = decided(Expense, { expense_id: }, cmd(E::RecordUSDAmount, **usd), given: failed)
         expect(expense(converted).context).to have_attributes(usd:, usd_failure: nil)
       end
 
       it 'takes no USD amount once voided' do
         voided = decided(Expense, { expense_id: }, *reviewing, save, cmd(E::VoidExpense, reason: 'Duplicate'))
 
-        expect(Expense.new(expense_id:).tap { it.evolve(voided) }.handles_command?(cmd(E::RecordUsdAmount, **usd))).to be(false)
+        expect(Expense.new(expense_id:).tap { it.evolve(voided) }.handles_command?(cmd(E::RecordUSDAmount, **usd))).to be(false)
       end
     end
   end

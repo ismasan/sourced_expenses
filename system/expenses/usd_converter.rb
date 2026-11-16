@@ -3,7 +3,7 @@
 module Expenses
   # When an expense is filed (the first time, or again after a correction),
   # converts its total to US dollars at the rate on its date, and reports
-  # back with Expense::RecordUsdAmount, or Expense::FailUsdConversion with
+  # back with Expense::RecordUSDAmount, or Expense::FailUSDConversion with
   # a reason a person can read. An expense in USD has nothing to convert.
   #
   # A consumer group of its own, so a slow rates service never holds up the
@@ -11,7 +11,7 @@ module Expenses
   # expense: the backfill is free. What it can expect to go wrong (no rate,
   # the service down: ExchangeRates::Error) becomes the failure; anything
   # else is a bug and raises, which stops its group.
-  class UsdConverter < Sourced::Decider
+  class USDConverter < Sourced::Decider
     partition_by expense_id: Types::UUID::V4
 
     dep :exchange_rates
@@ -23,10 +23,10 @@ module Expenses
     context { { usd: nil } }
 
     evolve Expense::ExpenseFiled do |state, filed|
-      state[:usd] = nil unless state[:usd] == UsdConverter.amount(filed)
+      state[:usd] = nil unless state[:usd] == USDConverter.amount(filed)
     end
 
-    evolve Expense::UsdAmountRecorded do |state, recorded|
+    evolve Expense::USDAmountRecorded do |state, recorded|
       state[:usd] = recorded.payload.to_h.slice(:currency, :amount_cents, :incurred_on)
     end
 
@@ -41,7 +41,7 @@ module Expenses
         incurred_on: filed.payload.incurred_on }
     end
 
-    reaction Expense::ExpenseFiled => Expense::RecordUsdAmount | Expense::FailUsdConversion | nil do |state, filed|
+    reaction Expense::ExpenseFiled => Expense::RecordUSDAmount | Expense::FailUSDConversion | nil do |state, filed|
       next if filed.payload.currency == USD
       # Corrected, voided or converted since (a new consumer group catching
       # up): no call to make. The machine checks again, since the expense
@@ -55,10 +55,10 @@ module Expenses
       expense_id = filed.payload.expense_id
       begin
         rate = exchange_rates.rate(from: amount[:currency], to: USD, on: amount[:incurred_on])
-        dispatch(Expense::RecordUsdAmount, expense_id:, **amount,
+        dispatch(Expense::RecordUSDAmount, expense_id:, **amount,
                                            usd_cents: rate.convert(amount[:amount_cents]), rate: rate.rate, rate_date: rate.date)
       rescue ExchangeRates::Error => e
-        dispatch(Expense::FailUsdConversion, expense_id:, **amount, reason: e.message)
+        dispatch(Expense::FailUSDConversion, expense_id:, **amount, reason: e.message)
       end
     end
   end

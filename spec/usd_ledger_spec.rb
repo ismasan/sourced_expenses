@@ -3,7 +3,7 @@
 require 'sourced/testing/rspec'
 
 module Expenses
-  RSpec.describe UsdLedger do
+  RSpec.describe USDLedger do
     include Sourced::Testing::RSpec
 
     let(:db) { Sidereal.config['db'] }
@@ -32,7 +32,7 @@ module Expenses
     end
 
     def usd(id = expense_id, usd_cents: 2810, amount_cents: 2420, **rest)
-      cmd(Expense::RecordUsdAmount, id, currency: 'EUR', amount_cents:, incurred_on: date, usd_cents:, rate: 1.1612,
+      cmd(Expense::RecordUSDAmount, id, currency: 'EUR', amount_cents:, incurred_on: date, usd_cents:, rate: 1.1612,
                                         rate_date: date, **rest)
     end
 
@@ -49,7 +49,7 @@ module Expenses
     # time, as separate batches would.
     def project(*commands, id: expense_id)
       decided(Expense, { expense_id: id }, *commands).each do |message|
-        with_reactor(UsdLedger, expense_id: id).given(message).then! { nil }
+        with_reactor(USDLedger, expense_id: id).given(message).then! { nil }
       end
     end
 
@@ -105,8 +105,8 @@ module Expenses
         project(*reviewing(other_month), save(other_month, incurred_on: Date.new(2025, 11, 1)), usd(other_month, incurred_on: Date.new(2025, 11, 1)),
                 id: other_month)
 
-        expect(UsdLedger.month(db, Date.new(2025, 10, 31))).to eq(
-          UsdLedger::Total.new(from: Date.new(2025, 10, 1), to: Date.new(2025, 10, 31), usd_cents: 3810, expenses: 3, unconverted: 1)
+        expect(USDLedger.month(db, Date.new(2025, 10, 31))).to eq(
+          USDLedger::Total.new(from: Date.new(2025, 10, 1), to: Date.new(2025, 10, 31), usd_cents: 3810, expenses: 3, unconverted: 1)
         )
       end
 
@@ -116,14 +116,14 @@ module Expenses
         project(*reviewing(b), save(b, currency: 'USD', net_price_cents: 1000, tax_amount_cents: 0), id: b)
         project(*reviewing(outside), save(outside, incurred_on: Date.new(2025, 11, 1)), id: outside)
 
-        expect(UsdLedger.total(db, from: Date.new(2025, 10, 20), to: Date.new(2025, 10, 31))).to have_attributes(usd_cents: 3810, expenses: 2)
-        expect(UsdLedger.total(db, from: Date.new(2025, 10, 20))).to have_attributes(expenses: 3)
-        expect(UsdLedger.total(db, to: Date.new(2025, 10, 31))).to have_attributes(expenses: 2)
+        expect(USDLedger.total(db, from: Date.new(2025, 10, 20), to: Date.new(2025, 10, 31))).to have_attributes(usd_cents: 3810, expenses: 2)
+        expect(USDLedger.total(db, from: Date.new(2025, 10, 20))).to have_attributes(expenses: 3)
+        expect(USDLedger.total(db, to: Date.new(2025, 10, 31))).to have_attributes(expenses: 2)
       end
 
       it 'is empty for a month with nothing filed' do
-        expect(UsdLedger.month(db, Date.new(2020, 2, 10))).to eq(
-          UsdLedger::Total.new(from: Date.new(2020, 2, 1), to: Date.new(2020, 2, 29), usd_cents: 0, expenses: 0, unconverted: 0)
+        expect(USDLedger.month(db, Date.new(2020, 2, 10))).to eq(
+          USDLedger::Total.new(from: Date.new(2020, 2, 1), to: Date.new(2020, 2, 29), usd_cents: 0, expenses: 0, unconverted: 0)
         )
       end
     end

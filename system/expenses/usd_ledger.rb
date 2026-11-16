@@ -3,14 +3,14 @@
 module Expenses
   # The read model for totals in US dollars: one row per filed expense, in
   # the `usd_ledger` table, with its total in USD once
-  # Expenses::UsdConverter has recorded it. An expense in USD counts as it
+  # Expenses::USDConverter has recorded it. An expense in USD counts as it
   # is. A correction to the amount, currency or date clears the USD amount
   # until the new one is recorded; a voided expense leaves the ledger.
   #
-  #   UsdLedger.month(db)                      # this month
-  #   UsdLedger.month(db, Date.new(2025, 10))  # October 2025
-  #   UsdLedger.total(db, from:, to:)          # any range
-  class UsdLedger < Sourced::Projector::StateStored
+  #   USDLedger.month(db)                      # this month
+  #   USDLedger.month(db, Date.new(2025, 10))  # October 2025
+  #   USDLedger.total(db, from:, to:)          # any range
+  class USDLedger < Sourced::Projector::StateStored
     partition_by expense_id: Types::UUID::V4
 
     dep :db
@@ -66,7 +66,7 @@ module Expenses
 
     # For the total as filed now: one for an amount since corrected is
     # dropped, as the machine drops it.
-    evolve Expense::UsdAmountRecorded do |row, evt|
+    evolve Expense::USDAmountRecorded do |row, evt|
       p = evt.payload
       next unless row.slice(:currency, :amount_cents, :incurred_on) == { currency: p.currency, amount_cents: p.amount_cents, incurred_on: p.incurred_on }
 

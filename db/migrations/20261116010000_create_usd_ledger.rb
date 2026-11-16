@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Expenses::UsdLedger: one row per filed expense, with its total in US
+# Expenses::USDLedger: one row per filed expense, with its total in US
 # dollars once converted, for totals by month. Voided expenses leave it.
 Sequel.migration do
   change do

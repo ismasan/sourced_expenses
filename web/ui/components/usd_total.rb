@@ -2,14 +2,14 @@
 
 module UI
   module Components
-    # Filed expenses in US dollars (Expenses::UsdLedger::Total): the total,
+    # Filed expenses in US dollars (Expenses::USDLedger::Total): the total,
     # and what it covers. This month's, or a range's. By its id, a page can
     # re-render just this when the ledger commits.
-    class UsdTotal < Phlex::HTML
+    class USDTotal < Phlex::HTML
       # This month's, from the ledger.
-      def self.current = new(Expenses::UsdLedger.month(Sidereal.config['db']))
+      def self.current = new(Expenses::USDLedger.month(Sidereal.config['db']))
 
-      # @param total [Expenses::UsdLedger::Total]
+      # @param total [Expenses::USDLedger::Total]
       def initialize(total)
         @total = total
       end

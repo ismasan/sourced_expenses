@@ -294,7 +294,7 @@ module UI
 
     # ---- Filed ----
 
-    # The total in US dollars, once Expenses::UsdConverter has it: nothing
+    # The total in US dollars, once Expenses::USDConverter has it: nothing
     # to show for an expense in dollars already.
     def render_usd(filed)
       return if filed[:currency] == 'USD'

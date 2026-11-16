@@ -20,7 +20,10 @@ Dotenv.load
 #            UI::WelcomePage and web/ui/components/hello.rb defines
 #            UI::Components::Hello.
 LOADER = Zeitwerk::Loader.new
-LOADER.inflector.inflect('ui' => 'UI', 'llm' => 'LLM')
+LOADER.inflector.inflect(
+  'ui' => 'UI', 'llm' => 'LLM',
+  'usd_converter' => 'USDConverter', 'usd_ledger' => 'USDLedger', 'usd_total' => 'USDTotal'
+)
 LOADER.push_dir(File.expand_path('system', __dir__))
 LOADER.push_dir(File.expand_path('web', __dir__))
 # Static files, served by config.ru. Not code.

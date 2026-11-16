@@ -25,7 +25,7 @@ module UI
       page: Types::Integer[1..].default(1)
     )
 
-    on Expenses::Submissions::Projected, Expenses::UsdLedger::Projected
+    on Expenses::Submissions::Projected, Expenses::USDLedger::Projected
 
     def channel_name = 'expenses.>'
 
@@ -54,7 +54,7 @@ module UI
 
     # The filed expenses in the dates chosen, or this month's.
     def self.usd_total(db, from:, to:, **)
-      from || to ? Expenses::UsdLedger.total(db, from:, to:) : Expenses::UsdLedger.month(db)
+      from || to ? Expenses::USDLedger.total(db, from:, to:) : Expenses::USDLedger.month(db)
     end
 
     def initialize(rows:, total:, states:, from:, to:, page:, counts:, months:, usd_total:)
@@ -73,7 +73,7 @@ module UI
       div(id: 'expenses-page', class: 'expenses-page') do
         header(class: 'expenses-page__header') do
           h1(class: 'expenses-page__title') { 'All expenses' }
-          render Components::UsdTotal.new(@usd_total)
+          render Components::USDTotal.new(@usd_total)
         end
 
         # One plain GET form for every filter, the states in the sidebar and
