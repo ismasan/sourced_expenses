@@ -6,10 +6,6 @@ module UI
   class Layout < Sidereal::Components::BasicLayout
     FONTS = 'https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..900;1,400..900&display=swap'
 
-    # The app's params, query string included (see App#params), for the
-    # page's params signal: a live re-render keeps the filters.
-    private def params = context.params
-
     def view_template
       doctype
 

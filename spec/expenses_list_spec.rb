@@ -108,11 +108,12 @@ RSpec.describe 'The expense lists' do
     expect(last_response.body).to include(today.strftime('%B %Y'), '1,228.10 USD', '3 expenses filed, 1 not in US dollars yet')
   end
 
-  it 'ignores states it does not know' do
-    seed
+  it 'refuses a state it does not know, or a page below 1' do
     get '/expenses?state[]=bogus'
+    expect(last_response.status).to eq(400)
 
-    expect(filenames(last_response.body).size).to eq(7)
+    get '/expenses?page=0'
+    expect(last_response.status).to eq(400)
   end
 
   it 'pages, keeping the filter in the links' do

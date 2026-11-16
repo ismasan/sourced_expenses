@@ -6,13 +6,18 @@ module UI
   # read model commits.
   #
   # The filters and the page number are in the query string
-  # (?state[]=reviewing&page=2). App#params merges the query into the page's
-  # params, and the layout puts those in the params signal, so a live
-  # re-render keeps them too.
+  # (?state[]=reviewing&page=2), typed by the query schema: an unknown
+  # state or a page below 1 is a 400. The layout puts the params in the
+  # params signal, so a live re-render keeps them too.
   class ExpensesPage < Sidereal::Page
     path '/expenses'
 
     PER_PAGE = 25
+
+    query_schema(
+      state: StateFilter::Param,
+      page: Types::Integer[1..].default(1)
+    )
 
     on Expenses::Submissions::Projected, Expenses::UsdLedger::Projected
 
@@ -27,8 +32,8 @@ module UI
 
     def self.load(params, _ctx)
       db = Sidereal.config['db']
-      states = StateFilter.parse(params[:state])
-      page = [params[:page].to_i, 1].max
+      states = params[:state]
+      page = params[:page]
       rows, total = Expenses::Submissions.page(db, states:, page:, per_page: PER_PAGE)
       # Past the end (fewer rows since the link was made): the last page.
       if rows.empty? && page > 1

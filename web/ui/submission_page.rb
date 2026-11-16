@@ -20,6 +20,8 @@ module UI
   # reloads as the expense's events arrive on its channel.
   class SubmissionPage < Sidereal::Page
     path '/submissions/:expense_id'
+    # Anything else in the path is a 400.
+    query_schema expense_id: Types::UUID::V4
 
     E = Expenses::Expense
 
@@ -29,23 +31,19 @@ module UI
     # Forms must be for commands the expense accepts as it is now.
     with_machine { @expense }
 
-    UUID = /\A\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\z/
-
     TABS = { submission: 'Submission', diagram: 'Diagram' }.freeze
 
     # This page's key in TABS.
     def tab = :submission
 
     def self.load(params, _ctx)
-      expense_id = params[:expense_id].to_s
-      return new(expense_id, nil) unless UUID.match?(expense_id)
-
+      expense_id = params[:expense_id]
       new(expense_id, SubmissionHistory.load(expense_id))
     end
 
     # The page at +step+ of the expense's history, or nil when there's no such step.
     def self.at(expense_id, step)
-      return unless UUID.match?(expense_id.to_s)
+      return unless Types::UUID::V4 === expense_id
 
       history = SubmissionHistory.load(expense_id, step:)
       new(expense_id, history) if step.between?(1, history.messages.size)
@@ -54,26 +52,20 @@ module UI
     def initialize(expense_id, history)
       @expense_id = expense_id
       @history = history
-      @expense = history&.expense
-      @doc = @expense&.context
+      @expense = history.expense
+      @doc = @expense.context
     end
 
-    def live? = @history.nil? || @history.live?
+    def live? = @history.live?
 
     # A past step listens to nothing, and has no page_key for an update to reload.
     def channel_name = live? ? "expenses.#{@expense_id}" : nil
     def page_signals = live? ? super : {}
 
     def view_template
-      status = @expense && Status.for(paths)
-      div(id: 'submission-page', class: ['submission-page', ("submission-page--#{status.stage}" if status)]) do
+      status = Status.for(paths)
+      div(id: 'submission-page', class: ['submission-page', "submission-page--#{status.stage}"]) do
         p(class: 'submission-page__back') { a(href: '/') { 'All uploads' } }
-
-        if @expense.nil?
-          h1(class: 'submission-page__title') { 'No such submission' }
-          p { 'It may have been a mistyped link. Every upload is listed on the home page.' }
-          next
-        end
 
         render_time_travel unless live?
 

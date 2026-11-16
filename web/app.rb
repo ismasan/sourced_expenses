@@ -40,13 +40,6 @@ class App < Sidereal::App
   page UI::SubmissionPage
   page UI::SubmissionDiagramPage
 
-  # A page's params are its route's and its query string's (the expense
-  # list's filters and page number), the route's winning. The layout puts
-  # them in the page's params signal, which a live re-render loads from.
-  def params
-    @params_with_query ||= request.GET.transform_keys(&:to_sym).merge(super)
-  end
-
   # Time travel: a submission's page as it was after +step+ messages of its
   # history. Static, so nothing live replaces it. The history feed links here.
   get '/submissions/:expense_id/at/:step' do |expense_id:, step:|

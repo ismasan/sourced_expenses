@@ -19,10 +19,7 @@ module UI
       Option.new('voided', 'Voided', :closed)
     ].freeze
 
-    # The known states among +keys+, from a query string or a signal.
-    # @return [Array<String>]
-    def self.parse(keys)
-      Array(keys).map(&:to_s) & OPTIONS.map(&:key)
-    end
+    # A state[] query param: known states only, none if absent.
+    Param = Types::Array[Types::String.options(OPTIONS.map(&:key))].default([].freeze)
   end
 end
