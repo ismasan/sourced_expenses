@@ -6,6 +6,6 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-bundle exec sequel -m db/migrations sqlite://storage/db.db
+bin/sid db migrations run
 
 exec "$@"

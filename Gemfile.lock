@@ -1,6 +1,6 @@
 GIT
   remote: https://github.com/ismasan/sidereal.git
-  revision: c7a20b8b2ce8c9d0be318cbd1373913585ae13fb
+  revision: 69cdaac4d680f5e2a0b9812b7a3fa728232e7655
   specs:
     sidereal (0.1.0)
       async
@@ -10,6 +10,7 @@ GIT
       plumb (~> 0.4, >= 0.4.1)
       rack (~> 3)
       rack-session
+      samovar
       sourced-component (~> 0.1)
       sourced-message (>= 0.4.0)
       tsort

@@ -26,7 +26,7 @@ Message attributes use the app's `Types` (`system/types.rb`, Sourced's types): `
 
 ```sh
 bundle install
-bundle exec sequel -m db/migrations sqlite://storage/db.db
+bin/sid db migrations run
 bin/dev
 ```
 
@@ -34,7 +34,7 @@ Scanning needs `OPENAI_API_KEY`, from the environment or `.env` (never committed
 
 Then open <http://localhost:9292>. `PORT`, `HOST` and `COUNT` (worker processes) can be set in the environment.
 
-The migrations in `db/migrations/` are committed and `storage/` isn't, so running them is how a checkout gets its database — copy one over instead if you'd rather keep the data.
+The migrations in `db/migrations/` are committed and `storage/` isn't, so `bin/sid db migrations run` is how a checkout gets its database — copy one over instead if you'd rather keep the data.
 
 `bin/dev` runs `bundle exec falcon host` and reloads the app whenever a Ruby file changes. Reloading needs a file watcher: [watchexec](https://github.com/watchexec/watchexec) (`brew install watchexec`) or fswatch. Without one, the server still runs. In production, run `bundle exec falcon host`.
 
@@ -57,16 +57,32 @@ bundle exec rspec
 
 ## Database
 
-The `db` component in `config/components/db.rb` is a SQLite database under `storage/` (`storage/db.db`), which classes reach with `dep :db`. Migrations are [Sequel](https://sequel.jeremyevans.net/rdoc/files/doc/migration_rdoc.html)'s, run with its command line:
+The `db` component in `config/components/db.rb` is a SQLite database under `storage/` (`storage/db.db`), which classes reach with `dep :db`. Migrations are [Sequel](https://sequel.jeremyevans.net/rdoc/files/doc/migration_rdoc.html)'s:
 
 ```sh
-bundle exec sequel -m db/migrations sqlite://storage/db.db                # run the ones not run yet
-bundle exec sequel -m db/migrations -M 20261115190000 sqlite://storage/db.db  # back to that version
+bin/sid db migrations add create_things   # writes db/migrations/<timestamp>_create_things.rb
+bin/sid db migrations run                 # the ones not run yet
+bin/sid db migrations rollback            # just the one that ran last
 ```
 
-A new migration is a file in `db/migrations/` named `<timestamp>_<name>.rb`, with a `Sequel.migration` block.
+Sourced keeps the app's commands and events in the same database, in tables its own migration creates (`db/migrations/20261011220710_create_sourced_tables.rb`, written by `bin/sid sourced migration`).
 
-Sourced keeps the app's commands and events in the same database, in tables its own migration creates (`db/migrations/20261011220710_create_sourced_tables.rb`).
+## Command line
+
+`bin/sid` is Sidereal's command line with this app loaded. `bin/sid --help` lists every command; the ones worth knowing:
+
+```sh
+bin/sid console                                   # IRB with the app loaded
+bin/sid commands list                             # the commands the app handles
+bin/sid commands info expenses.save_expense       # a command's payload schema
+bin/sid commands dispatch <Command> --attr value  # send one
+bin/sid sourced topology                          # how commands, events, read models and automations connect
+bin/sid sourced messages list --tail              # the store's messages, as they arrive
+bin/sid sourced messages correlation <id>         # the causal tree a message belongs to
+bin/sid sourced groups list                       # consumer groups (expenses.scanner…) and their status
+bin/sid sourced groups start <group>              # restart a failed one
+bin/sid system graph                              # the app's components and their dependencies
+```
 
 ## Layout
 
@@ -79,10 +95,11 @@ Sourced keeps the app's commands and events in the same database, in tables its 
 | `web/ui/` | Pages and the layout, in the `UI` namespace |
 | `web/ui/components/` | Components used by pages, in `UI::Components` |
 | `web/public/` | Static files |
-| `db/migrations/` | Database migrations, run with `bundle exec sequel -m db/migrations sqlite://storage/db.db` |
+| `db/migrations/` | Database migrations, run with `bin/sid db migrations run`. Add one with `bin/sid db migrations add <name>` |
 | `storage/` | Runtime data, including the SQLite database. Not committed. |
 | `falcon.rb` | Falcon server settings |
 | `bin/dev` | Development server that reloads on code changes |
-| `skills/` | Skills that teach AI coding agents to work with this app. `.claude/skills` and `.agents/skills` link here, where agents look for them |
+| `bin/sid` | Sidereal's command line with this app loaded. `bin/sid --help` lists its commands |
+| `.agents/skills/` | Skills that teach AI coding agents to work with this app, such as using `bin/sid`. `.claude/skills` links here. `bin/sid skills update` refreshes the ones Sidereal and its integrations provide |
 
 Classes in `system/` and `web/` are loaded by [Zeitwerk](https://github.com/fxn/zeitwerk): name a file after the class it defines and use the class anywhere, without `require`. Directories under `web/` are namespaces, so `web/ui/welcome_page.rb` defines `UI::WelcomePage`. Classes in `system/` are top-level.
