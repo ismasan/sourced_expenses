@@ -34,32 +34,28 @@ module Expenses
     end
     private_class_method :strict, :nullable_types
 
-    # A field the model fills in, with what it's told about it.
-    def self.field(type, description) = type.metadata(description:)
-    private_class_method :field
-
     # EVERY key is required (Plumb's default) on purpose. Optional properties under
     # additionalProperties:false make the API compile a grammar covering every subset of them,
     # which times out ("Grammar compilation timed out") once there are about ten of them.
     # Fields that may be absent say so through .nullable (a "null" in their type) instead.
     EXTRACTION_SCHEMA = json_schema(Types::Hash[
-      document_type: field(Types::String.options(%w[invoice credit_note]), "Type of document: 'invoice' for regular invoices/receipts, 'credit_note' for refunds/credit memos"),
-      description: field(Types::String, "Provider/vendor name followed by what was purchased/credited, e.g. 'Anthropic - API credits', 'Primera - Postage', 'Café Central - Lunch'"),
-      total_amount: field(Types::Numeric, "The total gross amount including tax. NEGATIVE for credit notes/refunds."),
-      net_amount: field(Types::Numeric.nullable, "The net amount before tax. NEGATIVE for credit notes/refunds. Null if not shown."),
-      tax_amount: field(Types::Numeric.nullable, "The tax/VAT amount. NEGATIVE for credit notes/refunds. Null if not shown."),
-      tax_description: field(Types::String.nullable, "Description of the tax type (e.g., 'BTW 21%', 'VAT 19%', 'MwSt 7%'). Null if not shown"),
-      currency: field(Types::String, "Three-letter ISO currency code (EUR, USD, GBP, PLN, CZK, etc.)"),
-      date_as_printed: field(Types::String.nullable, "The date exactly as it is printed on the document, verbatim and untranslated (e.g. '11/08/2026', '11 Aug 2026', 'Datum: 3-11-26'). Null if no date is printed."),
-      date: field(Types::String, "Date of the transaction in ISO 8601 format (YYYY-MM-DD), derived from date_as_printed"),
-      datetime: field(Types::String.nullable, "Full datetime if available in ISO 8601 format, otherwise null"),
-      vendor_name: field(Types::String.nullable, "Name of the vendor/store/company"),
-      confidence: field(Types::String.options(%w[high medium low]), "Your confidence level in the extraction"),
-      notes: field(Types::String.nullable, "Any additional notes or issues encountered during extraction"),
-      document_language: field(Types::String, "ISO 639-1 language code of the document (e.g., 'en', 'nl', 'de', 'fr')"),
-      supplier_country_code: field(Types::String.nullable, "ISO 3166-1 alpha-2 country code of the supplier/vendor (e.g., 'NL', 'US', 'DE'). Infer from VAT number prefix, address, or other indicators. Null if uncertain."),
-      reverse_charge: field(Types::Boolean, "true if the invoice indicates VAT reverse charge (0% VAT with explicit mention of 'reverse charge', 'VAT reverse charge', 'BTW verlegd', or similar). false otherwise."),
-      payment_reference: field(Types::String.nullable, "Transaction or payment reference code from the receipt/invoice. Look for: order numbers (e.g. '204-2986271-1234567'), transaction IDs, reference codes, receipt numbers, booking references. For card payments look for the last few characters of the card transaction reference. Null if not found.")
+      document_type: Types::String.options(%w[invoice credit_note]).desc("Type of document: 'invoice' for regular invoices/receipts, 'credit_note' for refunds/credit memos"),
+      description: Types::String.desc("Provider/vendor name followed by what was purchased/credited, e.g. 'Anthropic - API credits', 'Primera - Postage', 'Café Central - Lunch'"),
+      total_amount: Types::Numeric.desc("The total gross amount including tax. NEGATIVE for credit notes/refunds."),
+      net_amount: Types::Numeric.nullable.desc("The net amount before tax. NEGATIVE for credit notes/refunds. Null if not shown."),
+      tax_amount: Types::Numeric.nullable.desc("The tax/VAT amount. NEGATIVE for credit notes/refunds. Null if not shown."),
+      tax_description: Types::String.nullable.desc("Description of the tax type (e.g., 'BTW 21%', 'VAT 19%', 'MwSt 7%'). Null if not shown"),
+      currency: Types::String.desc("Three-letter ISO currency code (EUR, USD, GBP, PLN, CZK, etc.)"),
+      date_as_printed: Types::String.nullable.desc("The date exactly as it is printed on the document, verbatim and untranslated (e.g. '11/08/2026', '11 Aug 2026', 'Datum: 3-11-26'). Null if no date is printed."),
+      date: Types::String.desc("Date of the transaction in ISO 8601 format (YYYY-MM-DD), derived from date_as_printed"),
+      datetime: Types::String.nullable.desc("Full datetime if available in ISO 8601 format, otherwise null"),
+      vendor_name: Types::String.nullable.desc("Name of the vendor/store/company"),
+      confidence: Types::String.options(%w[high medium low]).desc("Your confidence level in the extraction"),
+      notes: Types::String.nullable.desc("Any additional notes or issues encountered during extraction"),
+      document_language: Types::String.desc("ISO 639-1 language code of the document (e.g., 'en', 'nl', 'de', 'fr')"),
+      supplier_country_code: Types::String.nullable.desc("ISO 3166-1 alpha-2 country code of the supplier/vendor (e.g., 'NL', 'US', 'DE'). Infer from VAT number prefix, address, or other indicators. Null if uncertain."),
+      reverse_charge: Types::Boolean.desc("true if the invoice indicates VAT reverse charge (0% VAT with explicit mention of 'reverse charge', 'VAT reverse charge', 'BTW verlegd', or similar). false otherwise."),
+      payment_reference: Types::String.nullable.desc("Transaction or payment reference code from the receipt/invoice. Look for: order numbers (e.g. '204-2986271-1234567'), transaction IDs, reference codes, receipt numbers, booking references. For card payments look for the last few characters of the card transaction reference. Null if not found.")
     ]).freeze
 
     SYSTEM_PROMPT = <<~PROMPT
@@ -186,8 +182,8 @@ module Expenses
     PROMPT
 
     DOCUMENT_VERIFICATION_SCHEMA = json_schema(Types::Hash[
-      is_invoice_or_receipt: field(Types::Boolean, "true if this is a receipt, invoice, bill, or expense document; false otherwise"),
-      explanation: field(Types::String, "Brief explanation of what the document actually is and why it is or isn't an expense document")
+      is_invoice_or_receipt: Types::Boolean.desc("true if this is a receipt, invoice, bill, or expense document; false otherwise"),
+      explanation: Types::String.desc("Brief explanation of what the document actually is and why it is or isn't an expense document")
     ]).freeze
 
     DOCUMENT_VERIFICATION_PROMPT = <<~PROMPT
@@ -213,14 +209,14 @@ module Expenses
     PROMPT
 
     DATE_RECHECK_SCHEMA = json_schema(Types::Hash[
-      date_as_printed: field(Types::String, "The date exactly as printed on the document, character for character"),
-      candidates: field(Types::Array[Types::Hash[
-        date: field(Types::String, "The candidate date in ISO 8601 format (YYYY-MM-DD)"),
-        reading: field(Types::String, "How this candidate arises, e.g. 'DD/MM/YYYY as printed' or 'the 3 is a smudged 8'"),
-        in_the_future: field(Types::Boolean, "true if this candidate falls after today")
-      ]], "Every reading the printed date could plausibly have, best first"),
-      date: field(Types::String, "The winning candidate in ISO 8601 format (YYYY-MM-DD)"),
-      reasoning: field(Types::String, "One sentence on why the winning candidate beats the others")
+      date_as_printed: Types::String.desc("The date exactly as printed on the document, character for character"),
+      candidates: Types::Array[Types::Hash[
+        date: Types::String.desc("The candidate date in ISO 8601 format (YYYY-MM-DD)"),
+        reading: Types::String.desc("How this candidate arises, e.g. 'DD/MM/YYYY as printed' or 'the 3 is a smudged 8'"),
+        in_the_future: Types::Boolean.desc("true if this candidate falls after today")
+      ]].desc("Every reading the printed date could plausibly have, best first"),
+      date: Types::String.desc("The winning candidate in ISO 8601 format (YYYY-MM-DD)"),
+      reasoning: Types::String.desc("One sentence on why the winning candidate beats the others")
     ]).freeze
 
     DATE_RECHECK_PROMPT = <<~PROMPT
@@ -245,8 +241,8 @@ module Expenses
     PROMPT
 
     CLEANUP_SCHEMA = json_schema(Types::Hash[
-      description: field(Types::String, "The cleaned description text"),
-      tax_description: field(Types::String.nullable, "The cleaned tax description text, or null if original was null")
+      description: Types::String.desc("The cleaned description text"),
+      tax_description: Types::String.nullable.desc("The cleaned tax description text, or null if original was null")
     ]).freeze
 
     CLEANUP_PROMPT = <<~PROMPT

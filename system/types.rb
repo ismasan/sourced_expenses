@@ -3,6 +3,12 @@
 # The app's types: Sourced's (and through them Plumb's), so message
 # attributes read String, Types::UUID::V4, Types::AutoUUID and the
 # rest. App-wide types can be added here too.
+# Types::String.desc("…"): a description, for the JSON Schemas made from
+# Plumb types (Expenses::Prompts).
+Plumb.policy :desc, helper: true do |type, description|
+  type.metadata(description:)
+end
+
 module Types
   include Sourced::Types
 
