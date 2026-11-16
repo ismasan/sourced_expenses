@@ -36,7 +36,11 @@ module UI
 
       def view_template
         section(class: 'upload', aria: { label: 'Upload' }, data: DROP_EVENTS.merge('class:upload--dragging' => '$_drags > 0')) do
-          render Sidereal::Components::Command.new(Commands::UploadFile, enctype: 'multipart/form-data', class: 'upload__form') do |f|
+          # Sidereal renders its indicator as data-indicator-fetching, which
+          # Datastar 1.0 doesn't read (it wants data-indicator:fetching): set it
+          # here too, until Sidereal does.
+          render Sidereal::Components::Command.new(Commands::UploadFile, enctype: 'multipart/form-data', class: 'upload__form',
+                                                                         data: { 'indicator:fetching' => true }) do |f|
             p(class: 'upload__prompt') do
               span(data: { show: '!$fetching' }) do
                 span(class: 'upload__drop') { 'Drop a receipt or invoice anywhere on this page' }
@@ -55,6 +59,11 @@ module UI
               # drops an attribute for false or null.
               button(type: :submit, class: 'button button--primary', data: { 'attr:disabled' => '!!$fetching' }) { 'Upload' }
             end
+            # While the upload is out: $fetching is the form's data-indicator
+            # (Sidereal's command forms set it). No percentage, as fetch
+            # reports none: the app's working stripes, until it's in.
+            div(class: 'upload__progress', role: 'progressbar', aria: { label: 'Uploading' },
+                data: { show: '!!$fetching' }, style: 'display: none')
           end
 
           # Covers the page while a file is dragged over it.
