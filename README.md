@@ -2,7 +2,11 @@
 
 A [Sidereal](https://github.com/ismasan/sidereal) + [Sourced](https://github.com/ismasan/sourced) app that tracks expenses from scanned receipts and invoices, after [this write-up](https://gist.github.com/julik/405662cc3106fe73ae2e46073f483b62). Uploads are scanned with OpenAI and listed on the home page as they go; there's no review form yet.
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/miyThROHjbw?si=EeE-AIaAqE48v5bu" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+
+https://github.com/user-attachments/assets/f7cdf4bd-398e-4f86-91e8-ebcdb6a1345f
+
+
 
 ## Expenses
 
