@@ -1,40 +1,66 @@
 # frozen_string_literal: true
 
 module Expenses
-  # The scan's prompts and JSON schemas, verbatim from the write-up
-  # (https://gist.github.com/julik/405662cc3106fe73ae2e46073f483b62).
+  # The scan's prompts and JSON schemas, from the write-up
+  # (https://gist.github.com/julik/405662cc3106fe73ae2e46073f483b62): the
+  # prompts verbatim, the schemas as Plumb types that generate the same JSON.
   # Placeholders are %{name}, filled in by Expenses::ScanSteps.
   module Prompts
-    EXTRACTION_SCHEMA = {
-      type: "object",
-      properties: {
-        document_type: {type: "string", enum: ["invoice", "credit_note"], description: "Type of document: 'invoice' for regular invoices/receipts, 'credit_note' for refunds/credit memos"},
-        description: {type: "string", description: "Provider/vendor name followed by what was purchased/credited, e.g. 'Anthropic - API credits', 'Primera - Postage', 'Café Central - Lunch'"},
-        total_amount: {type: "number", description: "The total gross amount including tax. NEGATIVE for credit notes/refunds."},
-        net_amount: {type: ["number", "null"], description: "The net amount before tax. NEGATIVE for credit notes/refunds. Null if not shown."},
-        tax_amount: {type: ["number", "null"], description: "The tax/VAT amount. NEGATIVE for credit notes/refunds. Null if not shown."},
-        tax_description: {type: ["string", "null"], description: "Description of the tax type (e.g., 'BTW 21%', 'VAT 19%', 'MwSt 7%'). Null if not shown"},
-        currency: {type: "string", description: "Three-letter ISO currency code (EUR, USD, GBP, PLN, CZK, etc.)"},
-        date_as_printed: {type: ["string", "null"], description: "The date exactly as it is printed on the document, verbatim and untranslated (e.g. '11/08/2026', '11 Aug 2026', 'Datum: 3-11-26'). Null if no date is printed."},
-        date: {type: "string", description: "Date of the transaction in ISO 8601 format (YYYY-MM-DD), derived from date_as_printed"},
-        datetime: {type: ["string", "null"], description: "Full datetime if available in ISO 8601 format, otherwise null"},
-        vendor_name: {type: ["string", "null"], description: "Name of the vendor/store/company"},
-        confidence: {type: "string", enum: ["high", "medium", "low"], description: "Your confidence level in the extraction"},
-        notes: {type: ["string", "null"], description: "Any additional notes or issues encountered during extraction"},
-        document_language: {type: "string", description: "ISO 639-1 language code of the document (e.g., 'en', 'nl', 'de', 'fr')"},
-        supplier_country_code: {type: ["string", "null"], description: "ISO 3166-1 alpha-2 country code of the supplier/vendor (e.g., 'NL', 'US', 'DE'). Infer from VAT number prefix, address, or other indicators. Null if uncertain."},
-        reverse_charge: {type: "boolean", description: "true if the invoice indicates VAT reverse charge (0% VAT with explicit mention of 'reverse charge', 'VAT reverse charge', 'BTW verlegd', or similar). false otherwise."},
-        payment_reference: {type: ["string", "null"], description: "Transaction or payment reference code from the receipt/invoice. Look for: order numbers (e.g. '204-2986271-1234567'), transaction IDs, reference codes, receipt numbers, booking references. For card payments look for the last few characters of the card transaction reference. Null if not found."}
-      },
-      # EVERY property is listed as required on purpose. Optional properties under
-      # additionalProperties:false make the API compile a grammar covering every subset of them,
-      # which times out ("Grammar compilation timed out") once there are about ten of them.
-      # Fields that may be absent say so through a "null" in their type instead.
-      required: %w[document_type description total_amount net_amount tax_amount tax_description
-        currency date_as_printed date datetime vendor_name confidence notes
-        document_language supplier_country_code reverse_charge payment_reference],
-      additionalProperties: false
-    }.freeze
+    # OpenAI's strict structured outputs, from a Plumb Hash: every object
+    # closed (additionalProperties: false), a nullable field as a "null" in
+    # its type rather than an anyOf, and nothing Plumb-only (options).
+    # Built once, as each schema is defined.
+    def self.json_schema(type) = strict(type.to_json_schema)
+
+    def self.strict(node)
+      case node
+      when ::Hash
+        schema = node.except('options').to_h { |key, value| [key.to_sym, strict(value)] }
+        if (types = nullable_types(schema[:anyOf]))
+          schema = schema.except(:anyOf).merge(type: types)
+        end
+        schema[:additionalProperties] = false if schema[:type] == 'object'
+        schema
+      when ::Array then node.map { strict(it) }
+      else node
+      end
+    end
+
+    # [X, 'null'] for an anyOf of one type and null.
+    def self.nullable_types(any_of)
+      return unless any_of&.size == 2 && any_of.include?({ type: 'null' }) && any_of.all? { it.keys == [:type] }
+
+      [*any_of.map { it[:type] } - ['null'], 'null']
+    end
+    private_class_method :strict, :nullable_types
+
+    # A field the model fills in, with what it's told about it.
+    def self.field(type, description) = type.metadata(description:)
+    private_class_method :field
+
+    # EVERY key is required (Plumb's default) on purpose. Optional properties under
+    # additionalProperties:false make the API compile a grammar covering every subset of them,
+    # which times out ("Grammar compilation timed out") once there are about ten of them.
+    # Fields that may be absent say so through .nullable (a "null" in their type) instead.
+    EXTRACTION_SCHEMA = json_schema(Types::Hash[
+      document_type: field(Types::String.options(%w[invoice credit_note]), "Type of document: 'invoice' for regular invoices/receipts, 'credit_note' for refunds/credit memos"),
+      description: field(Types::String, "Provider/vendor name followed by what was purchased/credited, e.g. 'Anthropic - API credits', 'Primera - Postage', 'Café Central - Lunch'"),
+      total_amount: field(Types::Numeric, "The total gross amount including tax. NEGATIVE for credit notes/refunds."),
+      net_amount: field(Types::Numeric.nullable, "The net amount before tax. NEGATIVE for credit notes/refunds. Null if not shown."),
+      tax_amount: field(Types::Numeric.nullable, "The tax/VAT amount. NEGATIVE for credit notes/refunds. Null if not shown."),
+      tax_description: field(Types::String.nullable, "Description of the tax type (e.g., 'BTW 21%', 'VAT 19%', 'MwSt 7%'). Null if not shown"),
+      currency: field(Types::String, "Three-letter ISO currency code (EUR, USD, GBP, PLN, CZK, etc.)"),
+      date_as_printed: field(Types::String.nullable, "The date exactly as it is printed on the document, verbatim and untranslated (e.g. '11/08/2026', '11 Aug 2026', 'Datum: 3-11-26'). Null if no date is printed."),
+      date: field(Types::String, "Date of the transaction in ISO 8601 format (YYYY-MM-DD), derived from date_as_printed"),
+      datetime: field(Types::String.nullable, "Full datetime if available in ISO 8601 format, otherwise null"),
+      vendor_name: field(Types::String.nullable, "Name of the vendor/store/company"),
+      confidence: field(Types::String.options(%w[high medium low]), "Your confidence level in the extraction"),
+      notes: field(Types::String.nullable, "Any additional notes or issues encountered during extraction"),
+      document_language: field(Types::String, "ISO 639-1 language code of the document (e.g., 'en', 'nl', 'de', 'fr')"),
+      supplier_country_code: field(Types::String.nullable, "ISO 3166-1 alpha-2 country code of the supplier/vendor (e.g., 'NL', 'US', 'DE'). Infer from VAT number prefix, address, or other indicators. Null if uncertain."),
+      reverse_charge: field(Types::Boolean, "true if the invoice indicates VAT reverse charge (0% VAT with explicit mention of 'reverse charge', 'VAT reverse charge', 'BTW verlegd', or similar). false otherwise."),
+      payment_reference: field(Types::String.nullable, "Transaction or payment reference code from the receipt/invoice. Look for: order numbers (e.g. '204-2986271-1234567'), transaction IDs, reference codes, receipt numbers, booking references. For card payments look for the last few characters of the card transaction reference. Null if not found.")
+    ]).freeze
 
     SYSTEM_PROMPT = <<~PROMPT
       You are a receipt and invoice OCR extraction specialist. Your task is to analyze images or PDFs of receipts, invoices, credit notes, and refunds, and extract structured expense information.
@@ -159,15 +185,10 @@ module Expenses
       For credit notes/refunds, use NEGATIVE amounts to indicate money returned.
     PROMPT
 
-    DOCUMENT_VERIFICATION_SCHEMA = {
-      type: "object",
-      properties: {
-        is_invoice_or_receipt: {type: "boolean", description: "true if this is a receipt, invoice, bill, or expense document; false otherwise"},
-        explanation: {type: "string", description: "Brief explanation of what the document actually is and why it is or isn't an expense document"}
-      },
-      required: ["is_invoice_or_receipt", "explanation"],
-      additionalProperties: false
-    }.freeze
+    DOCUMENT_VERIFICATION_SCHEMA = json_schema(Types::Hash[
+      is_invoice_or_receipt: field(Types::Boolean, "true if this is a receipt, invoice, bill, or expense document; false otherwise"),
+      explanation: field(Types::String, "Brief explanation of what the document actually is and why it is or isn't an expense document")
+    ]).freeze
 
     DOCUMENT_VERIFICATION_PROMPT = <<~PROMPT
       You are a document classifier. You previously attempted to extract expense data from this image, but the result was incomplete or low quality.
@@ -191,30 +212,16 @@ module Expenses
       Respond with your assessment.
     PROMPT
 
-    DATE_RECHECK_SCHEMA = {
-      type: "object",
-      properties: {
-        date_as_printed: {type: "string", description: "The date exactly as printed on the document, character for character"},
-        candidates: {
-          type: "array",
-          description: "Every reading the printed date could plausibly have, best first",
-          items: {
-            type: "object",
-            properties: {
-              date: {type: "string", description: "The candidate date in ISO 8601 format (YYYY-MM-DD)"},
-              reading: {type: "string", description: "How this candidate arises, e.g. 'DD/MM/YYYY as printed' or 'the 3 is a smudged 8'"},
-              in_the_future: {type: "boolean", description: "true if this candidate falls after today"}
-            },
-            required: ["date", "reading", "in_the_future"],
-            additionalProperties: false
-          }
-        },
-        date: {type: "string", description: "The winning candidate in ISO 8601 format (YYYY-MM-DD)"},
-        reasoning: {type: "string", description: "One sentence on why the winning candidate beats the others"}
-      },
-      required: ["date_as_printed", "candidates", "date", "reasoning"],
-      additionalProperties: false
-    }.freeze
+    DATE_RECHECK_SCHEMA = json_schema(Types::Hash[
+      date_as_printed: field(Types::String, "The date exactly as printed on the document, character for character"),
+      candidates: field(Types::Array[Types::Hash[
+        date: field(Types::String, "The candidate date in ISO 8601 format (YYYY-MM-DD)"),
+        reading: field(Types::String, "How this candidate arises, e.g. 'DD/MM/YYYY as printed' or 'the 3 is a smudged 8'"),
+        in_the_future: field(Types::Boolean, "true if this candidate falls after today")
+      ]], "Every reading the printed date could plausibly have, best first"),
+      date: field(Types::String, "The winning candidate in ISO 8601 format (YYYY-MM-DD)"),
+      reasoning: field(Types::String, "One sentence on why the winning candidate beats the others")
+    ]).freeze
 
     DATE_RECHECK_PROMPT = <<~PROMPT
       You are re-reading ONE field on this document: the transaction date.
@@ -237,15 +244,10 @@ module Expenses
       Other fields on the document may corroborate a candidate: transaction numbers and barcodes often embed the date (e.g. "...11082026..." for 11/08/2026), and the time of day sits next to it.
     PROMPT
 
-    CLEANUP_SCHEMA = {
-      type: "object",
-      properties: {
-        description: {type: "string", description: "The cleaned description text"},
-        tax_description: {type: ["string", "null"], description: "The cleaned tax description text, or null if original was null"}
-      },
-      required: ["description", "tax_description"],
-      additionalProperties: false
-    }.freeze
+    CLEANUP_SCHEMA = json_schema(Types::Hash[
+      description: field(Types::String, "The cleaned description text"),
+      tax_description: field(Types::String.nullable, "The cleaned tax description text, or null if original was null")
+    ]).freeze
 
     CLEANUP_PROMPT = <<~PROMPT
       You are a text cleanup specialist. Your task is to review extracted text fields and correct any OCR errors.
