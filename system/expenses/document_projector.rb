@@ -2,7 +2,8 @@
 
 module Expenses
   # How an expense's Document is evolved from its events: the upload, each
-  # scan's results, the form, the filed expense and its total in the reporting currency.
+  # scan's results, the form, the filed expense, its total in the reporting
+  # currency and its category.
   #
   # Shared by whoever needs the document: the Expense machine (its guards and
   # handlers decide on it) and the Scanner (each step works on it). Each
@@ -91,6 +92,24 @@ module Expenses
 
     evolve E::ConversionFailed do |doc, evt|
       doc.conversion_failure = evt.payload.to_h.except(:expense_id)
+    end
+
+    # ---- The category ----
+
+    evolve E::CategorySuggested do |doc, evt|
+      doc.category_suggestion = evt.payload.to_h.except(:expense_id)
+      doc.category = evt.payload.category
+      doc.categorization_failure = nil
+    end
+
+    evolve E::CategorizationFailed do |doc, evt|
+      doc.categorization_failure = evt.payload.to_h.except(:expense_id)
+    end
+
+    evolve E::CategoryChosen do |doc, evt|
+      doc.category = evt.payload.category
+      doc.category_chosen = true
+      doc.categorization_failure = nil
     end
   end
 end

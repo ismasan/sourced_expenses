@@ -16,12 +16,13 @@ module Expenses
     dep :db
 
     Row = ::Data.define(:expense_id, :filename, :machine, :failure, :rejection, :description,
-                        :total_cents, :currency, :incurred_on, :uploaded_at, :updated_at) do
+                        :total_cents, :currency, :incurred_on, :category, :category_chosen,
+                        :uploaded_at, :updated_at) do
       def in?(path) = machine.include?(path)
     end
 
     COLUMNS = %i[filename content_type file_ref machine failure rejection description
-                 total_cents currency incurred_on uploaded_at updated_at].freeze
+                 total_cents currency incurred_on category category_chosen uploaded_at updated_at].freeze
 
     # The machine's paths are a JSON array: whether +path+ is one of them.
     def self.in_path(path)
@@ -83,7 +84,7 @@ module Expenses
     # the start of the store once started.
     def self.on_reset = Sidereal.config['db'][:submissions].delete
 
-    context { { machine: [] } }
+    context { { machine: [], category_chosen: false } }
 
     load_context do |partition|
       row = db[:submissions].where(expense_id: partition[:expense_id]).first
@@ -141,6 +142,16 @@ module Expenses
         currency: evt.payload.currency,
         incurred_on: evt.payload.incurred_on
       )
+    end
+
+    # The model's suggestion stands until a person chooses.
+    evolve Expense::CategorySuggested do |row, evt|
+      row[:category] = evt.payload.category unless row[:category_chosen]
+    end
+
+    evolve Expense::CategoryChosen do |row, evt|
+      row[:category] = evt.payload.category
+      row[:category_chosen] = true
     end
 
     sync do |context:, **|

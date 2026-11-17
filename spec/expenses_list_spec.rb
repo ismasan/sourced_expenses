@@ -95,6 +95,18 @@ RSpec.describe 'The expense lists' do
     expect(last_response.body).to include('1–7 of 7')
   end
 
+  it 'shows each expense’s category, a suggestion apart from a person’s choice' do
+    db[:submissions].where(expense_id: submission('uber.pdf', 'reviewing')).update(description: 'Uber - Trip', category: 'travel')
+    db[:submissions].where(expense_id: submission('github.pdf', 'filed', 'filed.vat_confirmed'))
+                    .update(description: 'GitHub', category: 'software', category_chosen: true)
+    get '/expenses'
+
+    expect(last_response.body).to include(
+      'class="submission__category submission__category--suggested" title="Suggested category">Travel<',
+      'class="submission__category" title="Category">Software and web services<'
+    )
+  end
+
   it 'filters by state, and keeps the filter in the params signal for live updates' do
     seed
     get '/expenses?state[]=scanning&state[]=filed'

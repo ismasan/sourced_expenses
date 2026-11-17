@@ -12,9 +12,11 @@ module Expenses
   #   rejected, scan_failed ─EnterManually─▶ reviewing
   #   reviewing, rejected, scan_failed ─Rescan─▶ scanning
   #   filed ─VoidExpense─▶ voided;  anything before filed ─DiscardDocument─▶ discarded
+  #   reviewing, filed ⟲ SuggestCategory | FailCategorization | ChooseCategory
   #
   # The model never writes the expense and never decides its tax treatment:
-  # the scan prefills a form, and a person files it.
+  # the scan prefills a form, and a person files it. Its category is the
+  # model's suggestion (Expenses::Categorizer) until a person chooses one.
   class Expense < Sourced::Machine
     partition_by expense_id: Types::ExpenseID
     message_prefix 'expenses'
@@ -104,6 +106,29 @@ module Expenses
       attribute :reason, Types::String.present
     end
 
+    Category = Types::String.options(CATEGORIES.keys)
+
+    # The model's category for the expense, from Expenses::Categorizer:
+    # +probability+ is how likely it thinks its pick (0 to 1), and
+    # +description+ what it was told the expense is. Only a suggestion:
+    # ignored once a person has chosen one.
+    SuggestCategory = Command(:suggest_category) do
+      attribute :category, Category
+      attribute :probability, Types::Numeric
+      attribute :description, Types::String.present
+    end
+
+    # No suggestion for +description+: why, for a person to read.
+    FailCategorization = Command(:fail_categorization) do
+      attribute :description, Types::String.present
+      attribute :reason, Types::String.present
+    end
+
+    # A person's category: for good, until they choose another.
+    ChooseCategory = Command(:choose_category) do
+      attribute :category, Category
+    end
+
     # ---- Events ----
 
     DocumentUploaded = Event(:document_uploaded) do
@@ -164,6 +189,21 @@ module Expenses
       attribute :reason, String
     end
 
+    CategorySuggested = Event(:category_suggested) do
+      attribute :category, String
+      attribute :probability, Types::Numeric
+      attribute :description, String
+    end
+
+    CategorizationFailed = Event(:categorization_failed) do
+      attribute :description, String
+      attribute :reason, String
+    end
+
+    CategoryChosen = Event(:category_chosen) do
+      attribute :category, String
+    end
+
     # ---- Domain state ----
 
     # The Document, evolved from the events above and its parts' (the
@@ -182,6 +222,27 @@ module Expenses
           **expense.slice(:reverse_charge, :tax_amount_cents, :supplier_country_code),
           filing_country: doc.filing_country
         )
+      end
+    end
+
+    # The category, in reviewing and filed alike: a suggestion can land
+    # before or after the form is saved. A person's choice is never
+    # replaced by a suggestion, and repeats change nothing.
+    CATEGORIZE = proc do
+      command SuggestCategory do |doc, cmd|
+        unless doc.category_chosen? || doc.category_suggestion == cmd.payload.to_h.except(:expense_id)
+          event CategorySuggested, cmd.payload.to_h.except(:expense_id)
+        end
+      end
+
+      command FailCategorization do |doc, cmd|
+        event CategorizationFailed, cmd.payload.to_h.except(:expense_id) unless doc.category_chosen?
+      end
+
+      command ChooseCategory do |doc, cmd|
+        unless doc.category_chosen? && doc.category == cmd.payload.category
+          event CategoryChosen, category: cmd.payload.category
+        end
       end
     end
 
@@ -210,6 +271,7 @@ module Expenses
     # The prefilled form, waiting for a person.
     state Reviewing do
       command SaveExpense => Filed, &FILE_EXPENSE
+      instance_exec(&CATEGORIZE)
 
       command Rescan => Scanning do |_doc, cmd|
         event ScanRequested, reference_date: cmd.payload.reference_date
@@ -241,6 +303,7 @@ module Expenses
     # treatment is inferred again unless a person has confirmed one.
     state Filed do
       command SaveExpense => Filed, &FILE_EXPENSE
+      instance_exec(&CATEGORIZE)
 
       command VoidExpense => Voided do |_doc, cmd|
         event ExpenseVoided, reason: cmd.payload.reason

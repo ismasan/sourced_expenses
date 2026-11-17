@@ -203,6 +203,15 @@ select {
   border-radius: var(--radius);
   color-scheme: light;
 }
+/* No native chrome (Safari's gradient): flat like the text fields, with
+   a chevron of our own. */
+select {
+  appearance: none;
+  padding-right: 2.5rem;
+  background: var(--paper) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23000' stroke-width='2'/%3E%3C/svg%3E") no-repeat right 0.85rem center / 12px 8px;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
 /* Chrome's date field is 2px taller inside than a text one. */
 input[type="date"] { padding-block: calc(0.5rem - 1px); }
 input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; }
@@ -361,6 +370,18 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 .submission__file { font-weight: 700; overflow-wrap: anywhere; }
 .submission__description,
 .submission__reason { grid-column: 1; grid-row: 2; font-size: 0.95rem; color: var(--ink-2); }
+/* The category after the description: chosen in ink, suggested dashed. */
+.submission__category {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+}
+.submission__category--suggested { color: var(--ink-2); border-style: dashed; border-color: var(--ink-2); }
 .submission__reason {
   grid-column: 1 / -1;
   display: -webkit-box;
@@ -559,6 +580,23 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 .review-form .button--primary { justify-self: start; margin-top: 0.25rem; }
 .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 .actions form > * + * { margin-top: 0; }
+
+/* The category: what's suggested or chosen, and a list to choose from. */
+.category { display: grid; gap: 0.5rem; max-width: 40rem; }
+.category > * + * { margin-top: 0; }
+.category__status { margin: 0; }
+.category__form { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: stretch; }
+.category__form > * + * { margin-top: 0; }
+/* As heavy as the button beside it, and as tall. */
+.category__form select {
+  flex: 1 1 14rem;
+  width: auto;
+  min-width: 0;
+  font-weight: 600;
+  border: 2px solid var(--ink);
+}
+.category__form select:hover { background-color: var(--wash); }
+.category__form select:focus { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--ink); }
 
 .filed {
   display: grid;

@@ -236,7 +236,46 @@ module UI
     def render_review
       lead('Your turn. Check what was read, correct anything that’s wrong, and save it as an expense.')
       render_form('Save expense')
+      render_category
       actions
+    end
+
+    # ---- The category ----
+
+    # The model's suggestion, or the person's choice, and a list to choose
+    # another from. Choosing the suggested one confirms it.
+    def render_category
+      return unless can?(E::ChooseCategory)
+
+      section(class: 'category', aria: { label: 'Category' }) do
+        p(class: 'category__status') do
+          if @doc.category_chosen?
+            plain 'Category: '
+            strong { Expenses.category_label(@doc.category) }
+          elsif (suggestion = @doc.category_suggestion)
+            plain 'Suggested category: '
+            strong { Expenses.category_label(suggestion[:category]) }
+            span(class: 'filed__note') { format(' (%d%% sure). Choose it to confirm, or choose another.', suggestion[:probability] * 100) }
+          elsif (failure = @doc.categorization_failure)
+            plain 'No category suggested: '
+            span(class: 'filed__note') { failure[:reason] }
+          elsif @doc.filed || @doc.extraction
+            span(class: 'filed__note') { 'Suggesting a category…' }
+          else
+            span(class: 'filed__note') { 'A category is suggested once it’s filed, or choose one now.' }
+          end
+        end
+        command E::ChooseCategory, class: 'category__form' do |f|
+          f.payload_fields(expense_id: @expense_id)
+          select(name: 'command[payload][category]', aria: { label: 'Category' }) do
+            option(value: '', disabled: true, selected: @doc.category.nil?) { 'Choose a category' }
+            Expenses::CATEGORIES.each do |key, (label, description)|
+              option(value: key, title: description, selected: key == @doc.category) { label }
+            end
+          end
+          button(type: :submit, class: 'button') { @doc.category_chosen? ? 'Change' : 'Choose' }
+        end
+      end
     end
 
     def render_form(submit)
@@ -331,6 +370,15 @@ module UI
         dd { format('%.2f %s', filed[:tax_amount_cents] / 100.0, filed[:currency]) }
         dt { 'Date' }
         dd { filed[:incurred_on].to_s }
+        dt { 'Category' }
+        dd do
+          if @doc.category
+            plain Expenses.category_label(@doc.category)
+            plain(@doc.category_chosen? ? ', chosen' : ', suggested')
+          else
+            span(class: 'filed__note') { 'None yet' }
+          end
+        end
         dt { 'VAT treatment' }
         dd do
           plain VAT_LABELS.fetch(@doc.vat_treatment.to_s, @doc.vat_treatment.to_s)
@@ -356,6 +404,8 @@ module UI
           end
         end
       end
+
+      render_category
 
       details(class: 'filed__edit') do
         summary { 'Correct it' }

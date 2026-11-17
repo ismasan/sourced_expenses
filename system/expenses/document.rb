@@ -24,7 +24,8 @@ module Expenses
                   :reference_date, :processed_file_ref, :extraction, :verification,
                   :date_recheck, :cleanup, :failure, :draft, :filed,
                   :vat_treatment, :vat_treatment_confirmed, :converted,
-                  :conversion_failure
+                  :conversion_failure, :category, :category_suggestion,
+                  :category_chosen, :categorization_failure
     attr_reader :scans
 
     def initialize
@@ -183,6 +184,13 @@ module Expenses
         self.conversion_failure = nil
       end
     end
+
+    # ---- The category ----
+
+    # +category+ is the one in force: the person's, or else the model's
+    # latest suggestion (+category_suggestion+: category, probability and
+    # the description it was for).
+    def category_chosen? = category_chosen == true
 
     private
 

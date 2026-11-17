@@ -32,7 +32,7 @@ class App < Sidereal::App
   # What a person does with a submission. The machine refuses any its
   # current state doesn't accept.
   handle E::SaveExpense, E::Rescan, E::EnterManually, E::DiscardDocument, E::VoidExpense,
-         E::Filed::ConfirmVatTreatment
+         E::Filed::ConfirmVatTreatment, E::ChooseCategory
 
   page UI::WelcomePage
   page UI::ExpensesPage

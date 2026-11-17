@@ -41,6 +41,36 @@ RSpec.describe 'A submission' do
      cmd(Expenses::Expense::Scanning::CompleteCleanup, description: 'Café Central — Lunch', tax_description: 'BTW 21%')]
   end
 
+  it 'shows the suggested category in review, with every category to choose from' do
+    body = at(*scanned, cmd(Expenses::Expense::SuggestCategory, category: 'business_entertaining', probability: 0.82,
+                                                                description: 'Café Central — Lunch'))
+
+    expect(body).to include('Suggested category: ', '<strong>Business entertaining</strong>', '82% sure',
+                            'value="business_entertaining" title="Meals, drinks, gifts or events for clients, prospects or suppliers" selected', '>Light, heat and power</option>', 'Choose</button>')
+  end
+
+  it 'shows a filed expense’s chosen category' do
+    form = { description: 'Lunch', net_price_cents: 2000, tax_amount_cents: 420, currency: 'EUR', incurred_on: Date.new(2026, 8, 9) }
+    body = at(*scanned, cmd(Expenses::Expense::SaveExpense, **form), cmd(Expenses::Expense::ChooseCategory, category: 'travel'))
+
+    expect(body).to include('Travel, chosen', 'Category: <strong>Travel</strong>', 'Change</button>')
+  end
+
+  it 'has the category in its history, on the Diagram tab and travelling back' do
+    history = decided(Expenses::Expense, { expense_id: }, *scanned,
+                      cmd(Expenses::Expense::FailCategorization, description: 'Café Central — Lunch', reason: 'OpenAI is rate limiting requests'),
+                      cmd(Expenses::Expense::ChooseCategory, category: 'business_entertaining'))
+    store.append(history)
+
+    get "/submissions/#{expense_id}/diagram"
+    expect(last_response.body).to include('categorization_failed', 'category_chosen', 'category: business_entertaining')
+
+    failed = history.index { it.is_a?(Expenses::Expense::CategorizationFailed) } + 1
+    get "/submissions/#{expense_id}/at/#{failed}"
+    expect(last_response.body).to include('No category suggested: ', 'OpenAI is rate limiting requests')
+    expect(last_response.body).not_to include('Category: <strong>')
+  end
+
   it 'shows "Uploading…" before the machine has the upload' do
     get "/submissions/#{expense_id}"
 

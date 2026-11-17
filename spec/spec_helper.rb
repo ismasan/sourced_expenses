@@ -13,16 +13,27 @@ Sidereal.config.config!('file_store.root') { File.join(TEST_DB_DIR, 'uploads') }
 Sidereal.config.config!('thumbnails.root') { File.join(TEST_DB_DIR, 'thumbnails') }
 
 # The model, faked: no spec reaches OpenAI, even with OPENAI_API_KEY in .env.
-# Answers are set per schema; anything else raises.
+# Answers are set per schema; anything else raises. Categories are
+# +category+ (a Hash, or an LLM::Error to raise), asked about in
+# +categorized+.
 class FakeLLM
-  attr_reader :calls
-  attr_accessor :answers
+  attr_reader :calls, :categorized
+  attr_accessor :answers, :category
 
   def initialize = reset!
 
   def reset!
     @calls = []
     @answers = {}
+    @categorized = []
+    @category = { category: 'general', probability: 0.5 }
+  end
+
+  def categorize(**expense)
+    @categorized << expense
+    raise category if category.is_a?(Exception)
+
+    category
   end
 
   def ask(instructions:, schema:, message:, file: nil)

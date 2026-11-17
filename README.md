@@ -22,6 +22,8 @@ https://github.com/user-attachments/assets/f7cdf4bd-398e-4f86-91e8-ebcdb6a1345f
 
 `Expenses::Ledger` is the read model for totals in the reporting currency: one row per filed expense (table `ledger`), with its conversion once recorded and the currency it's in. A correction to the total clears the conversion until it's converted again; voided expenses leave it. `Ledger.month(db, currency, date)` totals a month in `currency` by the expenses' own dates: expenses in that currency count as they are, those converted to it count converted, and it says how many aren't in it yet. The All expenses page shows this month's.
 
+`Expenses::Categorizer` suggests each expense's accounting category, one of `Expenses::CATEGORIES` (`system/expenses.rb`), modelled on the default expense categories of UK bookkeeping apps such as FreeAgent and Xero. It asks once the scan is done, and again when the expense is filed with a description it hasn't asked about (an expense filled in by hand, or a corrected description). The question is a [RubyLLM judgment](https://rubyllm.com/judgments/) (`Expenses::CategoryJudge`) over what was read and filed (description, supplier, VAT description, total), not the document itself, and the answer comes back with how likely the model thinks it is. The machine records it on the expense (`CategorySuggested`, or `CategorizationFailed` with a reason) in review or filed. It's only a suggestion: a person chooses a category on the submission page (`ChooseCategory`), and a choice is never replaced by a suggestion. It's a consumer group of its own too, so on a store with expenses already in it, it categorizes those when it first starts. `bin/sid sourced groups reset expenses.categorizer` tries again the ones that failed or never got one; ones with a suggestion are left alone.
+
 Changing `REPORTING_CURRENCY` on a store with expenses converted already: `bin/sid sourced groups reset expenses.currency_converter` converts them again. Until then they count as not converted; the ledger needs no reset.
 
 Uploads land in `FileStore::Disk` (`storage/uploads/`), by the MD5 of their bytes, and the expense's id is that same digest (`Types::ExpenseID`). So the same file is the same expense: uploading it again, from the form or `bin/sid expenses upload`, goes to the expense it already is and dispatches nothing. Only identical bytes match; the same invoice downloaded twice may not be identical.
@@ -38,7 +40,7 @@ bin/sid db migrations run
 bin/dev
 ```
 
-Scanning needs `OPENAI_API_KEY`, from the environment or `.env` (never committed), and ImageMagick's `magick` (`brew install imagemagick`). `OPENAI_MODEL` picks another model than `gpt-4.1`. Specs fake the model and never call OpenAI. Exchange rates need no key; `EXCHANGE_RATES_URL` points at another Frankfurter instance, and specs fake them too. `REPORTING_CURRENCY` (an ISO code, `GBP` by default) is the currency totals are in, and `FILING_COUNTRY` (`GB` by default) the country whose books these are, which decides each expense's VAT treatment.
+Scanning needs `OPENAI_API_KEY`, from the environment or `.env` (never committed), and ImageMagick's `magick` (`brew install imagemagick`). `OPENAI_MODEL` picks another model than `gpt-4.1`. Categories are judged by `OPENAI_JUDGMENT_MODEL`, `gpt-6-luna` by default: it has to be a model OpenAI answers judgments with. Specs fake the model and never call OpenAI. Exchange rates need no key; `EXCHANGE_RATES_URL` points at another Frankfurter instance, and specs fake them too. `REPORTING_CURRENCY` (an ISO code, `GBP` by default) is the currency totals are in, and `FILING_COUNTRY` (`GB` by default) the country whose books these are, which decides each expense's VAT treatment.
 
 Then open <http://localhost:9292>. `PORT`, `HOST` and `COUNT` (worker processes) can be set in the environment.
 
@@ -87,7 +89,7 @@ bin/sid commands dispatch <Command> --attr value  # send one
 bin/sid sourced topology                          # how commands, events, read models and automations connect
 bin/sid sourced messages list --tail              # the store's messages, as they arrive
 bin/sid sourced messages correlation <id>         # the causal tree a message belongs to
-bin/sid sourced groups list                       # consumer groups (expenses.scanner…) and their status
+bin/sid sourced groups list                       # consumer groups (expenses.scanner, expenses.categorizer…) and their status
 bin/sid sourced groups start <group>              # restart a failed one
 bin/sid system graph                              # the app's components and their dependencies
 bin/sid expenses upload ~/receipts/*.pdf          # upload documents to scan, as the upload form does

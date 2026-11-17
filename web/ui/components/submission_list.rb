@@ -42,7 +42,14 @@ module UI
         case status.kind
         when 'failed' then span(class: 'submission__reason') { sub.failure } if sub.failure
         when 'rejected' then span(class: 'submission__reason') { sub.rejection } if sub.rejection
-        else span(class: 'submission__description') { sub.description } if sub.description
+        else
+          span(class: 'submission__description') do
+            plain sub.description.to_s
+            if sub.category
+              span(class: ['submission__category', ('submission__category--suggested' unless sub.category_chosen)],
+                   title: sub.category_chosen ? 'Category' : 'Suggested category') { Expenses.category_label(sub.category) }
+            end
+          end if sub.description || sub.category
         end
       end
     end
