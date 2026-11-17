@@ -1,132 +1,159 @@
 # Sourced Expenses
 
-A [Sidereal](https://github.com/ismasan/sidereal) + [Sourced](https://github.com/ismasan/sourced) app that tracks expenses from scanned receipts and invoices, after [this write-up](https://gist.github.com/julik/405662cc3106fe73ae2e46073f483b62). Uploads are scanned with OpenAI and listed on the home page as they go; there's no review form yet.
-
+A [Sidereal](https://github.com/ismasan/sidereal) + [Sourced](https://github.com/ismasan/sourced) app that tracks expenses from scanned receipts and invoices, after [this write-up](https://gist.github.com/julik/405662cc3106fe73ae2e46073f483b62). Uploads are scanned with OpenAI and listed on the home page as they go.
 
 https://github.com/user-attachments/assets/cfff0917-b71f-42b0-8cf4-f792b5111e46
 
+## State machines
 
-## Expenses
+`Expenses::Expense` (`system/expenses/expense.rb`) is one machine per uploaded document, keyed by the MD5 of its bytes, so re-uploading the same file is a no-op.
 
-`Expenses::Expense` (`system/expenses/`) is one machine per uploaded document: `UploadDocument` → `scanning` → `reviewing` → `SaveExpense` → `filed`.
+```mermaid
+stateDiagram-v2
+  [*] --> scanning : UploadDocument
+  scanning --> reviewing : scanned
+  scanning --> rejected : not_an_invoice
+  scanning --> scan_failed : failed
+  scanning --> scan_failed : after 10m / TimeOutScan
+  scanning --> discarded : DiscardDocument
+  reviewing --> filed : SaveExpense
+  reviewing --> scanning : Rescan
+  reviewing --> discarded : DiscardDocument
+  rejected --> reviewing : EnterManually
+  rejected --> scanning : Rescan
+  rejected --> discarded : DiscardDocument
+  scan_failed --> reviewing : EnterManually
+  scan_failed --> scanning : Rescan
+  scan_failed --> discarded : DiscardDocument
+  filed --> filed : SaveExpense
+  filed --> voided : VoidExpense
+  discarded --> [*]
+  voided --> [*]
+```
 
-- `Expense::Scanning` is the OCR pipeline. Each LLM call is a state (`extracting`, `verifying`, `rechecking_date`, `cleaning`) waiting for its worker's `Complete…` or `Fail…`. The decisions between them are transient states with guards (`checking_extraction`, `checking_date`) over plain Ruby in `Expenses::Document`.
-- A failed date recheck or cleanup keeps the first reading. A failed preparation, extraction or verification fails the scan, and so does the `after` timer (`SCAN_TIMEOUT`, default `10m`). From there a person can rescan or fill in the form by hand.
-- `Expense::Filed` holds the VAT treatment: inferred by rule (never by the model), flagged for review when it's foreign VAT, and kept for good once a person confirms one. Corrections are saved in place.
+`Expense::Scanning` (`system/expenses/expense/scanning.rb`) is the OCR pipeline. Each LLM step waits for the `Expenses::Scanner` worker's `Complete…` / `Fail…`; the `checking_*` states are guarded decisions.
 
-`Expenses::Scanner` is the worker for scanning: when an expense enters one of its waiting states, it does that step (`Expenses::ScanSteps`, with the write-up's prompts in `Expenses::Prompts`) and reports back with the step's `Complete…` or `Fail…`. It's a consumer group of its own, so a model call never holds up the machine, and turns what a step can expect to go wrong (the model, the image, a missing file, an answer that doesn't fit) into `Fail…` with a reason safe to show. Images over 500 KB are shrunk with ImageMagick first. `Expenses::Submissions` is the read model the home page lists, and the list re-renders whenever it commits.
+```mermaid
+stateDiagram-v2
+  [*] --> preparing
+  preparing --> extracting : CompletePreparation
+  preparing --> failed : FailPreparation
+  extracting --> checking_extraction : CompleteExtraction
+  extracting --> failed : FailExtraction
+  checking_extraction --> verifying : always [implausible?]
+  checking_extraction --> checking_date : always
+  verifying --> checking_date : CompleteVerification
+  verifying --> not_an_invoice : CompleteVerification
+  verifying --> failed : FailVerification
+  checking_date --> rechecking_date : always [date_suspect?]
+  checking_date --> cleaning : always
+  rechecking_date --> cleaning : CompleteDateRecheck
+  rechecking_date --> cleaning : FailDateRecheck
+  cleaning --> scanned : CompleteCleanup
+  cleaning --> scanned : FailCleanup
+  scanned --> [*]
+  not_an_invoice --> [*]
+  failed --> [*]
+```
 
-`Expenses::CurrencyConverter` converts each filed expense's total (VAT included) to the reporting currency at the European Central Bank's rate for its date, from the [Frankfurter API](https://frankfurter.dev), and records it on the expense (`ConversionRecorded`, or `ConversionFailed` with a reason), saying which currency it converted to. The reporting currency is `REPORTING_CURRENCY`, `GBP` by default. Expenses already in it are left alone. A correction to the amount, currency or date converts again. It's a consumer group of its own too, and on a store with expenses already filed it catches up on them when it first starts.
+`Expense::Filed` (`system/expenses/expense/filed.rb`) holds the VAT treatment, inferred by rule (never by the model) against `FILING_COUNTRY`.
 
-`Expenses::Ledger` is the read model for totals in the reporting currency: one row per filed expense (table `ledger`), with its conversion once recorded and the currency it's in. A correction to the total clears the conversion until it's converted again; voided expenses leave it. `Ledger.month(db, currency, date)` totals a month in `currency` by the expenses' own dates: expenses in that currency count as they are, those converted to it count converted, and it says how many aren't in it yet. The All expenses page shows this month's. Each row has the expense's category too (the suggestion until a person chooses), so totals, and the page's header and chart, can be of the categories ticked; the ledger is event-sourced, since a category can be suggested before there's a row.
+```mermaid
+stateDiagram-v2
+  [*] --> inferring_vat
+  inferring_vat --> vat_confirmed : always [vat_treatment_confirmed?]
+  inferring_vat --> vat_needs_review : always [vat_needs_review?]
+  inferring_vat --> vat_inferred : always
+  vat_needs_review --> vat_confirmed : ConfirmVatTreatment
+  vat_inferred --> vat_confirmed : ConfirmVatTreatment
+  vat_confirmed --> vat_confirmed : ConfirmVatTreatment
+```
 
-The search box in the top bar, on every page, finds expenses by what they say: every word typed must be somewhere in the description, the vendor the scan read, the filename or the category, as any part of a word, whatever its case or accents. As you type it previews the first few matches (`GET /search`); Enter lists them all on the All expenses page (`?q=`), where the search combines with the other filters and the header total and chart follow it. `Expenses::Submissions` keeps the index, an SQLite FTS5 table (`submissions_search`, trigram tokenizer) built into the SQLite the `sqlite3` gem bundles, so no extension is needed. On a store with expenses already in it, fill the index with `bin/sid sourced groups stop expenses.submissions`, `reset` and `start`.
+Regenerate the full nested chart with `Sourced::Machine::Mermaid.new(Expenses::Expense).to_s` in `bin/sid console`.
 
-`Expenses::Categorizer` suggests each expense's accounting category, one of `Expenses::CATEGORIES` (`system/expenses.rb`), modelled on the default expense categories of UK bookkeeping apps such as FreeAgent and Xero. It asks once the scan is done, and again when the expense is filed with a description it hasn't asked about (an expense filled in by hand, or a corrected description). The question is a [RubyLLM judgment](https://rubyllm.com/judgments/) (`Expenses::CategoryJudge`) over what was read and filed (description, supplier, VAT description, total), not the document itself, and the answer comes back with how likely the model thinks it is. The machine records it on the expense (`CategorySuggested`, or `CategorizationFailed` with a reason) in review or filed. It's only a suggestion: a person chooses a category on the submission page (`ChooseCategory`), and a choice is never replaced by a suggestion. It's a consumer group of its own too, so on a store with expenses already in it, it categorizes those when it first starts. `bin/sid sourced groups reset expenses.categorizer` tries again the ones that failed or never got one; ones with a suggestion are left alone.
+## Reactors and read models
 
-Changing `REPORTING_CURRENCY` on a store with expenses converted already: `bin/sid sourced groups reset expenses.currency_converter` converts them again. Until then they count as not converted; the ledger needs no reset.
+Each is its own consumer group, so slow work never blocks the machine.
 
-The home page takes one file or many, picked or dropped anywhere on it. The page sends each file as its own `Commands::UploadFile`, one after another, skipping (and saying why) any of the wrong type or over 20 MB, and stays put: a line for each file shows under the form, and the new expenses show in the home page's lists as they're read ("Being read", then "Needs you"), each linking to its page.
+| Class | Does |
+| --- | --- |
+| `Expenses::Scanner` | Runs each scan step against OpenAI (`Expenses::ScanSteps`, prompts in `Expenses::Prompts`). Shrinks images over 500 KB with ImageMagick. |
+| `Expenses::Categorizer` | Suggests a category from `Expenses::CATEGORIES` via a [RubyLLM judgment](https://rubyllm.com/judgments/). A person's `ChooseCategory` always wins. |
+| `Expenses::CurrencyConverter` | Converts filed totals to `REPORTING_CURRENCY` at the ECB rate for the expense's date ([Frankfurter](https://frankfurter.dev)). |
+| `Expenses::Submissions` | Read model for the home page, plus the FTS5 search index (`submissions_search`). |
+| `Expenses::Ledger` | Read model for monthly totals and category breakdowns in the reporting currency. |
 
-Uploads land in `FileStore::Disk` (`storage/uploads/`), by the MD5 of their bytes, and the expense's id is that same digest (`Types::ExpenseID`). So the same file is the same expense: uploading it again, from the form or `bin/sid expenses upload`, goes to the expense it already is and dispatches nothing. Only identical bytes match; the same invoice downloaded twice may not be identical.
-
-`Sourced::Machine::Mermaid.new(Expenses::Expense).to_s` draws the chart. The Sourced dashboard is mounted at `/sourced`.
-
-Message attributes use the app's `Types` (`system/types.rb`, Sourced's types): `Types::String.present`, `Types::Boolean`. Plain scalars are Ruby's own classes: `String`, `Integer`, `Date`.
+Resetting a group (`bin/sid sourced groups reset <group>`) reprocesses: e.g. `expenses.categorizer` retries failed categorizations, `expenses.currency_converter` reconverts after changing `REPORTING_CURRENCY`.
 
 ## Run
 
 ```sh
 bundle install
 bin/sid db migrations run
-bin/dev
+bin/dev   # http://localhost:9292
 ```
 
-Scanning needs `OPENAI_API_KEY`, from the environment or `.env` (never committed), and ImageMagick's `magick` (`brew install imagemagick`). `OPENAI_MODEL` picks another model than `gpt-4.1`. Categories are judged by `OPENAI_JUDGMENT_MODEL`, `gpt-6-luna` by default: it has to be a model OpenAI answers judgments with. Specs fake the model and never call OpenAI. Exchange rates need no key; `EXCHANGE_RATES_URL` points at another Frankfurter instance, and specs fake them too. `REPORTING_CURRENCY` (an ISO code, `GBP` by default) is the currency totals are in, and `FILING_COUNTRY` (`GB` by default) the country whose books these are, which decides each expense's VAT treatment.
+Requires ImageMagick (`brew install imagemagick`). `bin/dev` reloads on change if `watchexec` or `fswatch` is installed. The Sourced dashboard is at `/sourced`.
 
-Then open <http://localhost:9292>. `PORT`, `HOST` and `COUNT` (worker processes) can be set in the environment.
-
-The migrations in `db/migrations/` are committed and `storage/` isn't, so `bin/sid db migrations run` is how a checkout gets its database — copy one over instead if you'd rather keep the data.
-
-`bin/dev` runs `bundle exec falcon host` and reloads the app whenever a Ruby file changes. Reloading needs a file watcher: [watchexec](https://github.com/watchexec/watchexec) (`brew install watchexec`) or fswatch. Without one, the server still runs. In production, run `bundle exec falcon host`.
+| Env var | Default | |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | — | Required for scanning (env or `.env`) |
+| `OPENAI_MODEL` | `gpt-4.1` | Scanning model |
+| `OPENAI_JUDGMENT_MODEL` | `gpt-6-luna` | Categorization model |
+| `REPORTING_CURRENCY` | `GBP` | Currency totals are in |
+| `FILING_COUNTRY` | `GB` | Decides VAT treatment |
+| `SCAN_TIMEOUT` | `10m` | Scan gives up after this |
+| `EXCHANGE_RATES_URL` | Frankfurter | Alternative Frankfurter instance |
+| `PORT`, `HOST`, `COUNT` | | Server port, host, worker processes |
 
 ## Docker
-
-The `Dockerfile` builds the app with everything it shells out to (ImageMagick, and Ghostscript for PDFs), for Intel or ARM:
 
 ```sh
 docker build -t sourced-expenses .
 docker run --rm -p 9292:9292 --env-file .env -v sourced-expenses:/app/storage sourced-expenses
 ```
 
-`OPENAI_API_KEY` comes from the environment at run time (`--env-file .env`, or `-e OPENAI_API_KEY=…`); the image never contains `.env`. The database and uploads live in `/app/storage`, so the named volume keeps them between runs, and each start runs any migrations not run yet (`bin/docker-entrypoint`). `COUNT` sets the worker processes, as with `bin/dev`. Docker's env files take values as written, so leave them unquoted.
+Migrations run on start. Leave values in `.env` unquoted.
 
 ## Test
 
 ```sh
-bundle exec rspec
+bundle exec rspec   # OpenAI and exchange rates are faked
 ```
-
-## Database
-
-The `db` component in `config/components/db.rb` is a SQLite database under `storage/` (`storage/db.db`), which classes reach with `dep :db`. Migrations are [Sequel](https://sequel.jeremyevans.net/rdoc/files/doc/migration_rdoc.html)'s:
-
-```sh
-bin/sid db migrations add create_things   # writes db/migrations/<timestamp>_create_things.rb
-bin/sid db migrations run                 # the ones not run yet
-bin/sid db migrations rollback            # just the one that ran last
-```
-
-Sourced keeps the app's commands and events in the same database, in tables its own migration creates (`db/migrations/20261011220710_create_sourced_tables.rb`, written by `bin/sid sourced migration`).
 
 ## Command line
 
-`bin/sid` is Sidereal's command line with this app loaded. `bin/sid --help` lists every command; the ones worth knowing:
-
 ```sh
+bin/sid --help                                    # everything
 bin/sid console                                   # IRB with the app loaded
-bin/sid commands list                             # the commands the app handles
-bin/sid commands info expenses.save_expense       # a command's payload schema
+bin/sid commands list                             # commands the app handles
 bin/sid commands dispatch <Command> --attr value  # send one
-bin/sid sourced topology                          # how commands, events, read models and automations connect
-bin/sid sourced messages list --tail              # the store's messages, as they arrive
-bin/sid sourced messages correlation <id>         # the causal tree a message belongs to
-bin/sid sourced groups list                       # consumer groups (expenses.scanner, expenses.categorizer…) and their status
-bin/sid sourced groups start <group>              # restart a failed one
-bin/sid system graph                              # the app's components and their dependencies
-bin/sid expenses upload ~/receipts/*.pdf          # upload documents to scan, as the upload form does
-bin/sid expenses list --state filed --json        # expenses, filtered: a table, or JSON lines
-bin/sid expenses dispatch <Command>               # a command for each JSON line on stdin
+bin/sid sourced topology                          # commands, events, reactors and how they connect
+bin/sid sourced messages list --tail              # follow the event store
+bin/sid sourced groups list                       # consumer groups and their status
+bin/sid db migrations add <name>                  # new Sequel migration
+bin/sid expenses upload ~/receipts/*.pdf          # upload documents to scan
+bin/sid expenses list --state filed --json        # filter expenses
+bin/sid expenses dispatch <Command>               # a command per JSON line on stdin
 ```
 
-`bin/sid expenses list` filters the list the app shows (`--state`, `--category`, `--category-status suggested|chosen|none`, `--search`, `--from`, `--to`, `--limit`), and with `--json` prints one object per line. `bin/sid expenses dispatch` sends a command for each line it's piped, taking the payload from the fields the command has, with attributes given as `bin/sid commands dispatch` takes them winning over the lines'. Every command is checked first and nothing is sent if any is invalid; `--dry-run` lists them instead. Confirming every filed expense's suggested category:
+For example, confirming every suggested category:
 
 ```sh
 bin/sid expenses list --state filed,vat_needs_review --category-status suggested --json |
   bin/sid expenses dispatch expenses.choose_category
 ```
 
-Or recategorizing the general ones: `bin/sid expenses list --category general --json | bin/sid expenses dispatch expenses.choose_category --category office_costs`. Filter with `jq` in between for anything `list` doesn't.
-
-`bin/sid expenses upload` takes PDFs and photos (JPEG, PNG or WebP, by extension) up to 20 MB, as the form does. It stores each one, dispatches its `UploadDocument` and prints the page to watch it scan ("Already uploaded" for a file it has seen, dispatching nothing); a file it can't take is skipped, and the exit status says so. `--reference-date YYYY-MM-DD` reads the documents' dates against another day than today. The running app does the scanning: without it, uploads wait in the store. The app's own commands live in `cli/`, registered by `config/components/cli.rb` only when `bin/sid` runs.
-
 ## Layout
 
-| Path | What's in it |
+| Path | |
 | --- | --- |
-| `boot.rb` | Loads and configures the app |
-| `config/components/` | Components: the connections, clients and other services the app's classes use, declared with `Sidereal.config`. `boot.rb` loads every file here. See `example.rb` |
-| `system/` | Backend code that doesn't know about the web: messages, commanders, Sourced deciders and reactors |
-| `web/app.rb` | `App`, the web app: commands it accepts, their handlers, and pages |
-| `web/ui/` | Pages and the layout, in the `UI` namespace |
-| `web/ui/components/` | Components used by pages, in `UI::Components` |
-| `web/public/` | Static files |
-| `cli/` | The app's own `bin/sid` commands (`bin/sid expenses …`) |
-| `db/migrations/` | Database migrations, run with `bin/sid db migrations run`. Add one with `bin/sid db migrations add <name>` |
-| `storage/` | Runtime data, including the SQLite database. Not committed. |
-| `falcon.rb` | Falcon server settings |
-| `bin/dev` | Development server that reloads on code changes |
-| `bin/sid` | Sidereal's command line with this app loaded. `bin/sid --help` lists its commands |
-| `.agents/skills/` | Skills that teach AI coding agents to work with this app, such as using `bin/sid`. `.claude/skills` links here. `bin/sid skills update` refreshes the ones Sidereal and its integrations provide |
+| `system/` | Messages, machines, reactors, read models (no web) |
+| `web/app.rb`, `web/ui/` | Web app, pages and components |
+| `cli/` | The app's `bin/sid expenses …` commands |
+| `config/components/` | Components (`db`, clients…) declared with `Sidereal.config` |
+| `db/migrations/` | Sequel migrations, including Sourced's tables |
+| `storage/` | SQLite database and uploads (not committed) |
+| `.agents/skills/` | Skills for AI coding agents (`.claude/skills` links here) |
 
-Classes in `system/` and `web/` are loaded by [Zeitwerk](https://github.com/fxn/zeitwerk): name a file after the class it defines and use the class anywhere, without `require`. Directories under `web/` are namespaces, so `web/ui/welcome_page.rb` defines `UI::WelcomePage`. Classes in `system/` are top-level.
+Classes in `system/` and `web/` are autoloaded by Zeitwerk.
