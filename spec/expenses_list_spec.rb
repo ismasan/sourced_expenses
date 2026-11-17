@@ -107,6 +107,75 @@ RSpec.describe 'The expense lists' do
     )
   end
 
+  describe 'by category' do
+    def categorized(filename, category, *paths)
+      db[:submissions].where(expense_id: submission(filename, *paths, at: Time.now - filename.size)).update(category:)
+    end
+
+    before do
+      categorized('uber.pdf', 'travel', 'filed', 'filed.vat_confirmed')
+      categorized('train.pdf', 'travel', 'reviewing')
+      categorized('github.pdf', 'software', 'filed', 'filed.vat_confirmed')
+      categorized('render.pdf', 'software', 'filed', 'filed.vat_confirmed')
+      submission('misc.pdf', 'scanning')
+    end
+
+    def count(body, label) = body[%r{>#{label}</span><span class="filter__count">(\d+)<}, 1]&.to_i
+
+    it 'lists only the categories some expense has, each with how many' do
+      get '/expenses'
+
+      expect(count(last_response.body, 'Travel')).to eq(2)
+      expect(count(last_response.body, 'Software and web services')).to eq(2)
+      expect(last_response.body).not_to include('>Insurance<')
+    end
+
+    it 'filters by any of the categories ticked, within the states ticked, counting each group within the other' do
+      get '/expenses?category[]=travel&category[]=insurance&state[]=filed'
+      body = last_response.body
+
+      expect(filenames(body)).to eq(%w[uber.pdf])
+      expect(body).to include('value="travel" checked', 'value="insurance" checked', 'Clear filters')
+      expect(count(body, 'Travel')).to eq(1)            # filed only
+      expect(count(body, 'Software and web services')).to eq(2)
+      expect(count(body, 'Insurance')).to eq(0)         # ticked, so listed
+      expect(count(body, 'Filed')).to eq(1)             # travel only
+      expect(count(body, 'Ready to review')).to eq(1)
+    end
+
+    it 'keeps the categories in the chart’s links, the pager’s and the params signal' do
+      filed('ledger.pdf', on: Date.today, cents: 1000)
+      get '/expenses?category[]=travel'
+
+      expect(last_response.body).to include('category[]=travel&from=', '&quot;category&quot;:[&quot;travel&quot;]')
+      expect(UI::ExpensesPage.path_for(categories: %w[travel], page: 2)).to eq('/expenses?category[]=travel&page=2')
+    end
+
+    it 'totals only the categories ticked in the header and the chart, naming them' do
+      [['taxi', 'travel', 1500], ['hosting', 'software', 700]].each do |name, category, cents|
+        expense_id = filed("#{name}.pdf", on: Date.today, cents:)
+        db[:ledger].where(expense_id:).update(category:)
+      end
+
+      get '/expenses?category[]=travel'
+      expect(last_response.body).to include('>Travel</span> · ', 'ledger-total__amount">15.00 GBP<', '1 expense filed')
+
+      get '/expenses?category[]=travel&category[]=software'
+      expect(last_response.body).to include('>2 categories</span> · ', 'title="Software and web services, Travel"',
+                                            'ledger-total__amount">22.00 GBP<')
+
+      get '/expenses'
+      expect(last_response.body).not_to include('ledger-total__categories')
+      expect(last_response.body).to include('ledger-total__amount">22.00 GBP<')
+    end
+
+    it 'refuses a category it does not know' do
+      get '/expenses?category[]=snacks'
+
+      expect(last_response.status).to eq(400)
+    end
+  end
+
   it 'filters by state, and keeps the filter in the params signal for live updates' do
     seed
     get '/expenses?state[]=scanning&state[]=filed'

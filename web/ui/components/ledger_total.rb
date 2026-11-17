@@ -12,13 +12,23 @@ module UI
       end
 
       # @param total [Expenses::Ledger::Total]
-      def initialize(total)
+      # @param categories [Array<String>] the categories it's of, named in
+      #   the title; none for every expense
+      def initialize(total, categories: [])
         @total = total
+        # In the list's order, however they came.
+        @categories = Expenses::CATEGORIES.keys & categories
       end
 
       def view_template
         section(id: 'ledger-total', class: 'ledger-total', aria: { labelledby: 'ledger-total-title' }) do
-          h2(id: 'ledger-total-title', class: 'ledger-total__title') { title }
+          h2(id: 'ledger-total-title', class: 'ledger-total__title') do
+            if (of = categories_title)
+              span(class: 'ledger-total__categories', title: @categories.map { Expenses.category_label(it) }.join(', ')) { of }
+              plain ' · '
+            end
+            plain title
+          end
           p(class: 'ledger-total__amount') { Money.format(@total.cents, @total.currency) }
           p(class: 'ledger-total__note') do
             plain(@total.expenses == 1 ? '1 expense filed' : "#{@total.expenses} expenses filed")
@@ -38,6 +48,13 @@ module UI
         return "Until #{day(to)}" if to
 
         'All time'
+      end
+
+      # One category by name; several by how many, all of them in its tooltip.
+      def categories_title
+        return if @categories.empty?
+
+        @categories.one? ? Expenses.category_label(@categories.first) : "#{@categories.size} categories"
       end
 
       def day(date) = date.strftime('%-d %b %Y')

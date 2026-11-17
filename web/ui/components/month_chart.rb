@@ -44,11 +44,13 @@ module UI
       # @param from [Date, nil] the list's dates: a whole month or year is the one chosen
       # @param to [Date, nil]
       # @param states [Array<String>] the states the list is filtered to, kept by the links
-      def initialize(months, from: nil, to: nil, states: [])
+      # @param categories [Array<String>] its categories, kept too
+      def initialize(months, from: nil, to: nil, states: [], categories: [])
         @years = months.group_by { it.from.year }.map { |year, of_year| Year.new(year:, months: of_year) }
         @from = from
         @to = to
         @states = states
+        @categories = categories
         @expanded = (from || to)&.year || @years.last&.year
         @max_year = @years.map(&:cents).max.to_i
       end
@@ -130,7 +132,7 @@ module UI
       # The list filtered to +period+; back to all dates if it's the one chosen.
       def link(period, chosen) = chosen ? path : path(from: period.from, to: period.to)
 
-      def path(**dates) = ExpensesPage.path_for(states: @states, **dates)
+      def path(**dates) = ExpensesPage.path_for(states: @states, categories: @categories, **dates)
 
       def share(cents, max) = max.zero? ? 0 : (cents.to_f / max).round(4)
 

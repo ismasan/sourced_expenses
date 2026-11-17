@@ -46,10 +46,12 @@ module Expenses
     end
 
     # Projects the history +commands+ make for expense +id+, one message at a
-    # time, as separate batches would.
+    # time, as separate batches would: each with the history up to it, as
+    # the router hands an event-sourced projector.
     def project(*commands, id: expense_id)
-      decided(Expense, { expense_id: id }, *commands).each do |message|
-        with_reactor(Ledger, expense_id: id).given(message).then! { nil }
+      history = decided(Expense, { expense_id: id }, *commands)
+      history.each_index do |i|
+        history[..i].reduce(with_reactor(Ledger, expense_id: id)) { |r, m| r.given(m) }.then! { nil }
       end
     end
 
@@ -97,6 +99,39 @@ module Expenses
       project(*reviewing, save, converted, cmd(Expense::VoidExpense, reason: 'Duplicate'))
 
       expect(row).to be_nil
+    end
+
+    describe 'categories' do
+      def suggest(category) = cmd(Expense::SuggestCategory, category:, probability: 0.9, description: 'Lunch')
+      def choose(category) = cmd(Expense::ChooseCategory, category:)
+
+      it 'keeps a category suggested before the expense was filed' do
+        project(*reviewing, suggest('travel'), save)
+
+        expect(row).to include(category: 'travel')
+      end
+
+      it 'takes a person’s choice over any later suggestion' do
+        project(*reviewing, save, suggest('travel'), choose('business_entertaining'), suggest('general'))
+
+        expect(row).to include(category: 'business_entertaining')
+      end
+
+      it 'totals only the categories given, across any range and month by month' do
+        travel, software, none = Array.new(3) { SecureRandom.hex(16) }
+        project(*reviewing(travel), save(travel, currency: 'GBP', net_price_cents: 1000, tax_amount_cents: 0),
+                cmd(Expense::ChooseCategory, travel, category: 'travel'), id: travel)
+        project(*reviewing(software), save(software, currency: 'GBP', net_price_cents: 500, tax_amount_cents: 0,
+                                                      incurred_on: Date.new(2025, 9, 2)),
+                cmd(Expense::ChooseCategory, software, category: 'software'), id: software)
+        project(*reviewing(none), save(none, currency: 'GBP', net_price_cents: 200, tax_amount_cents: 0), id: none)
+
+        expect(Ledger.month(db, 'GBP', date, categories: %w[travel])).to have_attributes(cents: 1000, expenses: 1)
+        expect(Ledger.total(db, 'GBP', categories: %w[travel software])).to have_attributes(cents: 1500, expenses: 2)
+        expect(Ledger.total(db, 'GBP')).to have_attributes(cents: 1700, expenses: 3)
+        # The months still run from the first expense, whatever the categories.
+        expect(Ledger.months(db, 'GBP', date:, categories: %w[travel]).map { [it.from.month, it.cents] }).to eq([[9, 0], [10, 1000]])
+      end
     end
 
     describe '.months' do

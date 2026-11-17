@@ -12,10 +12,17 @@ module Expenses
   # any other isn't in the total yet. So changing the reporting currency
   # needs no rebuild here, only conversions to the new one.
   #
+  # Each row has the expense's category too (the suggestion, until a person
+  # chooses), and totals can be of some categories only.
+  #
   #   Ledger.month(db, 'GBP')                      # this month
   #   Ledger.month(db, 'GBP', Date.new(2025, 10))  # October 2025
   #   Ledger.total(db, 'GBP', from:, to:)          # any range
-  class Ledger < Sourced::Projector::StateStored
+  #   Ledger.month(db, 'GBP', categories: %w[travel software])
+  #
+  # Event-sourced: a row is built from its expense's whole history, as a
+  # category can be suggested before the expense is filed and has a row.
+  class Ledger < Sourced::Projector::EventSourced
     partition_by expense_id: Types::ExpenseID
 
     dep :db
@@ -33,15 +40,16 @@ module Expenses
 
     # The month +date+ is in, by the expenses' own dates.
     # @return [Total]
-    def self.month(db, currency, date = Date.today)
+    def self.month(db, currency, date = Date.today, categories: [])
       from = Date.new(date.year, date.month, 1)
-      total(db, currency, from:, to: from.next_month - 1)
+      total(db, currency, from:, to: from.next_month - 1, categories:)
     end
 
-    # Filed expenses dated +from+ to +to+, by their own dates, in +currency+.
+    # Filed expenses dated +from+ to +to+, by their own dates, in +currency+;
+    # only those in +categories+, if any.
     # @return [Total]
-    def self.total(db, currency, from: nil, to: nil)
-      rows = db[:ledger]
+    def self.total(db, currency, from: nil, to: nil, categories: [])
+      rows = in_categories(db, categories)
       rows = rows.where { incurred_on >= from } if from
       rows = rows.where { incurred_on <= to } if to
       Total.new(currency:, from:, to:, cents: rows.sum(cents_in(currency)).to_i, expenses: rows.count,
@@ -51,9 +59,11 @@ module Expenses
     # Every month from the first one an expense is dated in to the one
     # +date+ is in (or the last one dated in, if later), oldest first, a
     # Total each: months with nothing filed in between are there too, empty.
-    # Just +date+'s month when nothing is filed.
+    # Just +date+'s month when nothing is filed. Only expenses in
+    # +categories+, if any; the months span every expense regardless, so
+    # the chart keeps its shape whatever is chosen.
     # @return [Array<Total>]
-    def self.months(db, currency, date: Date.today)
+    def self.months(db, currency, date: Date.today, categories: [])
       dates = db[:ledger].select(Sequel.function(:min, :incurred_on).as(:earliest),
                                  Sequel.function(:max, :incurred_on).as(:latest)).first
       earliest, latest = dates.values_at(:earliest, :latest).map { Types.iso_date(it&.to_s) }
@@ -62,7 +72,7 @@ module Expenses
       firsts = []
       (firsts << first; first >>= 1) while first <= last
       month = Sequel.function(:strftime, '%Y-%m-01', :incurred_on)
-      rows = db[:ledger].where { incurred_on >= firsts.first }.where { incurred_on < last.next_month }
+      rows = in_categories(db, categories).where { incurred_on >= firsts.first }.where { incurred_on < last.next_month }
                         .group(month)
                         .select(month.as(:month), Sequel.function(:sum, cents_in(currency)).as(:cents),
                                 Sequel.function(:count, Sequel.lit('*')).as(:expenses),
@@ -77,6 +87,8 @@ module Expenses
 
     def self.month_of(date) = Date.new(date.year, date.month, 1)
 
+    def self.in_categories(db, categories) = categories.any? ? db[:ledger].where(category: categories) : db[:ledger]
+
     # A row's total in +currency+: as it is if in it, converted if
     # converted to it, else NULL (which sums skip).
     def self.cents_in(currency)
@@ -88,9 +100,10 @@ module Expenses
     def self.counted_in(currency)
       Sequel.|({ currency: }, { Sequel.function(:coalesce, :reporting_currency, '') => currency })
     end
-    private_class_method :month_of, :cents_in, :counted_in
+    private_class_method :month_of, :in_categories, :cents_in, :counted_in
 
-    COLUMNS = %i[description incurred_on currency amount_cents reporting_currency reporting_cents updated_at].freeze
+    COLUMNS = %i[description incurred_on currency amount_cents reporting_currency reporting_cents category
+                 updated_at].freeze
 
     # The group's offsets were rewound (`bin/sid sourced groups reset
     # expenses.ledger`): every row goes, and it builds them again from the
@@ -98,10 +111,6 @@ module Expenses
     def self.on_reset = Sidereal.config['db'][:ledger].delete
 
     context { {} }
-
-    load_context do |partition|
-      db[:ledger].where(expense_id: partition[:expense_id]).first
-    end
 
     # Filed, or filed again after a correction. The conversion stays if the
     # total it's for does.
@@ -125,8 +134,19 @@ module Expenses
       row[:voided] = true
     end
 
+    # The suggestion stands until a person chooses.
+    evolve Expense::CategorySuggested do |row, evt|
+      row[:category] = evt.payload.category unless row[:category_chosen]
+    end
+
+    evolve Expense::CategoryChosen do |row, evt|
+      row[:category] = evt.payload.category
+      row[:category_chosen] = true
+    end
+
     sync do |context:, **|
-      next unless context[:expense_id]
+      # Not filed (yet): nothing to write, a category or not.
+      next unless context[:amount_cents]
 
       rows = db[:ledger]
       if context[:voided]

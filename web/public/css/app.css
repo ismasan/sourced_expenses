@@ -1011,6 +1011,9 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 .filter--done { --stage: var(--done); }
 .filter--closed { --stage: var(--closed); }
 .filter__count { font-size: 0.85rem; color: var(--ink-2); }
+/* Categories have no stage: a plain edge, black when ticked. */
+.filters__group + .filters__group { margin-top: 1.75rem; }
+.filter--category:has(:checked) { --stage: var(--ink); }
 .filters__clear { display: inline-block; margin-top: 0.75rem; font-size: 0.95rem; font-weight: 600; }
 .filters noscript { display: block; margin-top: 0.75rem; }
 

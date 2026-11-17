@@ -135,8 +135,7 @@ module CLI
       end
 
       def dataset(states:, categories:, status:, from:, to:, limit:)
-        ds = ::Expenses::Submissions.in_states(Sidereal.config['db'], states, from:, to:)
-        ds = ds.where(category: categories) if categories.any?
+        ds = ::Expenses::Submissions.in_states(Sidereal.config['db'], states, categories:, from:, to:)
         ds = case status
              when 'suggested' then ds.exclude(category: nil).where(category_chosen: false)
              when 'chosen' then ds.where(category_chosen: true)

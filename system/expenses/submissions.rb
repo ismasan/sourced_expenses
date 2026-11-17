@@ -48,28 +48,40 @@ module Expenses
     NEEDS_YOU = %w[reviewing vat_needs_review rejected scan_failed].freeze
 
     # Rows in any of +states+ (STATES keys; all rows when there are none),
-    # dated +from+ to +to+ (either may be nil, for no bound). A range leaves
-    # out rows with no date yet: still scanning, or never read.
-    def self.in_states(db, states = [], from: nil, to: nil)
+    # with any of +categories+ (CATEGORIES keys; any category or none, when
+    # there are none), dated +from+ to +to+ (either may be nil, for no
+    # bound). A range leaves out rows with no date yet: still scanning, or
+    # never read.
+    def self.in_states(db, states = [], categories: [], from: nil, to: nil)
       conditions = STATES.values_at(*(STATES.keys & states))
       ds = conditions.empty? ? db[:submissions] : db[:submissions].where(Sequel.|(*conditions))
+      ds = ds.where(category: categories) if categories.any?
       ds = ds.where { incurred_on >= from } if from
       ds = ds.where { incurred_on <= to } if to
       ds
     end
 
-    # One page of +states+, dated +from+ to +to+.
+    # One page of +states+ and +categories+, dated +from+ to +to+.
     # @return [Array(Array<Row>, Integer)] the page's rows, and how many there are in all
-    def self.page(db, states: [], from: nil, to: nil, page: 1, per_page: 25)
-      ds = in_states(db, states, from:, to:)
+    def self.page(db, states: [], categories: [], from: nil, to: nil, page: 1, per_page: 25)
+      ds = in_states(db, states, categories:, from:, to:)
       rows = ds.reverse(:uploaded_at).limit(per_page, (page - 1) * per_page).map { row(it) }
       [rows, ds.count]
     end
 
-    # How many rows dated +from+ to +to+ are in each of STATES.
+    # How many rows with +categories+, dated +from+ to +to+, are in each
+    # of STATES.
     # @return [Hash{String => Integer}]
-    def self.counts(db, from: nil, to: nil)
-      STATES.to_h { |key, _| [key, in_states(db, [key], from:, to:).count] }
+    def self.counts(db, categories: [], from: nil, to: nil)
+      STATES.to_h { |key, _| [key, in_states(db, [key], categories:, from:, to:).count] }
+    end
+
+    # How many rows in +states+, dated +from+ to +to+, have each category:
+    # only categories some row has.
+    # @return [Hash{String => Integer}]
+    def self.category_counts(db, states: [], from: nil, to: nil)
+      in_states(db, states, from:, to:).exclude(category: nil).group_and_count(:category)
+                                       .to_h { [it[:category], it[:count]] }
     end
 
     # The latest uploads first.

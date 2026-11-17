@@ -2,18 +2,18 @@
 
 module UI
   # Every upload, newest first, a page at a time, with filters: by state
-  # (UI::StateFilter) in a sidebar, and by the expense's date. Live: it
+  # (UI::StateFilter) and category in a sidebar, and by the expense's date. Live: it
   # re-renders whenever the read model commits.
   #
   # The header has the total in the reporting currency of the filed
-  # expenses in the dates chosen, whatever the states, or this month's
-  # without dates. Under it, the chart of every month's total
-  # (Components::MonthChart) is the date filter: a month's or a year's link
-  # filters the list to it.
+  # expenses in the dates and categories chosen, whatever the states, or
+  # this month's without dates. Under it, the chart of every month's total
+  # in those categories (Components::MonthChart) is the date filter: a
+  # month's or a year's link filters the list to it.
   #
   # The filters and the page number are in the query string
-  # (?state[]=filed&from=2025-11-01&to=2025-11-30&page=2), typed by the
-  # query schema: an unknown state, a page below 1 or a date that isn't
+  # (?state[]=filed&category[]=travel&from=2025-11-01&to=2025-11-30&page=2),
+  # typed by the query schema: an unknown state or category, a page below 1 or a date that isn't
   # YYYY-MM-DD is a 400. A blank date is none. Any range works, though the
   # chart only makes whole months and years. The layout puts the params in the params
   # signal, so a live re-render keeps them.
@@ -22,8 +22,12 @@ module UI
 
     PER_PAGE = 25
 
+    # A category[] query param: Expenses::CATEGORIES keys only, none if absent.
+    CategoryParam = Types::Array[Types::String.options(Expenses::CATEGORIES.keys)].default([].freeze)
+
     query_schema(
       state: StateFilter::Param,
+      category: CategoryParam,
       from?: Types::Date.nullable,
       to?: Types::Date.nullable,
       page: Types::Integer[1..].default(1)
@@ -33,9 +37,10 @@ module UI
 
     def channel_name = 'expenses.>'
 
-    # The list's URL for +states+, the dates +from+ and +to+, and +page+.
-    def self.path_for(states: [], from: nil, to: nil, page: 1)
-      query = states.map { "state[]=#{it}" }
+    # The list's URL for +states+, +categories+, the dates +from+ and +to+,
+    # and +page+.
+    def self.path_for(states: [], categories: [], from: nil, to: nil, page: 1)
+      query = states.map { "state[]=#{it}" } + categories.map { "category[]=#{it}" }
       query << "from=#{from.iso8601}" if from
       query << "to=#{to.iso8601}" if to
       query << "page=#{page}" if page > 1
@@ -44,7 +49,7 @@ module UI
 
     def self.load(params, _ctx)
       db = Sidereal.config['db']
-      filters = { states: params[:state], from: params[:from], to: params[:to] }
+      filters = { states: params[:state], categories: params[:category], from: params[:from], to: params[:to] }
       page = params[:page]
       rows, total = Expenses::Submissions.page(db, **filters, page:, per_page: PER_PAGE)
       # Past the end (fewer rows since the link was made): the last page.
@@ -52,21 +57,26 @@ module UI
         page = [(total + PER_PAGE - 1) / PER_PAGE, 1].max
         rows, total = Expenses::Submissions.page(db, **filters, page:, per_page: PER_PAGE)
       end
-      new(rows:, total:, **filters, page:, counts: Expenses::Submissions.counts(db, **filters.slice(:from, :to)),
+      # Each group's counts are within the other group's choice.
+      new(rows:, total:, **filters, page:, counts: Expenses::Submissions.counts(db, **filters.except(:states)),
+          category_counts: Expenses::Submissions.category_counts(db, **filters.except(:categories)),
           ledger_total: ledger_total(db, **filters),
-          month_totals: Expenses::Ledger.months(db, Sidereal.config['reporting_currency']))
+          month_totals: Expenses::Ledger.months(db, Sidereal.config['reporting_currency'], categories: params[:category]))
     end
 
-    # The filed expenses in the dates chosen, or this month's.
-    def self.ledger_total(db, from:, to:, **)
+    # The filed expenses in the dates and categories chosen, or this month's.
+    def self.ledger_total(db, from:, to:, categories:, **)
       currency = Sidereal.config['reporting_currency']
-      from || to ? Expenses::Ledger.total(db, currency, from:, to:) : Expenses::Ledger.month(db, currency)
+      from || to ? Expenses::Ledger.total(db, currency, from:, to:, categories:) : Expenses::Ledger.month(db, currency, categories:)
     end
 
-    def initialize(rows:, total:, states:, from:, to:, page:, counts:, ledger_total:, month_totals:)
+    def initialize(rows:, total:, states:, categories:, from:, to:, page:, counts:, category_counts:, ledger_total:,
+                   month_totals:)
       @rows = rows
       @total = total
       @states = states
+      @categories = categories
+      @category_counts = category_counts
       @from = from
       @to = to
       @page = page
@@ -79,9 +89,9 @@ module UI
       div(id: 'expenses-page', class: 'expenses-page') do
         header(class: 'expenses-page__header') do
           h1(class: 'expenses-page__title') { 'All expenses' }
-          render Components::LedgerTotal.new(@ledger_total)
+          render Components::LedgerTotal.new(@ledger_total, categories: @categories)
         end
-        render Components::MonthChart.new(@month_totals, from: @from, to: @to, states: @states)
+        render Components::MonthChart.new(@month_totals, from: @from, to: @to, states: @states, categories: @categories)
 
         # One plain GET form for every filter, the states in the sidebar and
         # the dates above the list: changing one reloads the list with them
@@ -104,12 +114,14 @@ module UI
 
     def pages = [(@total + PER_PAGE - 1) / PER_PAGE, 1].max
 
-    def filtered? = @states.any? || @from || @to
+    def filtered? = @states.any? || @categories.any? || @from || @to
 
-    # The states, each with its stage's colour and how many are in it (in
-    # the dates chosen).
+    # The categories with how many have each, then the states, each with
+    # its stage's colour and how many are in it: in the dates chosen, and
+    # the other group's choice.
     def render_filters
       aside(class: 'filters', aria: { label: 'Filters' }) do
+        render_category_filters
         fieldset(class: 'filters__group') do
           legend(class: 'filters__legend') { 'State' }
           StateFilter::OPTIONS.each do |option|
@@ -126,6 +138,22 @@ module UI
       end
     end
 
+    # Only categories some expense has, or that are ticked: there are many.
+    def render_category_filters
+      shown = Expenses::CATEGORIES.select { |key, _| @category_counts.key?(key) || @categories.include?(key) }
+      return if shown.empty?
+
+      fieldset(class: 'filters__group') do
+        legend(class: 'filters__legend') { 'Category' }
+        shown.each do |key, (label, _)|
+          label(class: 'filter filter--category') do
+            input(type: 'checkbox', name: 'category[]', value: key, checked: @categories.include?(key))
+            span(class: 'filter__label') { label }
+            span(class: 'filter__count') { @category_counts.fetch(key, 0).to_s }
+          end
+        end
+      end
+    end
 
     def render_summary
       p(class: 'expenses-page__summary') do
@@ -152,7 +180,7 @@ module UI
 
     def pager_link(text, page, rel:)
       if page.between?(1, pages)
-        a(class: "pager__link pager__link--#{rel}", href: self.class.path_for(states: @states, from: @from, to: @to, page:), rel:) { text }
+        a(class: "pager__link pager__link--#{rel}", href: self.class.path_for(states: @states, categories: @categories, from: @from, to: @to, page:), rel:) { text }
       else
         span(class: "pager__link pager__link--#{rel} pager__link--disabled", aria: { hidden: 'true' }) { text }
       end
