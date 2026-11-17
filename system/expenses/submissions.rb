@@ -8,6 +8,10 @@ module Expenses
   # moves. Where the machine is (its paths) comes from the state events'
   # entered and exited paths, so the list never loads a machine.
   #
+  # Each row is in the `submissions_search` full-text index too (an FTS5
+  # table, trigram tokenizer): its description, vendor, filename and
+  # category, for #search.
+  #
   # Sidereal publishes Submissions::Projected after every committed batch,
   # which is what the page reacts to.
   class Submissions < Sourced::Projector::StateStored
@@ -21,7 +25,7 @@ module Expenses
       def in?(path) = machine.include?(path)
     end
 
-    COLUMNS = %i[filename content_type file_ref machine failure rejection description
+    COLUMNS = %i[filename content_type file_ref machine failure rejection description vendor
                  total_cents currency incurred_on category category_chosen uploaded_at updated_at].freeze
 
     # The machine's paths are a JSON array: whether +path+ is one of them.
@@ -50,38 +54,61 @@ module Expenses
     # Rows in any of +states+ (STATES keys; all rows when there are none),
     # with any of +categories+ (CATEGORIES keys; any category or none, when
     # there are none), dated +from+ to +to+ (either may be nil, for no
-    # bound). A range leaves out rows with no date yet: still scanning, or
-    # never read.
-    def self.in_states(db, states = [], categories: [], from: nil, to: nil)
+    # bound), matching +search+ (see .search; nil or blank for any). A
+    # range leaves out rows with no date yet: still scanning, or never read.
+    def self.in_states(db, states = [], categories: [], from: nil, to: nil, search: nil)
       conditions = STATES.values_at(*(STATES.keys & states))
       ds = conditions.empty? ? db[:submissions] : db[:submissions].where(Sequel.|(*conditions))
       ds = ds.where(category: categories) if categories.any?
       ds = ds.where { incurred_on >= from } if from
       ds = ds.where { incurred_on <= to } if to
+      ids = search(db, search)
+      ds = ds.where(expense_id: ids) if ids
       ds
     end
 
-    # One page of +states+ and +categories+, dated +from+ to +to+.
+    # The ids of the rows matching +text+, as a dataset to filter by
+    # (`where(expense_id: ...)`, here or in another table), or nil for a
+    # blank +text+: no filter. Every word in it must be somewhere in the
+    # description, vendor, filename or category, as any part of a word,
+    # whatever its case. Words of 3 characters or more are matched in the
+    # index, ignoring accents too ("cafe" finds "Café"); shorter ones, which
+    # the trigram index can't, as plain substrings.
+    #
+    # Words are quoted as FTS5 strings, so nothing typed is query syntax.
+    # @return [Sequel::Dataset, nil]
+    def self.search(db, text)
+      words = text.to_s.split
+      return if words.empty?
+
+      long, short = words.partition { it.length >= 3 }
+      ds = db[:submissions_search].select(:expense_id)
+      ds = ds.where(Sequel.lit('submissions_search MATCH ?', long.map { %("#{it.gsub('"', '""')}") }.join(' '))) if long.any?
+      short.each { ds = ds.where(Sequel.like(:body, "%#{ds.escape_like(it)}%", case_insensitive: false)) }
+      ds
+    end
+
+    # One page of +states+ and +categories+, dated +from+ to +to+, matching +search+.
     # @return [Array(Array<Row>, Integer)] the page's rows, and how many there are in all
-    def self.page(db, states: [], categories: [], from: nil, to: nil, page: 1, per_page: 25)
-      ds = in_states(db, states, categories:, from:, to:)
+    def self.page(db, states: [], categories: [], from: nil, to: nil, search: nil, page: 1, per_page: 25)
+      ds = in_states(db, states, categories:, from:, to:, search:)
       rows = ds.reverse(:uploaded_at).limit(per_page, (page - 1) * per_page).map { row(it) }
       [rows, ds.count]
     end
 
-    # How many rows with +categories+, dated +from+ to +to+, are in each
-    # of STATES.
+    # How many rows with +categories+, dated +from+ to +to+, matching
+    # +search+, are in each of STATES.
     # @return [Hash{String => Integer}]
-    def self.counts(db, categories: [], from: nil, to: nil)
-      STATES.to_h { |key, _| [key, in_states(db, [key], categories:, from:, to:).count] }
+    def self.counts(db, categories: [], from: nil, to: nil, search: nil)
+      STATES.to_h { |key, _| [key, in_states(db, [key], categories:, from:, to:, search:).count] }
     end
 
-    # How many rows in +states+, dated +from+ to +to+, have each category:
-    # only categories some row has.
+    # How many rows in +states+, dated +from+ to +to+, matching +search+,
+    # have each category: only categories some row has.
     # @return [Hash{String => Integer}]
-    def self.category_counts(db, states: [], from: nil, to: nil)
-      in_states(db, states, from:, to:).exclude(category: nil).group_and_count(:category)
-                                       .to_h { [it[:category], it[:count]] }
+    def self.category_counts(db, states: [], from: nil, to: nil, search: nil)
+      in_states(db, states, from:, to:, search:).exclude(category: nil).group_and_count(:category)
+                                                .to_h { [it[:category], it[:count]] }
     end
 
     # The latest uploads first.
@@ -94,7 +121,11 @@ module Expenses
     # The group's offsets were rewound (`bin/sid sourced groups reset
     # expenses.submissions`): every row goes, and it builds them again from
     # the start of the store once started.
-    def self.on_reset = Sidereal.config['db'][:submissions].delete
+    def self.on_reset
+      db = Sidereal.config['db']
+      db[:submissions].delete
+      db[:submissions_search].delete
+    end
 
     context { { machine: [], category_chosen: false } }
 
@@ -118,7 +149,8 @@ module Expenses
 
     # A rescan starts from nothing.
     evolve Expense::ScanRequested do |row, _evt|
-      row.merge!(failure: nil, rejection: nil, description: nil, total_cents: nil, currency: nil, incurred_on: nil)
+      row.merge!(failure: nil, rejection: nil, description: nil, vendor: nil, total_cents: nil, currency: nil,
+                 incurred_on: nil)
     end
 
     evolve Expense::StepFailed do |row, evt|
@@ -133,6 +165,7 @@ module Expenses
       total = evt.payload.total_amount
       row.merge!(
         description: evt.payload.description,
+        vendor: evt.payload.vendor_name,
         total_cents: total && (total * 100).round,
         currency: evt.payload.currency,
         incurred_on: Types.iso_date(evt.payload.date)
@@ -172,6 +205,16 @@ module Expenses
       row = context.slice(*COLUMNS).merge(machine: JSON.generate(context[:machine]))
       db[:submissions].insert_conflict(target: :expense_id, update: row)
                       .insert(row.merge(expense_id: context[:expense_id]))
+      # FTS5 tables have no upsert: the old entry goes, the new one in.
+      index = db[:submissions_search]
+      index.where(expense_id: context[:expense_id]).delete
+      index.insert(expense_id: context[:expense_id], body: Submissions.search_body(context))
+    end
+
+    # What a row is found by, a line each.
+    def self.search_body(row)
+      category = row[:category] && Expenses.category_label(row[:category])
+      [row[:description], row[:vendor], row[:filename], category].compact.join("\n")
     end
   end
 end

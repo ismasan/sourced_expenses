@@ -13,7 +13,9 @@ module Expenses
   # needs no rebuild here, only conversions to the new one.
   #
   # Each row has the expense's category too (the suggestion, until a person
-  # chooses), and totals can be of some categories only.
+  # chooses), and totals can be of some categories only, and of some
+  # expenses only (+matching+: a dataset of their ids, as
+  # Submissions.search makes).
   #
   #   Ledger.month(db, 'GBP')                      # this month
   #   Ledger.month(db, 'GBP', Date.new(2025, 10))  # October 2025
@@ -40,16 +42,16 @@ module Expenses
 
     # The month +date+ is in, by the expenses' own dates.
     # @return [Total]
-    def self.month(db, currency, date = Date.today, categories: [])
+    def self.month(db, currency, date = Date.today, categories: [], matching: nil)
       from = Date.new(date.year, date.month, 1)
-      total(db, currency, from:, to: from.next_month - 1, categories:)
+      total(db, currency, from:, to: from.next_month - 1, categories:, matching:)
     end
 
     # Filed expenses dated +from+ to +to+, by their own dates, in +currency+;
-    # only those in +categories+, if any.
+    # only those in +categories+, if any, and +matching+, if given.
     # @return [Total]
-    def self.total(db, currency, from: nil, to: nil, categories: [])
-      rows = in_categories(db, categories)
+    def self.total(db, currency, from: nil, to: nil, categories: [], matching: nil)
+      rows = scope(db, categories, matching)
       rows = rows.where { incurred_on >= from } if from
       rows = rows.where { incurred_on <= to } if to
       Total.new(currency:, from:, to:, cents: rows.sum(cents_in(currency)).to_i, expenses: rows.count,
@@ -60,10 +62,10 @@ module Expenses
     # +date+ is in (or the last one dated in, if later), oldest first, a
     # Total each: months with nothing filed in between are there too, empty.
     # Just +date+'s month when nothing is filed. Only expenses in
-    # +categories+, if any; the months span every expense regardless, so
-    # the chart keeps its shape whatever is chosen.
+    # +categories+, if any, and +matching+, if given; the months span every
+    # expense regardless, so the chart keeps its shape whatever is chosen.
     # @return [Array<Total>]
-    def self.months(db, currency, date: Date.today, categories: [])
+    def self.months(db, currency, date: Date.today, categories: [], matching: nil)
       dates = db[:ledger].select(Sequel.function(:min, :incurred_on).as(:earliest),
                                  Sequel.function(:max, :incurred_on).as(:latest)).first
       earliest, latest = dates.values_at(:earliest, :latest).map { Types.iso_date(it&.to_s) }
@@ -72,7 +74,7 @@ module Expenses
       firsts = []
       (firsts << first; first >>= 1) while first <= last
       month = Sequel.function(:strftime, '%Y-%m-01', :incurred_on)
-      rows = in_categories(db, categories).where { incurred_on >= firsts.first }.where { incurred_on < last.next_month }
+      rows = scope(db, categories, matching).where { incurred_on >= firsts.first }.where { incurred_on < last.next_month }
                         .group(month)
                         .select(month.as(:month), Sequel.function(:sum, cents_in(currency)).as(:cents),
                                 Sequel.function(:count, Sequel.lit('*')).as(:expenses),
@@ -87,7 +89,12 @@ module Expenses
 
     def self.month_of(date) = Date.new(date.year, date.month, 1)
 
-    def self.in_categories(db, categories) = categories.any? ? db[:ledger].where(category: categories) : db[:ledger]
+    def self.scope(db, categories, matching)
+      rows = db[:ledger]
+      rows = rows.where(category: categories) if categories.any?
+      rows = rows.where(expense_id: matching) if matching
+      rows
+    end
 
     # A row's total in +currency+: as it is if in it, converted if
     # converted to it, else NULL (which sums skip).
@@ -100,7 +107,7 @@ module Expenses
     def self.counted_in(currency)
       Sequel.|({ currency: }, { Sequel.function(:coalesce, :reporting_currency, '') => currency })
     end
-    private_class_method :month_of, :in_categories, :cents_in, :counted_in
+    private_class_method :month_of, :scope, :cents_in, :counted_in
 
     COLUMNS = %i[description incurred_on currency amount_cents reporting_currency reporting_cents category
                  updated_at].freeze

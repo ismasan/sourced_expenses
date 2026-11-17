@@ -14,8 +14,10 @@ module UI
       # @param total [Expenses::Ledger::Total]
       # @param categories [Array<String>] the categories it's of, named in
       #   the title; none for every expense
-      def initialize(total, categories: [])
+      # @param search [String, nil] what the expenses were searched for, named too
+      def initialize(total, categories: [], search: nil)
         @total = total
+        @search = search
         # In the list's order, however they came.
         @categories = Expenses::CATEGORIES.keys & categories
       end
@@ -25,6 +27,10 @@ module UI
           h2(id: 'ledger-total-title', class: 'ledger-total__title') do
             if (of = categories_title)
               span(class: 'ledger-total__categories', title: @categories.map { Expenses.category_label(it) }.join(', ')) { of }
+              plain ' · '
+            end
+            if @search
+              span(class: 'ledger-total__search') { "“#{@search}”" }
               plain ' · '
             end
             plain title

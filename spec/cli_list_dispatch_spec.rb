@@ -14,6 +14,7 @@ RSpec.describe 'bin/sid expenses list | dispatch' do
   around do |example|
     db.transaction(rollback: :always, auto_savepoint: true) do
       db[:submissions].delete
+      db[:submissions_search].delete
       example.run
     end
   end
@@ -64,6 +65,15 @@ RSpec.describe 'bin/sid expenses list | dispatch' do
       expect(ids.('--category-status', 'chosen')).to eq([chosen])
       expect(ids.('--category-status', 'none')).to eq([none])
       expect(ids.('--from', '2026-02-01', '--state', 'vat_needs_review')).to eq([])
+    end
+
+    it 'filters by what the expenses say, as the search box does' do
+      db[:submissions].each do |row|
+        db[:submissions_search].insert(expense_id: row[:expense_id], body: Expenses::Submissions.search_body(row))
+      end
+
+      expect(json_lines('--search', 'UBE').map { it[:expense_id] }).to eq([suggested])
+      expect(json_lines('--search', 'travel', '--state', 'reviewing').map { it[:expense_id] }).to eq([reviewing])
     end
 
     it 'prints a table to read' do

@@ -51,6 +51,18 @@ class App < Sidereal::App
     render_in_place(step && UI::SubmissionDiagramPage.at(expense_id, step))
   end
 
+  # The search box's preview of what's typed (UI::Components::Search),
+  # patched into its pane. Anything but a Datastar request gets the list
+  # of every match.
+  get '/search' do
+    query = request.params['q'].to_s.strip
+    redirect UI::ExpensesPage.path_for(search: (query unless query.empty?)), status: 303 unless browser.sse?
+
+    browser.stream(heartbeat: false) do |sse|
+      sse.patch_elements UI::Components::SearchPreview.for(query)
+    end
+  end
+
   # An uploaded file as it was uploaded, for the submission page's modal.
   get '/files/:file_id' do |file_id:|
     file = stored(file_id)

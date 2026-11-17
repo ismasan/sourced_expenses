@@ -2,19 +2,21 @@
 
 module UI
   # Every upload, newest first, a page at a time, with filters: by state
-  # (UI::StateFilter) and category in a sidebar, and by the expense's date. Live: it
-  # re-renders whenever the read model commits.
+  # (UI::StateFilter) and category in a sidebar, by the expense's date, and
+  # by what it says (q, Expenses::Submissions.search: the top bar's search
+  # box, UI::Components::Search, sends it here). Live: it re-renders
+  # whenever the read model commits.
   #
   # The header has the total in the reporting currency of the filed
-  # expenses in the dates and categories chosen, whatever the states, or
+  # expenses in the dates, categories and search chosen, whatever the states, or
   # this month's without dates. Under it, the chart of every month's total
   # in those categories (Components::MonthChart) is the date filter: a
   # month's or a year's link filters the list to it.
   #
   # The filters and the page number are in the query string
-  # (?state[]=filed&category[]=travel&from=2025-11-01&to=2025-11-30&page=2),
+  # (?state[]=filed&category[]=travel&q=uber&from=2025-11-01&to=2025-11-30&page=2),
   # typed by the query schema: an unknown state or category, a page below 1 or a date that isn't
-  # YYYY-MM-DD is a 400. A blank date is none. Any range works, though the
+  # YYYY-MM-DD is a 400. A blank date or search is none. Any range works, though the
   # chart only makes whole months and years. The layout puts the params in the params
   # signal, so a live re-render keeps them.
   class ExpensesPage < Sidereal::Page
@@ -28,6 +30,7 @@ module UI
     query_schema(
       state: StateFilter::Param,
       category: CategoryParam,
+      q?: Types::String.nullable,
       from?: Types::Date.nullable,
       to?: Types::Date.nullable,
       page: Types::Integer[1..].default(1)
@@ -37,10 +40,11 @@ module UI
 
     def channel_name = 'expenses.>'
 
-    # The list's URL for +states+, +categories+, the dates +from+ and +to+,
-    # and +page+.
-    def self.path_for(states: [], categories: [], from: nil, to: nil, page: 1)
+    # The list's URL for +states+, +categories+, +search+, the dates +from+
+    # and +to+, and +page+.
+    def self.path_for(states: [], categories: [], search: nil, from: nil, to: nil, page: 1)
       query = states.map { "state[]=#{it}" } + categories.map { "category[]=#{it}" }
+      query << "q=#{URI.encode_www_form_component(search)}" if search
       query << "from=#{from.iso8601}" if from
       query << "to=#{to.iso8601}" if to
       query << "page=#{page}" if page > 1
@@ -49,7 +53,9 @@ module UI
 
     def self.load(params, _ctx)
       db = Sidereal.config['db']
-      filters = { states: params[:state], categories: params[:category], from: params[:from], to: params[:to] }
+      search = params[:q].to_s.strip
+      filters = { states: params[:state], categories: params[:category], search: (search unless search.empty?),
+                  from: params[:from], to: params[:to] }
       page = params[:page]
       rows, total = Expenses::Submissions.page(db, **filters, page:, per_page: PER_PAGE)
       # Past the end (fewer rows since the link was made): the last page.
@@ -61,21 +67,28 @@ module UI
       new(rows:, total:, **filters, page:, counts: Expenses::Submissions.counts(db, **filters.except(:states)),
           category_counts: Expenses::Submissions.category_counts(db, **filters.except(:categories)),
           ledger_total: ledger_total(db, **filters),
-          month_totals: Expenses::Ledger.months(db, Sidereal.config['reporting_currency'], categories: params[:category]))
+          month_totals: Expenses::Ledger.months(db, Sidereal.config['reporting_currency'], categories: filters[:categories],
+                                                                                    matching: Expenses::Submissions.search(db, filters[:search])))
     end
 
-    # The filed expenses in the dates and categories chosen, or this month's.
-    def self.ledger_total(db, from:, to:, categories:, **)
+    # The filed expenses in the dates, categories and search chosen, or this month's.
+    def self.ledger_total(db, from:, to:, categories:, search:, **)
       currency = Sidereal.config['reporting_currency']
-      from || to ? Expenses::Ledger.total(db, currency, from:, to:, categories:) : Expenses::Ledger.month(db, currency, categories:)
+      matching = Expenses::Submissions.search(db, search)
+      if from || to
+        Expenses::Ledger.total(db, currency, from:, to:, categories:, matching:)
+      else
+        Expenses::Ledger.month(db, currency, categories:, matching:)
+      end
     end
 
     def initialize(rows:, total:, states:, categories:, from:, to:, page:, counts:, category_counts:, ledger_total:,
-                   month_totals:)
+                   month_totals:, search: nil)
       @rows = rows
       @total = total
       @states = states
       @categories = categories
+      @search = search
       @category_counts = category_counts
       @from = from
       @to = to
@@ -89,16 +102,19 @@ module UI
       div(id: 'expenses-page', class: 'expenses-page') do
         header(class: 'expenses-page__header') do
           h1(class: 'expenses-page__title') { 'All expenses' }
-          render Components::LedgerTotal.new(@ledger_total, categories: @categories)
+          render Components::LedgerTotal.new(@ledger_total, categories: @categories, search: @search)
         end
-        render Components::MonthChart.new(@month_totals, from: @from, to: @to, states: @states, categories: @categories)
+        render Components::MonthChart.new(@month_totals, from: @from, to: @to, states: @states, categories: @categories,
+                                                         search: @search)
 
         # One plain GET form for every filter, the states in the sidebar and
         # the dates above the list: changing one reloads the list with them
         # all, from the first page.
         form(class: 'expenses-page__body', action: self.class.path, method: 'get', data: { 'on:change' => 'el.submit()' }) do
           render_filters
-          # The dates are the chart's: kept here, so ticking a state keeps them.
+          # The dates are the chart's, the search the top bar's: kept here,
+          # so ticking a state keeps them.
+          input(type: 'hidden', name: 'q', value: @search) if @search
           input(type: 'hidden', name: 'from', value: @from.iso8601) if @from
           input(type: 'hidden', name: 'to', value: @to.iso8601) if @to
           section(class: 'expenses-page__list', aria: { label: 'Expenses' }) do
@@ -114,7 +130,7 @@ module UI
 
     def pages = [(@total + PER_PAGE - 1) / PER_PAGE, 1].max
 
-    def filtered? = @states.any? || @categories.any? || @from || @to
+    def filtered? = @states.any? || @categories.any? || @search || @from || @to
 
     # The categories with how many have each, then the states, each with
     # its stage's colour and how many are in it: in the dates chosen, and
@@ -164,8 +180,19 @@ module UI
           first = ((@page - 1) * PER_PAGE) + 1
           last = [first + @rows.size - 1, @total].min
           plain "#{first}–#{last} of #{@total}"
+          render_search_summary
         end
       end
+    end
+
+    # What it's searched for, and a link to the list without the search.
+    def render_search_summary
+      return unless @search
+
+      plain ' matching '
+      strong { "“#{@search}”" }
+      plain ' · '
+      a(href: self.class.path_for(states: @states, categories: @categories, from: @from, to: @to)) { 'Clear search' }
     end
 
     def render_pager
@@ -180,7 +207,7 @@ module UI
 
     def pager_link(text, page, rel:)
       if page.between?(1, pages)
-        a(class: "pager__link pager__link--#{rel}", href: self.class.path_for(states: @states, categories: @categories, from: @from, to: @to, page:), rel:) { text }
+        a(class: "pager__link pager__link--#{rel}", href: self.class.path_for(states: @states, categories: @categories, search: @search, from: @from, to: @to, page:), rel:) { text }
       else
         span(class: "pager__link pager__link--#{rel} pager__link--disabled", aria: { hidden: 'true' }) { text }
       end

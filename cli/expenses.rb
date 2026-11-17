@@ -99,6 +99,7 @@ module CLI
                                    'scan_failed, vat_needs_review, filed, discarded, voided'
         option '--category <keys>', 'Only with these categories, comma-separated (keys, as `--json` prints them)'
         option '--category-status <status>', "Only those whose category is #{CATEGORY_STATUSES.join(', ')} (none: no category yet)"
+        option '--search <text>', 'Only those whose description, vendor, filename or category has every word, as the search box finds them'
         option '--from <date>', 'Only dated on or after this day (YYYY-MM-DD)'
         option '--to <date>', 'Only dated on or before this day (YYYY-MM-DD)'
         option '--limit <n>', 'At most this many'
@@ -131,11 +132,12 @@ module CLI
         limit = @options[:limit] && Integer(@options[:limit], 10, exception: false)
         raise Sidereal::CLI::Error, '--limit is a number' if @options[:limit] && !limit&.positive?
 
-        { states:, categories:, status:, from: date(:from), to: date(:to), limit: }
+        search = @options[:search].to_s.strip
+        { states:, categories:, status:, search: (search unless search.empty?), from: date(:from), to: date(:to), limit: }
       end
 
-      def dataset(states:, categories:, status:, from:, to:, limit:)
-        ds = ::Expenses::Submissions.in_states(Sidereal.config['db'], states, categories:, from:, to:)
+      def dataset(states:, categories:, status:, search:, from:, to:, limit:)
+        ds = ::Expenses::Submissions.in_states(Sidereal.config['db'], states, categories:, search:, from:, to:)
         ds = case status
              when 'suggested' then ds.exclude(category: nil).where(category_chosen: false)
              when 'chosen' then ds.where(category_chosen: true)

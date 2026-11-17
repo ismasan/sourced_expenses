@@ -18,16 +18,26 @@ module UI
           link(rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: true)
           link(rel: 'stylesheet', href: FONTS)
           style { raw safe(STYLES) }
-          link(rel: 'stylesheet', href: '/css/app.css?18')
+          link(rel: 'stylesheet', href: '/css/app.css?26')
         end
 
         body do
-          render Components::TopNav.new(context.request.path_info)
+          render Components::TopNav.new(context.request.path_info, query: search_query)
           div(class: 'page') do
             render page
           end
         end
       end
+    end
+
+    private
+
+    # What the list is searched for, to keep in the box: only on the list.
+    def search_query
+      request = context.request
+      request.path_info == ExpensesPage.path ? request.params['q'].to_s.strip : nil
+    rescue Rack::QueryParser::ParamsTooDeepError, Rack::QueryParser::InvalidParameterError
+      nil
     end
   end
 end
