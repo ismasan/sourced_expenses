@@ -2,26 +2,33 @@
 
 module UI
   module Components
-    # Filed expenses per month in the reporting currency
-    # (Expenses::Ledger.months), and the list's date filter: a bar a month,
-    # from the first one with an expense to this one, with what the month
-    # comes to on top, and under the months each year's band, as wide as its
-    # months. A month or a year is a link to the list filtered to it
-    # (?from=…&to=…, keeping the states chosen); the one chosen is
-    # highlighted, and its link goes back to all dates.
+    # Filed expenses in the reporting currency (Expenses::Ledger.months),
+    # and the list's date filter. One year is expanded: a bar a month, with
+    # what the month comes to on top and the year's band under its months.
+    # Every other year is one column, its total in a single bar. The year
+    # expanded is the one the list's dates are in (a year chosen, or a month
+    # of it), else the latest.
     #
-    # It scrolls sideways when the months don't fit, starting at what's
-    # chosen, or the latest month; a year's label stays in view while any of
-    # its months are. Bars are black: colour in this app means whose move it
-    # is. Months and years are lists of links, so a screen reader reads every
-    # total as text; nothing is only in the drawing.
+    # A month or a year is a link to the list filtered to it (?from=…&to=…,
+    # keeping the states chosen), so a year's column expands it; the one
+    # chosen is highlighted, and its link goes back to all dates.
+    #
+    # One scale for years: a year's grey bar is as tall as its share of the
+    # biggest year, and the year expanded has a thin line across it that
+    # high, its black months scaled under it (its biggest month and its
+    # figure reaching it), so where a year stands among the others shows,
+    # expanded or not. Every bar has its figure on top. Colour in this app means whose
+    # move it is, so the chart keeps to black and greys. Months and years
+    # are lists of links, so a screen reader reads every total as text.
+    #
+    # It scrolls sideways when the columns don't fit, starting at what's
+    # chosen, or the year expanded.
     class MonthChart < Phlex::HTML
-      # Shows what's chosen (its start, if wider than the strip), else the
-      # latest month, once the chart is on the page.
+      # Shows what's chosen, else the year expanded (its start, if wider
+      # than the strip), once the chart is on the page.
       SCROLL = <<~JS.tr("\n", ' ').freeze
-        const chosen = el.querySelector('[aria-current]');
-        if (chosen) { el.scrollLeft = Math.min(chosen.offsetLeft, chosen.offsetLeft - (el.clientWidth - chosen.offsetWidth) / 2) }
-        else { el.scrollLeft = el.scrollWidth }
+        const shown = el.querySelector('[aria-current]') || el.querySelector('[data-expanded]');
+        if (shown) { el.scrollLeft = Math.min(shown.offsetLeft, shown.offsetLeft - (el.clientWidth - shown.offsetWidth) / 2) }
       JS
 
       Year = ::Data.define(:year, :months) do
@@ -42,7 +49,8 @@ module UI
         @from = from
         @to = to
         @states = states
-        @max = months.map(&:cents).max.to_i
+        @expanded = (from || to)&.year || @years.last&.year
+        @max_year = @years.map(&:cents).max.to_i
       end
 
       def view_template
@@ -52,19 +60,22 @@ module UI
             a(class: 'month-chart__all', href: path) { 'All dates' } if @from || @to
           end
           ol(class: 'month-chart__years', data: { init: SCROLL }) do
-            @years.each { render_year(it) }
+            @years.each { it.year == @expanded ? render_expanded(it) : render_compact(it) }
           end
         end
       end
 
       private
 
-      # The year's months, then its band: proportionally as wide as they are.
-      def render_year(year)
-        count = year.months.size
-        li(class: 'month-chart__year', style: "--months: #{count}") do
+      # The year's months, then its band: as wide as they are. A line runs
+      # across the months as high as the year's bar would be (+--level+);
+      # each month is a share of its biggest, and the CSS fits them under it.
+      def render_expanded(year)
+        level = share(year.cents, @max_year)
+        max_month = year.months.map(&:cents).max.to_i
+        li(class: 'month-chart__year', style: "--months: #{year.months.size}; --level: #{level}", data: { expanded: true }) do
           ol(class: 'month-chart__months') do
-            year.months.each { render_month(it) }
+            year.months.each { render_month(it, share(it.cents, max_month)) }
           end
           chosen = chosen?(year)
           a(class: ['month-chart__band', ('month-chart__band--chosen' if chosen)], href: link(year, chosen),
@@ -74,19 +85,41 @@ module UI
         end
       end
 
-      def render_month(month)
+      # The whole year as one column, which expands it.
+      def render_compact(year)
+        li(class: 'month-chart__year month-chart__year--compact') do
+          a(class: 'month-chart__link month-chart__link--year', href: path(from: year.from, to: year.to),
+            aria: { label: describe(year, year.year.to_s) }) do
+            render_plot(year.cents, year.cents.positive? ? share(year.cents, @max_year) : 0)
+            # Where the months' names are, so the year lines up with the bands.
+            span(class: 'month-chart__label', aria: { hidden: 'true' })
+            span(class: 'month-chart__band', aria: { hidden: 'true' }) do
+              span(class: 'month-chart__band-label') { year.year.to_s }
+            end
+            span(class: 'month-chart__tip', aria: { hidden: 'true' }) { describe(year, year.year.to_s) }
+          end
+        end
+      end
+
+      # +height+ is the bar's, as a share of the year's biggest month.
+      def render_month(month, height)
         chosen = chosen?(month)
         li(class: 'month-chart__month') do
           a(class: ['month-chart__link', ('month-chart__link--chosen' if chosen)], href: link(month, chosen),
             aria: { label: describe(month, month.from.strftime('%B %Y')), current: (chosen ? 'true' : nil) }) do
-            span(class: 'month-chart__plot', aria: { hidden: 'true' }) do
-              if month.cents.positive?
-                span(class: 'month-chart__value') { Money.compact(month.cents) }
-                span(class: 'month-chart__bar', style: "--share: #{share(month)}")
-              end
-            end
+            render_plot(month.cents, height)
             span(class: 'month-chart__label', aria: { hidden: 'true' }) { month.from.strftime('%b') }
             span(class: 'month-chart__tip', aria: { hidden: 'true' }) { describe(month, month.from.strftime('%B %Y')) }
+          end
+        end
+      end
+
+      # A bar +share+ of the plot's height tall, +cents+ on top; nothing for none.
+      def render_plot(cents, share)
+        span(class: 'month-chart__plot', aria: { hidden: 'true' }) do
+          if cents.positive?
+            span(class: 'month-chart__value') { Money.compact(cents) }
+            span(class: 'month-chart__bar', style: "--share: #{share}")
           end
         end
       end
@@ -99,8 +132,7 @@ module UI
 
       def path(**dates) = ExpensesPage.path_for(states: @states, **dates)
 
-      # How tall the bar is, as a share of the tallest.
-      def share(month) = @max.zero? ? 0 : (month.cents.to_f / @max).round(4)
+      def share(cents, max) = max.zero? ? 0 : (cents.to_f / max).round(4)
 
       def describe(period, name)
         text = "#{name}: #{Money.format(period.cents, period.currency)}, " \

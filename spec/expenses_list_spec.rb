@@ -104,51 +104,70 @@ RSpec.describe 'The expense lists' do
     expect(last_response.body).to include('&quot;params&quot;:{&quot;state&quot;:[&quot;scanning&quot;,&quot;filed&quot;]}')
   end
 
-  it "charts every month's total from the first expense's to this one, each linking to its month" do
-    today = Date.today
-    first = Date.new(today.year, today.month, 1)
-    db[:ledger].insert(expense_id: SecureRandom.hex(16), incurred_on: today, currency: 'EUR', amount_cents: 2420,
-                       reporting_currency: 'GBP', reporting_cents: 2113, updated_at: Time.now)
-    db[:ledger].insert(expense_id: SecureRandom.hex(16), incurred_on: first << 2, currency: 'GBP', amount_cents: 1_234_500,
-                       updated_at: Time.now)
-    get '/expenses?state[]=filed'
+  describe 'the chart' do
+    # Today, for the chart's last month: 17 Nov 2026.
+    before { allow(Date).to receive(:today).and_return(Date.new(2026, 11, 17)) }
 
-    body = last_response.body
-    expect(body.scan('class="month-chart__month"').size).to eq(3)
-    expect(body).to include('Filed per month, in GBP', "#{first.strftime('%B %Y')}: 21.13 GBP, 1 expense",
-                            "href=\"/expenses?state[]=filed&from=#{first.iso8601}&to=#{(first.next_month - 1).iso8601}\"",
-                            '>21<', '>12.3K<', "#{(first << 1).strftime('%B %Y')}: 0.00 GBP, 0 expenses")
-    expect(body).not_to include('month-chart__link--chosen', 'All dates', 'type="date"')
-  end
+    def ledger(on, cents, **row)
+      db[:ledger].insert(expense_id: SecureRandom.hex(16), incurred_on: on, currency: 'GBP', amount_cents: cents,
+                         updated_at: Time.now, **row)
+    end
 
-  it 'highlights the month chosen, whose link goes back to all dates, and keeps it when choosing states' do
-    first = Date.new(Date.today.year, Date.today.month, 1)
-    db[:ledger].insert(expense_id: SecureRandom.hex(16), incurred_on: first, currency: 'GBP', amount_cents: 100, updated_at: Time.now)
-    get "/expenses?state[]=filed&from=#{first.iso8601}&to=#{(first.next_month - 1).iso8601}"
+    def months(body) = body.scan(/class="month-chart__month"/).size
 
-    body = last_response.body
-    expect(body).to match(%r{<a class="month-chart__link month-chart__link--chosen" href="/expenses\?state\[\]=filed"[^>]*aria-current="true"})
-    expect(body).to include('>All dates<', %(<input type="hidden" name="from" value="#{first.iso8601}">),
-                            %(<input type="hidden" name="to" value="#{(first.next_month - 1).iso8601}">))
-  end
+    it 'expands the latest year, a bar a month up to this one, each linking to its month and keeping the states' do
+      ledger(Date.new(2026, 11, 2), 2420, currency: 'EUR', reporting_currency: 'GBP', reporting_cents: 2113)
+      ledger(Date.new(2026, 9, 5), 1_234_500)
+      get '/expenses?state[]=filed'
 
-  it 'bands each year under its months, linking to the whole year, and highlights the year chosen' do
-    db[:ledger].insert(expense_id: SecureRandom.hex(16), incurred_on: Date.new(2024, 11, 5), currency: 'GBP', amount_cents: 1000,
-                       updated_at: Time.now)
-    db[:ledger].insert(expense_id: SecureRandom.hex(16), incurred_on: Date.new(2025, 2, 5), currency: 'GBP', amount_cents: 2500,
-                       updated_at: Time.now)
-    get '/expenses'
+      body = last_response.body
+      # From the first expense's month.
+      expect(months(body)).to eq(3)
+      expect(body).to include('Filed per month, in GBP', 'November 2026: 21.13 GBP, 1 expense', 'October 2026: 0.00 GBP, 0 expenses',
+                              'href="/expenses?state[]=filed&from=2026-11-01&to=2026-11-30"', '>21<', '>12.3K<',
+                              'href="/expenses?state[]=filed&from=2026-01-01&to=2026-12-31" aria-label="2026: 12,366.13 GBP, 2 expenses"')
+      expect(body).not_to include('month-chart__link--chosen', 'month-chart__band--chosen', 'All dates', 'type="date"')
+    end
 
-    expect(last_response.body).to include('style="--months: 2"', 'href="/expenses?from=2024-01-01&to=2024-12-31" aria-label="2024: 10.00 GBP, 1 expense"',
-                                          'href="/expenses?from=2025-01-01&to=2025-12-31" aria-label="2025: 25.00 GBP, 1 expense"')
+    it 'compacts every other year into one column, linking to the year, all years on one scale' do
+      ledger(Date.new(2024, 11, 5), 1000)
+      ledger(Date.new(2025, 2, 5), 2500)
+      ledger(Date.new(2026, 3, 1), 500)
+      get '/expenses'
 
-    get '/expenses?state[]=filed&from=2025-01-01&to=2025-12-31'
+      body = last_response.body
+      expect(months(body)).to eq(11)
+      expect(body.scan('month-chart__year--compact').size).to eq(2)
+      expect(body).to include('href="/expenses?from=2024-01-01&to=2024-12-31" aria-label="2024: 10.00 GBP, 1 expense"',
+                              'href="/expenses?from=2025-01-01&to=2025-12-31" aria-label="2025: 25.00 GBP, 1 expense"',
+                              'style="--share: 0.4"', 'style="--share: 1.0"')
+      # The year expanded stands at its own level on the years' scale: 5.00 of the biggest year's 25.00.
+      expect(body).to include('style="--months: 11; --level: 0.2"')
+    end
 
-    body = last_response.body
-    expect(body).to match(%r{<a class="month-chart__band month-chart__band--chosen" href="/expenses\?state\[\]=filed"[^>]*aria-current="true"})
-    expect(body).not_to include('month-chart__link--chosen')
-    # The header's total is the year's.
-    expect(body).to match(%r{ledger-total__title">2025</h2>.*25\.00 GBP}m)
+    it 'expands the year of the month chosen, highlighted, its link going back to all dates, the dates kept for states' do
+      ledger(Date.new(2025, 2, 5), 2500)
+      ledger(Date.new(2026, 3, 1), 500)
+      get '/expenses?state[]=filed&from=2025-02-01&to=2025-02-28'
+
+      body = last_response.body
+      expect(months(body)).to eq(11)
+      expect(body).to match(%r{<a class="month-chart__link month-chart__link--chosen" href="/expenses\?state\[\]=filed"[^>]*aria-current="true"})
+      expect(body).to include('aria-label="2026: 5.00 GBP, 1 expense"', '>All dates<',
+                              '<input type="hidden" name="from" value="2025-02-01">', '<input type="hidden" name="to" value="2025-02-28">')
+    end
+
+    it 'expands the year chosen, its band highlighted, with the year in the header' do
+      ledger(Date.new(2025, 2, 5), 2500)
+      ledger(Date.new(2026, 3, 1), 500)
+      get '/expenses?state[]=filed&from=2025-01-01&to=2025-12-31'
+
+      body = last_response.body
+      expect(months(body)).to eq(11)
+      expect(body).to match(%r{<a class="month-chart__band month-chart__band--chosen" href="/expenses\?state\[\]=filed"[^>]*aria-current="true"})
+      expect(body).not_to include('month-chart__link--chosen')
+      expect(body).to match(%r{ledger-total__title">2025</h2>.*25\.00 GBP}m)
+    end
   end
 
   it "shows this month's total in the reporting currency" do
