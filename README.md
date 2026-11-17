@@ -93,7 +93,18 @@ bin/sid sourced groups list                       # consumer groups (expenses.sc
 bin/sid sourced groups start <group>              # restart a failed one
 bin/sid system graph                              # the app's components and their dependencies
 bin/sid expenses upload ~/receipts/*.pdf          # upload documents to scan, as the upload form does
+bin/sid expenses list --state filed --json        # expenses, filtered: a table, or JSON lines
+bin/sid expenses dispatch <Command>               # a command for each JSON line on stdin
 ```
+
+`bin/sid expenses list` filters the list the app shows (`--state`, `--category`, `--category-status suggested|chosen|none`, `--from`, `--to`, `--limit`), and with `--json` prints one object per line. `bin/sid expenses dispatch` sends a command for each line it's piped, taking the payload from the fields the command has, with attributes given as `bin/sid commands dispatch` takes them winning over the lines'. Every command is checked first and nothing is sent if any is invalid; `--dry-run` lists them instead. Confirming every filed expense's suggested category:
+
+```sh
+bin/sid expenses list --state filed,vat_needs_review --category-status suggested --json |
+  bin/sid expenses dispatch expenses.choose_category
+```
+
+Or recategorizing the general ones: `bin/sid expenses list --category general --json | bin/sid expenses dispatch expenses.choose_category --category office_costs`. Filter with `jq` in between for anything `list` doesn't.
 
 `bin/sid expenses upload` takes PDFs and photos (JPEG, PNG or WebP, by extension) up to 20 MB, as the form does. It stores each one, dispatches its `UploadDocument` and prints the page to watch it scan ("Already uploaded" for a file it has seen, dispatching nothing); a file it can't take is skipped, and the exit status says so. `--reference-date YYYY-MM-DD` reads the documents' dates against another day than today. The running app does the scanning: without it, uploads wait in the store. The app's own commands live in `cli/`, registered by `config/components/cli.rb` only when `bin/sid` runs.
 
