@@ -24,6 +24,17 @@ module Expenses
                                                                      file_ref: 'f1', filing_country: 'NL'))
     end
 
+    it 'deletes every row when its group is reset, to build them again' do
+      db.transaction(rollback: :always, auto_savepoint: true) do
+        project(uploaded)
+        expect(row).not_to be_nil
+
+        Submissions.on_reset
+
+        expect(db[:submissions].count).to eq(0)
+      end
+    end
+
     it 'lists an upload at the step its scan is at' do
       project(uploaded)
 

@@ -84,6 +84,15 @@ module Expenses
       expect(row).to include(description: 'Team lunch', reporting_cents: 2113)
     end
 
+    it 'deletes every row when its group is reset, to build them again' do
+      project(*reviewing, save)
+      expect(row).not_to be_nil
+
+      Ledger.on_reset
+
+      expect(db[:ledger].count).to eq(0)
+    end
+
     it 'drops a voided expense' do
       project(*reviewing, save, converted, cmd(Expense::VoidExpense, reason: 'Duplicate'))
 

@@ -92,6 +92,11 @@ module Expenses
 
     COLUMNS = %i[description incurred_on currency amount_cents reporting_currency reporting_cents updated_at].freeze
 
+    # The group's offsets were rewound (`bin/sid sourced groups reset
+    # expenses.ledger`): every row goes, and it builds them again from the
+    # start of the store once started.
+    def self.on_reset = Sidereal.config['db'][:ledger].delete
+
     context { {} }
 
     load_context do |partition|

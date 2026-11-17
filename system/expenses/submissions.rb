@@ -78,6 +78,11 @@ module Expenses
 
     def self.row(row) = Row.new(**row.slice(*Row.members), machine: JSON.parse(row[:machine]))
 
+    # The group's offsets were rewound (`bin/sid sourced groups reset
+    # expenses.submissions`): every row goes, and it builds them again from
+    # the start of the store once started.
+    def self.on_reset = Sidereal.config['db'][:submissions].delete
+
     context { { machine: [] } }
 
     load_context do |partition|
