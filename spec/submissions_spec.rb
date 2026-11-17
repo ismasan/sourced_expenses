@@ -7,7 +7,7 @@ module Expenses
     include Sourced::Testing::RSpec
 
     let(:db) { Sidereal.config['db'] }
-    let(:expense_id) { SecureRandom.uuid }
+    let(:expense_id) { SecureRandom.hex(16) }
 
     def cmd(klass, **payload) = klass.new(payload: { expense_id:, **payload })
     def row = Submissions.recent(db, limit: 1000).find { it.expense_id == expense_id }

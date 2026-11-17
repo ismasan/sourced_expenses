@@ -16,7 +16,7 @@ module Expenses
   #   Ledger.month(db, 'GBP', Date.new(2025, 10))  # October 2025
   #   Ledger.total(db, 'GBP', from:, to:)          # any range
   class Ledger < Sourced::Projector::StateStored
-    partition_by expense_id: Types::UUID::V4
+    partition_by expense_id: Types::ExpenseID
 
     dep :db
 

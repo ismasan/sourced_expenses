@@ -24,7 +24,7 @@ https://github.com/user-attachments/assets/f7cdf4bd-398e-4f86-91e8-ebcdb6a1345f
 
 Changing `REPORTING_CURRENCY` on a store with expenses converted already: `bin/sid sourced groups reset expenses.currency_converter` converts them again. Until then they count as not converted; the ledger needs no reset.
 
-Uploads land in `FileStore::Disk` (`storage/uploads/`), by the MD5 of their bytes.
+Uploads land in `FileStore::Disk` (`storage/uploads/`), by the MD5 of their bytes, and the expense's id is that same digest (`Types::ExpenseID`). So the same file is the same expense: uploading it again, from the form or `bin/sid expenses upload`, goes to the expense it already is and dispatches nothing. Only identical bytes match; the same invoice downloaded twice may not be identical.
 
 `Sourced::Machine::Mermaid.new(Expenses::Expense).to_s` draws the chart. The Sourced dashboard is mounted at `/sourced`.
 
@@ -93,7 +93,7 @@ bin/sid system graph                              # the app's components and the
 bin/sid expenses upload ~/receipts/*.pdf          # upload documents to scan, as the upload form does
 ```
 
-`bin/sid expenses upload` takes PDFs and photos (JPEG, PNG or WebP, by extension) up to 20 MB, as the form does. It stores each one, dispatches its `UploadDocument` and prints the page to watch it scan; a file it can't take is skipped, and the exit status says so. `--reference-date YYYY-MM-DD` reads the documents' dates against another day than today. The running app does the scanning: without it, uploads wait in the store. The app's own commands live in `cli/`, registered by `config/components/cli.rb` only when `bin/sid` runs.
+`bin/sid expenses upload` takes PDFs and photos (JPEG, PNG or WebP, by extension) up to 20 MB, as the form does. It stores each one, dispatches its `UploadDocument` and prints the page to watch it scan ("Already uploaded" for a file it has seen, dispatching nothing); a file it can't take is skipped, and the exit status says so. `--reference-date YYYY-MM-DD` reads the documents' dates against another day than today. The running app does the scanning: without it, uploads wait in the store. The app's own commands live in `cli/`, registered by `config/components/cli.rb` only when `bin/sid` runs.
 
 ## Layout
 

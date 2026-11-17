@@ -34,10 +34,18 @@ RSpec.describe 'Uploading a document' do
     expect(last_response.status).to eq(200)
     command = uploaded_documents.last
     file_id = Digest::MD5.hexdigest(pdf)
-    expect(command.payload.to_h).to include(filename: 'receipt.pdf', content_type: 'application/pdf',
+    expect(command.payload.to_h).to include(expense_id: file_id, filename: 'receipt.pdf', content_type: 'application/pdf',
                                             file_ref: file_id, filing_country: 'NL')
     expect(File.binread(file_store.read(file_id).path)).to eq(pdf)
     expect(last_response.body).to include("/submissions/#{command.payload.expense_id}'")
+  end
+
+  it 'sends a file uploaded before to its expense, dispatching nothing' do
+    upload(pdf)
+    expense_id = uploaded_documents.last.payload.expense_id
+
+    expect { upload(pdf, filename: 'again.pdf') }.not_to(change { uploaded_documents.size })
+    expect(last_response.body).to include("/submissions/#{expense_id}'")
   end
 
   it 'refuses a file type it cannot scan' do

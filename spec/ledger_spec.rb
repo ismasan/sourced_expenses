@@ -7,7 +7,7 @@ module Expenses
     include Sourced::Testing::RSpec
 
     let(:db) { Sidereal.config['db'] }
-    let(:expense_id) { SecureRandom.uuid }
+    let(:expense_id) { SecureRandom.hex(16) }
     let(:date) { Date.new(2025, 10, 24) }
 
     # Each example on an empty ledger, rolled back after.
@@ -92,7 +92,7 @@ module Expenses
 
     describe '.month' do
       it "totals a month's expenses in a currency, by their own dates, saying how many aren't converted yet" do
-        a, b, c, d, other_month = Array.new(5) { SecureRandom.uuid }
+        a, b, c, d, other_month = Array.new(5) { SecureRandom.hex(16) }
         project(*reviewing(a), save(a), converted(a), id: a)
         project(*reviewing(b), save(b, currency: 'GBP', net_price_cents: 1000, tax_amount_cents: 0), id: b)
         project(*reviewing(c), save(c), id: c)
@@ -108,7 +108,7 @@ module Expenses
       end
 
       it 'totals any range, open at either end' do
-        a, b, outside = Array.new(3) { SecureRandom.uuid }
+        a, b, outside = Array.new(3) { SecureRandom.hex(16) }
         project(*reviewing(a), save(a), converted(a), id: a)
         project(*reviewing(b), save(b, currency: 'GBP', net_price_cents: 1000, tax_amount_cents: 0), id: b)
         project(*reviewing(outside), save(outside, incurred_on: Date.new(2025, 11, 1)), id: outside)

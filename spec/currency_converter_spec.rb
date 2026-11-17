@@ -9,7 +9,7 @@ module Expenses
     E = Expense
 
     let(:store) { Sidereal.config['sourced.store'] }
-    let(:expense_id) { SecureRandom.uuid }
+    let(:expense_id) { SecureRandom.hex(16) }
     let(:date) { Date.new(2025, 10, 24) }
 
     let(:extraction) do

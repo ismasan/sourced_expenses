@@ -19,12 +19,13 @@ class App < Sidereal::App
   # Runs during the request, while Rack's Tempfile still exists: store the
   # file, then hand the backend its id, and send the browser to the new
   # submission's page to watch it scan. Only UploadDocument is dispatched —
-  # the web command carries the Tempfile and is never stored.
+  # the web command carries the Tempfile and is never stored. A file
+  # uploaded before is that expense already: its page, nothing dispatched.
   handle Commands::UploadFile do |cmd|
     file = cmd.payload.file
     document = Expenses::Upload.store(file_store, filename: file.filename, content_type: file.type, io: file.tempfile,
                                                   filing_country:)
-    dispatch document
+    dispatch document unless Expenses::Upload.uploaded?(document.payload.expense_id)
     browser.redirect "/submissions/#{document.payload.expense_id}"
   end
 

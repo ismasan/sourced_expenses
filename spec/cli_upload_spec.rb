@@ -31,11 +31,22 @@ RSpec.describe CLI::Expenses::Upload do
     expect { run(pdf, photo) }.to change { uploaded_documents.size }.by(2)
 
     lunch, taxi = uploaded_documents.last(2).map(&:payload)
-    expect(lunch.to_h).to include(filename: 'lunch.pdf', content_type: 'application/pdf', file_ref: Digest::MD5.file(pdf).hexdigest,
+    digest = Digest::MD5.file(pdf).hexdigest
+    expect(lunch.to_h).to include(expense_id: digest, filename: 'lunch.pdf', content_type: 'application/pdf', file_ref: digest,
                                   filing_country: 'NL', reference_date: Date.today)
     expect(taxi.to_h).to include(filename: 'Taxi.JPG', content_type: 'image/jpeg')
     expect(File.binread(file_store.read(lunch.file_ref).path)).to eq(File.binread(pdf))
     expect(out.string).to include("Uploaded #{pdf}", "http://localhost:9292/submissions/#{lunch.expense_id}")
+  end
+
+  it 'says so for a file uploaded before, and dispatches nothing' do
+    pdf = file('lunch.pdf')
+    run(pdf)
+    expense_id = uploaded_documents.last.payload.expense_id
+    copy = File.join(dir, 'copy.pdf').tap { FileUtils.cp(pdf, it) }
+
+    expect { run(copy) }.not_to(change { uploaded_documents.size })
+    expect(out.string).to include("Already uploaded #{copy}", "/submissions/#{expense_id}")
   end
 
   it 'reads dates against the reference date given' do

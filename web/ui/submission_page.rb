@@ -21,7 +21,7 @@ module UI
   class SubmissionPage < Sidereal::Page
     path '/submissions/:expense_id'
     # Anything else in the path is a 400.
-    query_schema expense_id: Types::UUID::V4
+    query_schema expense_id: Types::ExpenseID
 
     E = Expenses::Expense
 
@@ -43,7 +43,7 @@ module UI
 
     # The page at +step+ of the expense's history, or nil when there's no such step.
     def self.at(expense_id, step)
-      return unless Types::UUID::V4 === expense_id
+      return unless Types::ExpenseID === expense_id
 
       history = SubmissionHistory.load(expense_id, step:)
       new(expense_id, history) if step.between?(1, history.messages.size)

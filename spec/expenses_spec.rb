@@ -8,7 +8,7 @@ module Expenses
     RSpec.describe Expense do
       include Sourced::Testing::RSpec
 
-      let(:expense_id) { '3a1b2c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d' }
+      let(:expense_id) { '3a1b2c4d5e6f4a7b8c9d0e1f2a3b4c5d' }
       let(:today) { Date.new(2026, 8, 11) }
 
       def cmd(klass, **payload) = klass.new(payload: { expense_id:, **payload })

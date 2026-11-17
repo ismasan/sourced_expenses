@@ -12,7 +12,7 @@ module Expenses
   # the step's Fail…, and so does an answer that doesn't fit the command.
   # Anything else is a bug and raises, which stops the scanner's group.
   class Scanner < Sourced::Decider
-    partition_by expense_id: Types::UUID::V4
+    partition_by expense_id: Types::ExpenseID
 
     dep :llm, :file_store
 

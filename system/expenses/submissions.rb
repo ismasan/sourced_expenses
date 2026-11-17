@@ -11,7 +11,7 @@ module Expenses
   # Sidereal publishes Submissions::Projected after every committed batch,
   # which is what the page reacts to.
   class Submissions < Sourced::Projector::StateStored
-    partition_by expense_id: Types::UUID::V4
+    partition_by expense_id: Types::ExpenseID
 
     dep :db
 

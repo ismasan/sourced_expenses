@@ -19,7 +19,7 @@ RSpec.describe 'The expense lists' do
   end
 
   def submission(filename, *paths, at: Time.now, on: nil)
-    SecureRandom.uuid.tap do |expense_id|
+    SecureRandom.hex(16).tap do |expense_id|
       db[:submissions].insert(expense_id:, filename:, machine: JSON.generate(paths), incurred_on: on,
                               uploaded_at: at, updated_at: at)
     end
@@ -73,7 +73,7 @@ RSpec.describe 'The expense lists' do
   end
 
   it "shows this month's total in the reporting currency on the home page too" do
-    db[:ledger].insert(expense_id: SecureRandom.uuid, incurred_on: Date.today, currency: 'EUR', amount_cents: 2420,
+    db[:ledger].insert(expense_id: SecureRandom.hex(16), incurred_on: Date.today, currency: 'EUR', amount_cents: 2420,
                        reporting_currency: 'GBP', reporting_cents: 2113, updated_at: Time.now)
     get '/'
 
@@ -106,13 +106,13 @@ RSpec.describe 'The expense lists' do
 
   it "shows this month's total in the reporting currency" do
     today = Date.today
-    db[:ledger].insert(expense_id: SecureRandom.uuid, incurred_on: today, currency: 'EUR', amount_cents: 2420,
+    db[:ledger].insert(expense_id: SecureRandom.hex(16), incurred_on: today, currency: 'EUR', amount_cents: 2420,
                        reporting_currency: 'GBP', reporting_cents: 2113, updated_at: Time.now)
-    db[:ledger].insert(expense_id: SecureRandom.uuid, incurred_on: today, currency: 'GBP', amount_cents: 120_000, updated_at: Time.now)
-    db[:ledger].insert(expense_id: SecureRandom.uuid, incurred_on: today, currency: 'SEK', amount_cents: 9900, updated_at: Time.now)
-    db[:ledger].insert(expense_id: SecureRandom.uuid, incurred_on: today, currency: 'EUR', amount_cents: 1000,
+    db[:ledger].insert(expense_id: SecureRandom.hex(16), incurred_on: today, currency: 'GBP', amount_cents: 120_000, updated_at: Time.now)
+    db[:ledger].insert(expense_id: SecureRandom.hex(16), incurred_on: today, currency: 'SEK', amount_cents: 9900, updated_at: Time.now)
+    db[:ledger].insert(expense_id: SecureRandom.hex(16), incurred_on: today, currency: 'EUR', amount_cents: 1000,
                        reporting_currency: 'USD', reporting_cents: 1161, updated_at: Time.now)
-    db[:ledger].insert(expense_id: SecureRandom.uuid, incurred_on: today.prev_month, currency: 'GBP', amount_cents: 500,
+    db[:ledger].insert(expense_id: SecureRandom.hex(16), incurred_on: today.prev_month, currency: 'GBP', amount_cents: 500,
                        updated_at: Time.now)
     get '/expenses'
 

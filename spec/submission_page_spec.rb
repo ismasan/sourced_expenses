@@ -9,7 +9,7 @@ RSpec.describe 'A submission' do
 
   let(:store) { Sidereal.config['sourced.store'] }
   let(:file_store) { Sidereal.config['file_store'] }
-  let(:expense_id) { SecureRandom.uuid }
+  let(:expense_id) { SecureRandom.hex(16) }
   let(:jpeg) do
     Dir.mktmpdir do |dir|
       path = File.join(dir, 'r.jpg')

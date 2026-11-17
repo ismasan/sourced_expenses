@@ -16,7 +16,7 @@ module Expenses
   # becomes the failure; anything else is a bug and raises, which stops its
   # group.
   class CurrencyConverter < Sourced::Decider
-    partition_by expense_id: Types::UUID::V4
+    partition_by expense_id: Types::ExpenseID
 
     dep :exchange_rates, :reporting_currency
 

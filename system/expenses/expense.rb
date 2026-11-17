@@ -16,7 +16,7 @@ module Expenses
   # The model never writes the expense and never decides its tax treatment:
   # the scan prefills a form, and a person files it.
   class Expense < Sourced::Machine
-    partition_by expense_id: Types::UUID::V4
+    partition_by expense_id: Types::ExpenseID
     message_prefix 'expenses'
 
     # How long a scan may take, every LLM call and its retries included,
@@ -41,7 +41,7 @@ module Expenses
     # "today" for the scan: the prompts resolve ambiguous dates towards it,
     # and passing it in keeps decisions deterministic.
     UploadDocument = Command(:upload_document) do
-      attribute :expense_id, Types::AutoUUID
+      attribute :expense_id, Types::ExpenseID
       attribute :filename, Types::String.present
       attribute :content_type, Types::String.present
       attribute :file_ref, Types::String.present

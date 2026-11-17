@@ -9,7 +9,8 @@ module CLI
   class Expenses < Sidereal::CLI::Command
     # `bin/sid expenses upload <paths...>`: each file as if dropped on the
     # upload form. Checked as the form checks them (type, by extension, and
-    # size), stored, and its UploadDocument dispatched. A file that fails a
+    # size), stored, and its UploadDocument dispatched. A file uploaded
+    # before is that expense already: it says so, and dispatches nothing. A file that fails a
     # check is skipped and the rest go on; any skipped makes the exit status
     # non-zero.
     #
@@ -50,8 +51,13 @@ module CLI
           ::Expenses::Upload.store(config['file_store'], filename: File.basename(path), content_type:, io:,
                                                          filing_country: config['expenses.filing_country'], reference_date:)
         end
-        Sidereal.dispatch!(command)
-        terminal.print_line :title, 'Uploaded ', :reset, "#{path}  ", :key, submission_url(command.payload.expense_id)
+        expense_id = command.payload.expense_id
+        if ::Expenses::Upload.uploaded?(expense_id)
+          terminal.print_line :title, 'Already uploaded ', :reset, "#{path}  ", :key, submission_url(expense_id)
+        else
+          Sidereal.dispatch!(command)
+          terminal.print_line :title, 'Uploaded ', :reset, "#{path}  ", :key, submission_url(expense_id)
+        end
         true
       end
 

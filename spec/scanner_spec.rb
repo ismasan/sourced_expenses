@@ -11,7 +11,7 @@ module Expenses
 
     let(:store) { Sidereal.config['sourced.store'] }
     let(:file_store) { Sidereal.config['file_store'] }
-    let(:expense_id) { SecureRandom.uuid }
+    let(:expense_id) { SecureRandom.hex(16) }
     let(:today) { Date.new(2026, 8, 11) }
     let(:pdf) { file_store.put('lunch.pdf', "%PDF-1.4 #{SecureRandom.hex}") }
 
