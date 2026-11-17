@@ -1,0 +1,74 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Regenerates the Mermaid state diagrams in README.md from the app's
+# Sourced::Machine definitions. Each diagram sits between markers:
+#
+#   <!-- mermaid Expenses::Expense -->           the machine, its parts collapsed
+#   <!-- mermaid Expenses::Expense scanning -->  one composite state's insides
+#   ...
+#   <!-- /mermaid -->
+#
+#   bin/readme-diagrams          rewrite README.md
+#   bin/readme-diagrams --check  exit 1 if README.md is out of date
+
+ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../Gemfile', __dir__)
+require 'bundler/setup'
+require_relative '../boot'
+
+README = File.expand_path('../README.md', __dir__)
+MARKER = /^<!-- mermaid (\S+)(?: (\S+))? -->\n.*?^<!-- \/mermaid -->$/m
+
+# Splits Mermaid's nested chart into the top level (each composite state
+# drawn as a plain state, its finals' on_final edges labelled with the
+# final's name) and each top-level composite's insides.
+def split(chart)
+  top = []
+  composites = Hash.new { |h, k| h[k] = [] }
+  current = nil
+  chart.lines(chomp: true).drop(1).each do |line|
+    if current
+      if line == '  }'
+        current = nil
+      else
+        composites[current] << line.sub(/^  /, '')
+      end
+    elsif (m = line.match(/^  state "[^"]+" as (\w+) \{$/))
+      current = m[1]
+    else
+      top << line
+    end
+  end
+
+  composites.each_key do |name|
+    top.map! { |l| l.sub(/^(\s*)#{name}_(\w+) --> (\w+) : on_final$/, "\\1#{name} --> \\3 : \\2") }
+  end
+
+  parts = composites.to_h do |name, lines|
+    body = lines.map { |l| l.gsub(/\b#{name}_(\w+)/, '\1') }
+    [name, body]
+  end
+  [top, parts]
+end
+
+def diagram(lines)
+  body = lines.reject { |l| l.match?(/^\s*state "(\w+)" as \1$/) }
+  "```mermaid\nstateDiagram-v2\n#{body.join("\n")}\n```"
+end
+
+charts = {}
+old = File.read(README)
+new = old.gsub(MARKER) do
+  machine, part = Regexp.last_match.captures
+  charts[machine] ||= split(Sourced::Machine::Mermaid.new(Object.const_get(machine)).to_s)
+  top, parts = charts[machine]
+  lines = part ? parts.fetch(part) { abort "#{machine} has no composite state #{part}" } : top
+  "<!-- mermaid #{machine}#{" #{part}" if part} -->\n#{diagram(lines)}\n<!-- /mermaid -->"
+end
+
+if ARGV.include?('--check')
+  exit(old == new ? 0 : 1)
+elsif old != new
+  File.write(README, new)
+  puts 'README.md diagrams updated'
+end

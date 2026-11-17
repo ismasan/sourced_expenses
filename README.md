@@ -8,12 +8,10 @@ https://github.com/user-attachments/assets/cfff0917-b71f-42b0-8cf4-f792b5111e46
 
 `Expenses::Expense` (`system/expenses/expense.rb`) is one machine per uploaded document, keyed by the MD5 of its bytes, so re-uploading the same file is a no-op.
 
+<!-- mermaid Expenses::Expense -->
 ```mermaid
 stateDiagram-v2
   [*] --> scanning : UploadDocument
-  scanning --> reviewing : scanned
-  scanning --> rejected : not_an_invoice
-  scanning --> scan_failed : failed
   scanning --> scan_failed : after 10m / TimeOutScan
   scanning --> discarded : DiscardDocument
   reviewing --> filed : SaveExpense
@@ -27,12 +25,17 @@ stateDiagram-v2
   scan_failed --> discarded : DiscardDocument
   filed --> filed : SaveExpense
   filed --> voided : VoidExpense
+  scanning --> reviewing : scanned
+  scanning --> rejected : not_an_invoice
+  scanning --> scan_failed : failed
   discarded --> [*]
   voided --> [*]
 ```
+<!-- /mermaid -->
 
 `Expense::Scanning` (`system/expenses/expense/scanning.rb`) is the OCR pipeline. Each LLM step waits for the `Expenses::Scanner` worker's `Complete…` / `Fail…`; the `checking_*` states are guarded decisions.
 
+<!-- mermaid Expenses::Expense scanning -->
 ```mermaid
 stateDiagram-v2
   [*] --> preparing
@@ -55,9 +58,11 @@ stateDiagram-v2
   not_an_invoice --> [*]
   failed --> [*]
 ```
+<!-- /mermaid -->
 
 `Expense::Filed` (`system/expenses/expense/filed.rb`) holds the VAT treatment, inferred by rule (never by the model) against `FILING_COUNTRY`.
 
+<!-- mermaid Expenses::Expense filed -->
 ```mermaid
 stateDiagram-v2
   [*] --> inferring_vat
@@ -68,8 +73,9 @@ stateDiagram-v2
   vat_inferred --> vat_confirmed : ConfirmVatTreatment
   vat_confirmed --> vat_confirmed : ConfirmVatTreatment
 ```
+<!-- /mermaid -->
 
-Regenerate the full nested chart with `Sourced::Machine::Mermaid.new(Expenses::Expense).to_s` in `bin/sid console`.
+`bin/readme-diagrams` regenerates these from the code; the pre-commit hook runs it (enable with `git config core.hooksPath .githooks`).
 
 ## Reactors and read models
 

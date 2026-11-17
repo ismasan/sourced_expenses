@@ -1,0 +1,18 @@
+#!/bin/sh
+# Keeps README.md's state diagrams in step with the machines in system/.
+# Enable once per clone: git config core.hooksPath .githooks
+git diff --cached --quiet -- system/ README.md && exit 0
+
+# With unstaged README.md edits, staging the file would sneak them into
+# this commit, so only check and let the user fix it.
+if ! git diff --quiet -- README.md; then
+  bin/readme-diagrams --check && exit 0
+  echo "pre-commit: README.md diagrams are out of date; run bin/readme-diagrams and stage README.md" >&2
+  exit 1
+fi
+
+bin/readme-diagrams || exit 1
+if ! git diff --quiet -- README.md; then
+  git add README.md
+  echo "pre-commit: updated README.md diagrams and added them to this commit"
+fi
