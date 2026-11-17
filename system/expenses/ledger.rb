@@ -26,6 +26,9 @@ module Expenses
     Total = ::Data.define(:currency, :from, :to, :cents, :expenses, :unconverted) do
       # Whether it's one whole month.
       def month? = !from.nil? && !to.nil? && from.day == 1 && to == from.next_month - 1
+
+      # Whether it's one whole calendar year.
+      def year? = !from.nil? && from == Date.new(from.year, 1, 1) && to == Date.new(from.year, 12, 31)
     end
 
     # The month +date+ is in, by the expenses' own dates.
@@ -41,12 +44,51 @@ module Expenses
       rows = db[:ledger]
       rows = rows.where { incurred_on >= from } if from
       rows = rows.where { incurred_on <= to } if to
-      cents = Sequel.case([[{ currency: }, :amount_cents], [{ reporting_currency: currency }, :reporting_cents]], nil)
-      # Not converted yet is NULL: coalesced, or excluding would skip it.
-      counted = Sequel.|({ currency: }, { Sequel.function(:coalesce, :reporting_currency, '') => currency })
-      Total.new(currency:, from:, to:, cents: rows.sum(cents).to_i, expenses: rows.count,
-                unconverted: rows.exclude(counted).count)
+      Total.new(currency:, from:, to:, cents: rows.sum(cents_in(currency)).to_i, expenses: rows.count,
+                unconverted: rows.exclude(counted_in(currency)).count)
     end
+
+    # Every month from the first one an expense is dated in to the one
+    # +date+ is in (or the last one dated in, if later), oldest first, a
+    # Total each: months with nothing filed in between are there too, empty.
+    # Just +date+'s month when nothing is filed.
+    # @return [Array<Total>]
+    def self.months(db, currency, date: Date.today)
+      dates = db[:ledger].select(Sequel.function(:min, :incurred_on).as(:earliest),
+                                 Sequel.function(:max, :incurred_on).as(:latest)).first
+      earliest, latest = dates.values_at(:earliest, :latest).map { Types.iso_date(it&.to_s) }
+      last = month_of([latest, date].compact.max)
+      first = earliest ? month_of(earliest) : last
+      firsts = []
+      (firsts << first; first >>= 1) while first <= last
+      month = Sequel.function(:strftime, '%Y-%m-01', :incurred_on)
+      rows = db[:ledger].where { incurred_on >= firsts.first }.where { incurred_on < last.next_month }
+                        .group(month)
+                        .select(month.as(:month), Sequel.function(:sum, cents_in(currency)).as(:cents),
+                                Sequel.function(:count, Sequel.lit('*')).as(:expenses),
+                                Sequel.function(:sum, Sequel.case([[counted_in(currency), 0]], 1)).as(:unconverted))
+                        .to_h { [Types.iso_date(it[:month]), it] }
+      firsts.map do |first|
+        row = rows.fetch(first, {})
+        Total.new(currency:, from: first, to: first.next_month - 1, cents: row[:cents].to_i, expenses: row[:expenses].to_i,
+                  unconverted: row[:unconverted].to_i)
+      end
+    end
+
+    def self.month_of(date) = Date.new(date.year, date.month, 1)
+
+    # A row's total in +currency+: as it is if in it, converted if
+    # converted to it, else NULL (which sums skip).
+    def self.cents_in(currency)
+      Sequel.case([[{ currency: }, :amount_cents], [{ reporting_currency: currency }, :reporting_cents]], nil)
+    end
+
+    # Whether a row counts in +currency+'s total. Not converted yet is NULL:
+    # coalesced, or excluding would skip it.
+    def self.counted_in(currency)
+      Sequel.|({ currency: }, { Sequel.function(:coalesce, :reporting_currency, '') => currency })
+    end
+    private_class_method :month_of, :cents_in, :counted_in
 
     COLUMNS = %i[description incurred_on currency amount_cents reporting_currency reporting_cents updated_at].freeze
 

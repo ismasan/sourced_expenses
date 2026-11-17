@@ -104,6 +104,53 @@ RSpec.describe 'The expense lists' do
     expect(last_response.body).to include('&quot;params&quot;:{&quot;state&quot;:[&quot;scanning&quot;,&quot;filed&quot;]}')
   end
 
+  it "charts every month's total from the first expense's to this one, each linking to its month" do
+    today = Date.today
+    first = Date.new(today.year, today.month, 1)
+    db[:ledger].insert(expense_id: SecureRandom.hex(16), incurred_on: today, currency: 'EUR', amount_cents: 2420,
+                       reporting_currency: 'GBP', reporting_cents: 2113, updated_at: Time.now)
+    db[:ledger].insert(expense_id: SecureRandom.hex(16), incurred_on: first << 2, currency: 'GBP', amount_cents: 1_234_500,
+                       updated_at: Time.now)
+    get '/expenses?state[]=filed'
+
+    body = last_response.body
+    expect(body.scan('class="month-chart__month"').size).to eq(3)
+    expect(body).to include('Filed per month, in GBP', "#{first.strftime('%B %Y')}: 21.13 GBP, 1 expense",
+                            "href=\"/expenses?state[]=filed&from=#{first.iso8601}&to=#{(first.next_month - 1).iso8601}\"",
+                            '>21<', '>12.3K<', "#{(first << 1).strftime('%B %Y')}: 0.00 GBP, 0 expenses")
+    expect(body).not_to include('month-chart__link--chosen', 'All dates', 'type="date"')
+  end
+
+  it 'highlights the month chosen, whose link goes back to all dates, and keeps it when choosing states' do
+    first = Date.new(Date.today.year, Date.today.month, 1)
+    db[:ledger].insert(expense_id: SecureRandom.hex(16), incurred_on: first, currency: 'GBP', amount_cents: 100, updated_at: Time.now)
+    get "/expenses?state[]=filed&from=#{first.iso8601}&to=#{(first.next_month - 1).iso8601}"
+
+    body = last_response.body
+    expect(body).to match(%r{<a class="month-chart__link month-chart__link--chosen" href="/expenses\?state\[\]=filed"[^>]*aria-current="true"})
+    expect(body).to include('>All dates<', %(<input type="hidden" name="from" value="#{first.iso8601}">),
+                            %(<input type="hidden" name="to" value="#{(first.next_month - 1).iso8601}">))
+  end
+
+  it 'bands each year under its months, linking to the whole year, and highlights the year chosen' do
+    db[:ledger].insert(expense_id: SecureRandom.hex(16), incurred_on: Date.new(2024, 11, 5), currency: 'GBP', amount_cents: 1000,
+                       updated_at: Time.now)
+    db[:ledger].insert(expense_id: SecureRandom.hex(16), incurred_on: Date.new(2025, 2, 5), currency: 'GBP', amount_cents: 2500,
+                       updated_at: Time.now)
+    get '/expenses'
+
+    expect(last_response.body).to include('style="--months: 2"', 'href="/expenses?from=2024-01-01&to=2024-12-31" aria-label="2024: 10.00 GBP, 1 expense"',
+                                          'href="/expenses?from=2025-01-01&to=2025-12-31" aria-label="2025: 25.00 GBP, 1 expense"')
+
+    get '/expenses?state[]=filed&from=2025-01-01&to=2025-12-31'
+
+    body = last_response.body
+    expect(body).to match(%r{<a class="month-chart__band month-chart__band--chosen" href="/expenses\?state\[\]=filed"[^>]*aria-current="true"})
+    expect(body).not_to include('month-chart__link--chosen')
+    # The header's total is the year's.
+    expect(body).to match(%r{ledger-total__title">2025</h2>.*25\.00 GBP}m)
+  end
+
   it "shows this month's total in the reporting currency" do
     today = Date.today
     db[:ledger].insert(expense_id: SecureRandom.hex(16), incurred_on: today, currency: 'EUR', amount_cents: 2420,
@@ -157,7 +204,7 @@ RSpec.describe 'The expense lists' do
       get '/expenses?from=2025-11-01&to=2025-11-30'
 
       expect(filenames(last_response.body)).to eq(%w[late.pdf vat.pdf early.pdf])
-      expect(last_response.body).to include('<option value="2025-11-01/2025-11-30" selected>November 2025</option>')
+      expect(last_response.body).to include('href="/expenses" aria-label="November 2025: 80.00 GBP, 3 expenses" aria-current="true"')
     end
 
     it 'takes a range open at either end' do
@@ -166,7 +213,9 @@ RSpec.describe 'The expense lists' do
 
       get '/expenses?to=2025-11-15'
       expect(filenames(last_response.body)).to eq(%w[vat.pdf early.pdf])
-      expect(last_response.body).to include('Custom dates')
+      # Not a whole month: none is chosen, but the dates can still be cleared.
+      expect(last_response.body).to include('>All dates<')
+      expect(last_response.body).not_to include('month-chart__link--chosen')
     end
 
     it 'takes emptied date fields as no dates' do

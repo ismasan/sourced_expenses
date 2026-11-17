@@ -32,6 +32,7 @@ module UI
       def title
         from, to = @total.from, @total.to
         return from.strftime('%B %Y') if @total.month?
+        return from.year.to_s if @total.year?
         return "#{day(from)} – #{day(to)}" if from && to
         return "Since #{day(from)}" if from
         return "Until #{day(to)}" if to

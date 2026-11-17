@@ -793,6 +793,118 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 .ledger-total__title { margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--ink-2); }
 .ledger-total__amount { margin: 0; font-size: 1.75rem; font-weight: 900; letter-spacing: -0.02em; line-height: 1.15; }
 .ledger-total__note { margin: 0; font-size: 0.9rem; color: var(--ink-2); }
+
+/* Filed per month (UI::Components::MonthChart), and the list's date filter:
+   a black bar a month on a hairline baseline, its total on top, and under
+   each year's months a band as wide as they are. Columns are a fixed
+   width, so many months scroll sideways rather than squeeze; few stretch
+   to fill, each year by its share of the months. Each column is a link to
+   its month and the whole column is the hit target; the exact figure shows
+   on hover or focus, in the room left above the plot (a scroller clips
+   what's outside it). The month or year chosen sits on a wash. */
+.month-chart { margin: 0 0 2rem; }
+.month-chart__head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.month-chart__title { margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--ink-2); }
+.month-chart__all { font-size: 0.95rem; font-weight: 600; }
+.month-chart__years {
+  position: relative; /* what the months' and bands' offsets are from */
+  display: flex;
+  margin: 0;
+  padding: 2.4rem 0 0.25rem;
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.month-chart__year { display: flex; flex-direction: column; flex: var(--months) 0 calc(var(--months) * 3.25rem); min-width: 0; }
+.month-chart__months { display: flex; margin: 0; padding: 0; list-style: none; }
+.month-chart__month { flex: 1 0 3.25rem; min-width: 0; }
+.month-chart__link {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: var(--ink);
+  text-decoration: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.month-chart__plot {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  align-self: stretch;
+  height: 9rem;
+  border-bottom: 1px solid var(--rule);
+}
+.month-chart__value {
+  margin-bottom: 0.2rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+/* The tallest bar fills what the value above it leaves. */
+.month-chart__bar {
+  width: 24px;
+  height: calc(var(--share) * (100% - 1.2rem));
+  min-height: 2px;
+  background: var(--ink);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.month-chart__label {
+  display: block;
+  padding: 0.35rem 0 0.25rem;
+  font-size: 0.8rem;
+  line-height: 1.25;
+  color: var(--ink-2);
+}
+.month-chart__link:hover .month-chart__bar,
+.month-chart__link:focus-visible .month-chart__bar { background: var(--ink-2); }
+.month-chart__link:hover .month-chart__label,
+.month-chart__link:focus-visible .month-chart__label { color: var(--ink); }
+.month-chart__link:focus-visible { outline-offset: -3px; }
+.month-chart__link--chosen { background: var(--wash); }
+.month-chart__link--chosen .month-chart__plot { border-bottom: 2px solid var(--ink); }
+.month-chart__link--chosen .month-chart__label { font-weight: 800; color: var(--ink); }
+.month-chart__tip {
+  position: absolute;
+  bottom: calc(100% + 0.3rem);
+  left: 50%;
+  z-index: 5;
+  display: none;
+  transform: translateX(-50%);
+  padding: 0.35rem 0.55rem;
+  font-size: 0.85rem;
+  line-height: 1.35;
+  white-space: nowrap;
+  color: var(--paper);
+  background: var(--ink);
+  border-radius: var(--radius);
+  pointer-events: none;
+}
+/* The end columns' tips stay inside the strip. */
+.month-chart__year:first-child .month-chart__month:first-child .month-chart__tip { left: 0; transform: none; }
+.month-chart__year:last-child .month-chart__month:last-child .month-chart__tip { left: auto; right: 0; transform: none; }
+/* A year's band: a rule across its months, 2px of paper between years,
+   its label kept at the strip's left edge while the year is in view. */
+.month-chart__band {
+  display: block;
+  margin: 0.15rem 1px 0;
+  padding: 0.3rem 0 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--ink-2);
+  text-decoration: none;
+  border-top: 2px solid var(--rule);
+}
+.month-chart__band-label { position: sticky; left: 0; display: inline-block; padding: 0 0.5rem; }
+.month-chart__band:hover,
+.month-chart__band:focus-visible { color: var(--ink); border-top-color: var(--ink); }
+.month-chart__band:focus-visible { outline-offset: -3px; }
+.month-chart__band--chosen { color: var(--ink); font-weight: 800; background: var(--wash); border-top-color: var(--ink); }
+.month-chart__link:hover .month-chart__tip,
+.month-chart__link:focus-visible .month-chart__tip { display: block; }
 .expenses-page__body {
   display: grid;
   grid-template-columns: 15rem minmax(0, 1fr);
@@ -802,19 +914,6 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 @media (max-width: 48rem) { .expenses-page__body { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; } }
 /* The body is the filters' form: no gap between the sidebar and the list from BasicLayout's form spacing. */
 .expenses-page__body > * + * { margin-top: 0; }
-/* Side by side, the State heading and the date row are one row: the
-   heading as tall as a date label and field (--date-row), its text and its
-   rule at the bottom, level with the fields' bottom edges. */
-.expenses-page { --date-row: calc(1.25rem + 0.25rem + 2.75rem); }
-@media (min-width: 48.0625rem) {
-  .filters__group:first-child > .filters__legend {
-    box-sizing: border-box;
-    display: flex;
-    align-items: flex-end;
-    min-height: var(--date-row);
-  }
-}
-
 .filters { position: sticky; top: calc(var(--nav-h) + 1.25rem); }
 @media (max-width: 48rem) { .filters { position: static; } }
 .filters__group { margin: 0; padding: 0; border: 0; min-width: 0; }
@@ -852,46 +951,6 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 .filter__count { font-size: 0.85rem; color: var(--ink-2); }
 .filters__clear { display: inline-block; margin-top: 0.75rem; font-size: 0.95rem; font-weight: 600; }
 .filters noscript { display: block; margin-top: 0.75rem; }
-
-/* The dates, in a row above the list: a month, or From and To. */
-.date-filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 0.75rem 1rem;
-  margin: 0 0 1.25rem;
-  padding: 0;
-  border: 0;
-  min-width: 0;
-}
-.date-filters__field { display: block; margin: 0; flex: 0 1 11rem; min-width: 0; }
-.date-filters__field--month { flex-basis: 13rem; }
-.date-filters__label { display: block; margin-bottom: 0.25rem; font-size: 0.85rem; line-height: 1.25rem; font-weight: 700; color: var(--ink-2); }
-.date-filters input { min-width: 0; }
-/* Without the browsers' own look (Safari's grey list, and its date text set
-   at the top of the box), the month list and the date fields size alike
-   from their padding and line height, so they and their labels line up. */
-.date-filters select,
-.date-filters input {
-  -webkit-appearance: none;
-  appearance: none;
-  box-sizing: border-box;
-  min-height: 2.75rem;
-  padding: 0.5rem 0.65rem;
-  line-height: 1.6;
-}
-.date-filters select {
-  padding-right: 2.25rem;
-  background: var(--paper) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23111' stroke-width='2'/%3E%3C/svg%3E") no-repeat right 0.8rem center;
-  cursor: pointer;
-}
-/* Safari sets a date's parts at the top of the box, on a line box of their
-   own: a fixed height, and centred as flex items instead. */
-.date-filters input { display: flex; align-items: center; height: 2.75rem; min-height: 0; padding-block: 0; }
-@media (max-width: 40rem) {
-  .date-filters__field { flex: 1 1 calc(50% - 0.5rem); }
-  .date-filters__field--month { flex-basis: 100%; }
-}
 
 .expenses-page__summary { margin: 0 0 0.6rem; font-weight: 600; color: var(--ink-2); }
 

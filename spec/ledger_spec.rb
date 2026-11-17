@@ -90,6 +90,39 @@ module Expenses
       expect(row).to be_nil
     end
 
+    describe '.months' do
+      it 'totals every month from the first expense to the one given, oldest first, empty ones too' do
+        a, b, c, earlier = Array.new(4) { SecureRandom.hex(16) }
+        project(*reviewing(a), save(a), converted(a), id: a)
+        project(*reviewing(b), save(b, currency: 'GBP', net_price_cents: 1000, tax_amount_cents: 0), id: b)
+        project(*reviewing(c), save(c, incurred_on: Date.new(2025, 8, 3)), id: c)
+        project(*reviewing(earlier), save(earlier, currency: 'GBP', incurred_on: Date.new(2025, 7, 31)), id: earlier)
+
+        months = Ledger.months(db, 'GBP', date: Date.new(2025, 10, 31))
+
+        expect(months.map { [it.from, it.to, it.cents, it.expenses, it.unconverted] }).to eq([
+          [Date.new(2025, 7, 1), Date.new(2025, 7, 31), 2420, 1, 0],
+          [Date.new(2025, 8, 1), Date.new(2025, 8, 31), 0, 1, 1],
+          [Date.new(2025, 9, 1), Date.new(2025, 9, 30), 0, 0, 0],
+          [Date.new(2025, 10, 1), Date.new(2025, 10, 31), 3113, 2, 0]
+        ])
+        expect(months).to all(have_attributes(currency: 'GBP'))
+      end
+
+      it 'runs to the last expense, when dated after the day given' do
+        project(*reviewing, save(currency: 'GBP', incurred_on: Date.new(2025, 12, 2)))
+
+        expect(Ledger.months(db, 'GBP', date: Date.new(2025, 10, 31)).map(&:from)).to eq([Date.new(2025, 12, 1)])
+      end
+
+      it "is just the day given's month, empty, with nothing filed" do
+        expect(Ledger.months(db, 'GBP', date: Date.new(2025, 10, 31))).to eq([
+          Ledger::Total.new(currency: 'GBP', from: Date.new(2025, 10, 1), to: Date.new(2025, 10, 31), cents: 0, expenses: 0,
+                            unconverted: 0)
+        ])
+      end
+    end
+
     describe '.month' do
       it "totals a month's expenses in a currency, by their own dates, saying how many aren't converted yet" do
         a, b, c, d, other_month = Array.new(5) { SecureRandom.hex(16) }

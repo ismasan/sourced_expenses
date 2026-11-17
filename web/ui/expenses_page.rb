@@ -1,18 +1,22 @@
 # frozen_string_literal: true
 
 module UI
-  # Every upload, newest first, a page at a time, with filters in a sidebar:
-  # by state (UI::StateFilter), and by the expense's date, a whole month or
-  # any range. Live: it re-renders whenever the read model commits.
+  # Every upload, newest first, a page at a time, with filters: by state
+  # (UI::StateFilter) in a sidebar, and by the expense's date. Live: it
+  # re-renders whenever the read model commits.
   #
   # The header has the total in the reporting currency of the filed
-  # expenses in the dates chosen, whatever the states, or this month's without dates.
+  # expenses in the dates chosen, whatever the states, or this month's
+  # without dates. Under it, the chart of every month's total
+  # (Components::MonthChart) is the date filter: a month's or a year's link
+  # filters the list to it.
   #
   # The filters and the page number are in the query string
   # (?state[]=filed&from=2025-11-01&to=2025-11-30&page=2), typed by the
   # query schema: an unknown state, a page below 1 or a date that isn't
-  # YYYY-MM-DD is a 400. A blank date (an emptied field) is none. The layout
-  # puts the params in the params signal, so a live re-render keeps them.
+  # YYYY-MM-DD is a 400. A blank date is none. Any range works, though the
+  # chart only makes whole months and years. The layout puts the params in the params
+  # signal, so a live re-render keeps them.
   class ExpensesPage < Sidereal::Page
     path '/expenses'
 
@@ -49,7 +53,8 @@ module UI
         rows, total = Expenses::Submissions.page(db, **filters, page:, per_page: PER_PAGE)
       end
       new(rows:, total:, **filters, page:, counts: Expenses::Submissions.counts(db, **filters.slice(:from, :to)),
-          months: Expenses::Submissions.months(db), ledger_total: ledger_total(db, **filters))
+          ledger_total: ledger_total(db, **filters),
+          month_totals: Expenses::Ledger.months(db, Sidereal.config['reporting_currency']))
     end
 
     # The filed expenses in the dates chosen, or this month's.
@@ -58,7 +63,7 @@ module UI
       from || to ? Expenses::Ledger.total(db, currency, from:, to:) : Expenses::Ledger.month(db, currency)
     end
 
-    def initialize(rows:, total:, states:, from:, to:, page:, counts:, months:, ledger_total:)
+    def initialize(rows:, total:, states:, from:, to:, page:, counts:, ledger_total:, month_totals:)
       @rows = rows
       @total = total
       @states = states
@@ -66,8 +71,8 @@ module UI
       @to = to
       @page = page
       @counts = counts
-      @months = months
       @ledger_total = ledger_total
+      @month_totals = month_totals
     end
 
     def view_template
@@ -76,14 +81,17 @@ module UI
           h1(class: 'expenses-page__title') { 'All expenses' }
           render Components::LedgerTotal.new(@ledger_total)
         end
+        render Components::MonthChart.new(@month_totals, from: @from, to: @to, states: @states)
 
         # One plain GET form for every filter, the states in the sidebar and
         # the dates above the list: changing one reloads the list with them
         # all, from the first page.
         form(class: 'expenses-page__body', action: self.class.path, method: 'get', data: { 'on:change' => 'el.submit()' }) do
           render_filters
+          # The dates are the chart's: kept here, so ticking a state keeps them.
+          input(type: 'hidden', name: 'from', value: @from.iso8601) if @from
+          input(type: 'hidden', name: 'to', value: @to.iso8601) if @to
           section(class: 'expenses-page__list', aria: { label: 'Expenses' }) do
-            render_dates
             render_summary
             render Components::SubmissionList.new(@rows) if @rows.any?
             render_pager
@@ -118,50 +126,6 @@ module UI
       end
     end
 
-    # Pick a whole month, or any dates. The month list has no name of its
-    # own: choosing one fills in the two dates, which the form then submits
-    # (?from=2025-11-01&to=2025-11-30). It shows the month the dates are.
-    MONTH_PICKED = <<~JS.tr("\n", ' ').freeze
-      const [from, to] = el.value ? el.value.split('/') : ['', ''];
-      el.form.elements.from.value = from;
-      el.form.elements.to.value = to
-    JS
-
-    def render_dates
-      fieldset(class: 'date-filters') do
-        legend(class: 'visually-hidden') { 'Dates' }
-        label(class: 'date-filters__field date-filters__field--month') do
-          span(class: 'date-filters__label') { 'Month' }
-          select(data: { 'on:change' => MONTH_PICKED }) do
-            option(value: '', selected: !@from && !@to) { 'All dates' }
-            option(value: 'custom', selected: true, disabled: true) { 'Custom dates' } if (@from || @to) && !month_picked
-            months.each do |first|
-              last = first.next_month - 1
-              option(value: "#{first.iso8601}/#{last.iso8601}", selected: month_picked == first) { first.strftime('%B %Y') }
-            end
-          end
-        end
-        date_field('from', 'From', @from)
-        date_field('to', 'To', @to)
-      end
-    end
-
-    def date_field(name, text, value)
-      label(class: 'date-filters__field') do
-        span(class: 'date-filters__label') { text }
-        input(type: 'date', name:, value: value&.iso8601)
-      end
-    end
-
-    # The months with expenses dated in them, and this one, latest first.
-    def months = (@months | [Date.new(Date.today.year, Date.today.month, 1)]).sort.reverse
-
-    # The month the dates are, if they're a whole one.
-    def month_picked
-      return unless @from && @to && @from.day == 1 && @to == @from.next_month - 1
-
-      @from
-    end
 
     def render_summary
       p(class: 'expenses-page__summary') do

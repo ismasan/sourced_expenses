@@ -71,14 +71,6 @@ module Expenses
       STATES.to_h { |key, _| [key, in_states(db, [key], from:, to:).count] }
     end
 
-    # The first day of every month a row is dated in, latest first.
-    # @return [Array<Date>]
-    def self.months(db)
-      db[:submissions].exclude(incurred_on: nil).distinct
-                      .select(Sequel.function(:strftime, '%Y-%m-01', :incurred_on).as(:month))
-                      .reverse(:month).map { Types.iso_date(it[:month]) }
-    end
-
     # The latest uploads first.
     def self.recent(db, limit: 50)
       db[:submissions].reverse(:uploaded_at).limit(limit).map { row(it) }
