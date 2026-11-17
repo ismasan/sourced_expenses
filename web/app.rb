@@ -16,17 +16,22 @@ class App < Sidereal::App
     expense_id ? "expenses.#{expense_id}" : 'system'
   end
 
+  # One file, of the one or many the upload form sends one at a time.
   # Runs during the request, while Rack's Tempfile still exists: store the
-  # file, then hand the backend its id, and send the browser to the new
-  # submission's page to watch it scan. Only UploadDocument is dispatched —
+  # file, then hand the backend its id. Only UploadDocument is dispatched —
   # the web command carries the Tempfile and is never stored. A file
-  # uploaded before is that expense already: its page, nothing dispatched.
+  # uploaded before is that expense already: nothing dispatched. The
+  # browser stays on the page: a line for the file is added to its report
+  # (UploadReport), and the home page's lists follow the new expense.
   handle Commands::UploadFile do |cmd|
     file = cmd.payload.file
     document = Expenses::Upload.store(file_store, filename: file.filename, content_type: file.type, io: file.tempfile,
                                                   filing_country:)
-    dispatch document unless Expenses::Upload.uploaded?(document.payload.expense_id)
-    browser.redirect "/submissions/#{document.payload.expense_id}"
+    expense_id = document.payload.expense_id
+    already = Expenses::Upload.uploaded?(expense_id)
+    dispatch document unless already
+    browser.patch_elements UI::Components::UploadReport::Item.new(file.filename, already ? :already : :uploaded, expense_id),
+                           selector: "##{UI::Components::UploadReport::ID}", mode: 'append'
   end
 
   # What a person does with a submission. The machine refuses any its

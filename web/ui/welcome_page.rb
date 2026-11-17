@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
 module UI
-  # The home page: upload a receipt or invoice, and the uploads waiting for
-  # a person. Every upload is on the expense list (ExpensesPage).
+  # The home page: upload receipts and invoices, the uploads being read
+  # (BeingRead), and those waiting for a person (NeedsYou), both live, so
+  # an upload is followed here until it's ready to review. Every upload is
+  # on the expense list (ExpensesPage).
   class WelcomePage < Sidereal::Page
     path '/'
 
@@ -11,6 +13,7 @@ module UI
     disable_causal_reactivity!
 
     on Expenses::Submissions::Projected do |_evt|
+      browser.patch_elements UI::Components::BeingRead.load
       browser.patch_elements UI::Components::NeedsYou.new(*UI::WelcomePage.needs_you)
     end
 
@@ -43,6 +46,7 @@ module UI
           render UI::Components::LedgerTotal.current
         end
         render UI::Components::UploadForm.new
+        render UI::Components::BeingRead.load
         render UI::Components::NeedsYou.new(@rows, @total)
       end
     end

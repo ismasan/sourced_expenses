@@ -65,11 +65,22 @@ RSpec.describe 'The expense lists' do
     end
   end
 
-  it 'shows only what needs a person on the home page' do
+  it 'shows what is being read, then what needs a person, on the home page' do
     seed
     get '/'
 
-    expect(filenames(last_response.body)).to eq(%w[icon.png vat.pdf review.pdf])
+    being_read, needs_you = last_response.body.split('id="needs-you"')
+    expect(being_read).to include('id="being-read"', '>Being read<span class="submissions__count">2<')
+    expect(filenames(being_read)).to eq(%w[storing.pdf reading.pdf])
+    expect(filenames(needs_you)).to eq(%w[icon.png vat.pdf review.pdf])
+  end
+
+  it 'leaves out the list of those being read with none' do
+    submission('review.pdf', 'reviewing')
+    get '/'
+
+    expect(last_response.body).to include('<div id="being-read"></div>')
+    expect(last_response.body).not_to include('Being read')
   end
 
   it "shows this month's total in the reporting currency on the home page too" do

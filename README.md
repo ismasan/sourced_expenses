@@ -28,6 +28,8 @@ The search box in the top bar, on every page, finds expenses by what they say: e
 
 Changing `REPORTING_CURRENCY` on a store with expenses converted already: `bin/sid sourced groups reset expenses.currency_converter` converts them again. Until then they count as not converted; the ledger needs no reset.
 
+The home page takes one file or many, picked or dropped anywhere on it. The page sends each file as its own `Commands::UploadFile`, one after another, skipping (and saying why) any of the wrong type or over 20 MB, and stays put: a line for each file shows under the form, and the new expenses show in the home page's lists as they're read ("Being read", then "Needs you"), each linking to its page.
+
 Uploads land in `FileStore::Disk` (`storage/uploads/`), by the MD5 of their bytes, and the expense's id is that same digest (`Types::ExpenseID`). So the same file is the same expense: uploading it again, from the form or `bin/sid expenses upload`, goes to the expense it already is and dispatches nothing. Only identical bytes match; the same invoice downloaded twice may not be identical.
 
 `Sourced::Machine::Mermaid.new(Expenses::Expense).to_s` draws the chart. The Sourced dashboard is mounted at `/sourced`.

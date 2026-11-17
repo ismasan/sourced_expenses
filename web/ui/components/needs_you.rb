@@ -21,7 +21,7 @@ module UI
 
           if @rows.empty?
             p(class: 'submissions__empty') do
-              plain 'Nothing needs you right now. Drop a receipt above, or '
+              plain 'Nothing needs you right now. Drop receipts above, or '
               a(href: '/expenses') { 'see all expenses' }
               plain '.'
             end

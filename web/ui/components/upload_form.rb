@@ -2,31 +2,40 @@
 
 module UI
   module Components
-    # Pick a receipt or invoice and upload it, or drop it anywhere on the page.
-    # The UploadFile handler redirects to the new submission.
+    # Pick receipts and invoices and upload them, or drop them anywhere on
+    # the page: one or many at once. The page stays put: each file's line
+    # shows in the report under the form (UploadReport), and the home
+    # page's lists show the new expenses as they're read.
     #
-    # The drop is handled in the browser with Datastar alone: the dropped file
-    # goes into the form's file input and the form is submitted, so it's the
-    # same multipart @post as choosing a file and clicking Upload.
+    # Each file is its own Commands::UploadFile, sent one after another
+    # (UPLOAD): a file put into the form's file input alone, and posted as
+    # Datastar posts any command form. A file the scan can't take (the
+    # wrong type, too big) is skipped before it's sent, with a line saying
+    # why; the command checks again, should one get past.
+    #
+    # The drop is handled in the browser with Datastar alone: the dropped
+    # files go into the form's file input and the form is submitted, as
+    # choosing files and clicking Upload does.
     class UploadForm < Sidereal::Components::BaseComponent
+      # _uploading is how many files the upload is sending, _sent how many
+      # of them are in: an upload is on while _uploading is above 0.
+      SIGNALS = { _drags: 0, _uploading: 0, _sent: 0 }.freeze
+
       # The page-wide drag events, on the window. _drags counts dragenter
       # minus dragleave, since both fire for every element the pointer
       # crosses; it's above 0 while a file is over the page. Signals starting
       # with _ are local: never sent to the server.
       DROP_EVENTS = {
-        'signals:_drags' => '0',
         'on:dragenter__window' => "evt.dataTransfer.types.includes('Files') && $_drags++",
         'on:dragleave__window' => '$_drags > 0 && $_drags--',
         # Preventing dragover's default is what makes the page a drop target.
         'on:dragover__window__prevent' => "evt.dataTransfer.dropEffect = 'copy'",
-        # Only the first file: the form uploads one at a time. Going through a
-        # DataTransfer is the only way to build a FileList for the input.
-        # The browser doesn't check +accept+ on a drop; the handler checks the
-        # type and reports it in the field's errors.
+        # Every file dropped. Going through a DataTransfer is the only way to
+        # build a FileList for the input.
         'on:drop__window__prevent' => <<~JS.gsub(/\s*\n\s*/, ' ').strip
           $_drags = 0;
-          evt.dataTransfer.files.length && !$fetching && ((dt) => {
-            dt.items.add(evt.dataTransfer.files[0]);
+          evt.dataTransfer.files.length && !$_uploading && ((dt) => {
+            [...evt.dataTransfer.files].forEach(f => dt.items.add(f));
             const input = el.querySelector('input[type=file]');
             input.files = dt.files;
             input.form.requestSubmit();
@@ -34,37 +43,87 @@ module UI
         JS
       }.freeze
 
+      # The form's submit: the report emptied, a line for each file skipped
+      # (as the command would refuse it: Expenses::Upload's checks), then
+      # each of the rest alone in the input, posted, and waited for before
+      # the next, so they go one at a time. The form is cleared after.
+      #
+      # Datastar runs an expression as a plain function, so the loop is an
+      # async one inside it; @post returns a promise that settles once its
+      # response has been handled.
+      UPLOAD = <<~JS.gsub(/\s*\n\s*/, ' ').strip
+        (async () => {
+          const input = el.querySelector('input[type=file]');
+          const files = [...input.files];
+          if (!files.length || $_uploading) return;
+          const report = document.getElementById('#{UploadReport::ID}');
+          report.replaceChildren();
+          const types = #{JSON.generate(Expenses::Upload::ACCEPTED_TYPES)};
+          const problem = f => !types.includes(f.type) ? #{JSON.generate(Expenses::Upload::WRONG_TYPE)}
+            : f.size > #{Expenses::Upload::MAX_BYTES} ? #{JSON.generate(Expenses::Upload::TOO_BIG)} : null;
+          const sending = files.filter(f => {
+            const why = problem(f);
+            if (!why) return true;
+            const li = document.createElement('li');
+            li.className = 'upload-report__item upload-report__item--skipped';
+            li.append(Object.assign(document.createElement('strong'), { textContent: f.name }), ' wasn’t uploaded: ' + why);
+            report.append(li);
+            return false;
+          });
+          $_sent = 0;
+          $_uploading = sending.length;
+          try {
+            for (const f of sending) {
+              const one = new DataTransfer();
+              one.items.add(f);
+              input.files = one.files;
+              await @post('/commands', { contentType: 'form' });
+              $_sent++;
+            }
+          } finally {
+            $_uploading = 0;
+            el.reset();
+          }
+        })()
+      JS
+
       def view_template
-        section(class: 'upload', aria: { label: 'Upload' }, data: DROP_EVENTS.merge('class:upload--dragging' => '$_drags > 0')) do
-          # Sidereal renders its indicator as data-indicator-fetching, which
-          # Datastar 1.0 doesn't read (it wants data-indicator:fetching): set it
-          # here too, until Sidereal does.
-          render Sidereal::Components::Command.new(Commands::UploadFile, enctype: 'multipart/form-data', class: 'upload__form',
-                                                                         data: { 'indicator:fetching' => true }) do |f|
+        section(class: 'upload', aria: { label: 'Upload' },
+                data: DROP_EVENTS.merge('signals' => JSON.generate(SIGNALS), 'class:upload--dragging' => '$_drags > 0')) do
+          # on: [] leaves the posting to UPLOAD, one file at a time, rather
+          # than Sidereal's @post of the whole form on submit.
+          render Sidereal::Components::Command.new(Commands::UploadFile, on: [], enctype: 'multipart/form-data',
+                                                                         class: 'upload__form',
+                                                                         data: { 'on:submit__prevent' => UPLOAD }) do |f|
             p(class: 'upload__prompt') do
-              span(data: { show: '!$fetching' }) do
-                span(class: 'upload__drop') { 'Drop a receipt or invoice anywhere on this page' }
-                span(class: 'upload__touch') { 'Add a receipt or invoice' }
+              span(data: { show: '!$_uploading' }) do
+                span(class: 'upload__drop') { 'Drop receipts or invoices anywhere on this page' }
+                span(class: 'upload__touch') { 'Add receipts or invoices' }
               end
-              span(data: { show: '!!$fetching' }, style: 'display: none') { 'Uploading…' }
+              span(data: { show: '$_uploading > 0', text: "'Uploading ' + ($_sent + 1) + ' of ' + $_uploading + '…'" },
+                   style: 'display: none') { 'Uploading…' }
             end
             p(class: 'upload__formats') do
-              plain 'PDF, JPEG, PNG or WebP, up to 20 MB.'
-              span(class: 'upload__drop') { ' Or pick one:' }
+              plain 'PDF, JPEG, PNG or WebP, up to 20 MB each.'
+              span(class: 'upload__drop') { ' Or pick them:' }
             end
             div(class: 'upload__pick') do
-              f.file_field :file, accept: Expenses::Upload::ACCEPTED_TYPES.join(','), required: true,
-                                  'aria-label': 'Receipt or invoice'
-              # !! because the indicator signal starts as "", and data-attr only
-              # drops an attribute for false or null.
-              button(type: :submit, class: 'button button--primary', data: { 'attr:disabled' => '!!$fetching' }) { 'Upload' }
+              # Not f.file_field: the same input, taking many files, which
+              # UPLOAD sends one at a time as the command's one file.
+              f.send(:with_errors, :file) do |id|
+                input(id:, type: 'file', name: 'command[payload][file]', multiple: true, required: true,
+                      accept: Expenses::Upload::ACCEPTED_TYPES.join(','), 'aria-label': 'Receipts or invoices')
+              end
+              # !! because data-attr only drops an attribute for false or null.
+              button(type: :submit, class: 'button button--primary', data: { 'attr:disabled' => '!!$_uploading' }) { 'Upload' }
             end
-            # While the upload is out: $fetching is the form's data-indicator
-            # (Sidereal's command forms set it). No percentage, as fetch
-            # reports none: the app's working stripes, until it's in.
+            # While the files go up: no percentage, as fetch reports none:
+            # the app's working stripes, until they're in.
             div(class: 'upload__progress', role: 'progressbar', aria: { label: 'Uploading' },
-                data: { show: '!!$fetching' }, style: 'display: none')
+                data: { show: '$_uploading > 0' }, style: 'display: none')
           end
+
+          render UploadReport.new
 
           # Covers the page while a file is dragged over it.
           div(class: 'upload__overlay', aria: { hidden: 'true' }, data: { show: '$_drags > 0' }, style: 'display: none') do

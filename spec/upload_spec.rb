@@ -37,15 +37,33 @@ RSpec.describe 'Uploading a document' do
     expect(command.payload.to_h).to include(expense_id: file_id, filename: 'receipt.pdf', content_type: 'application/pdf',
                                             file_ref: file_id, filing_country: 'NL')
     expect(File.binread(file_store.read(file_id).path)).to eq(pdf)
-    expect(last_response.body).to include("/submissions/#{command.payload.expense_id}'")
   end
 
-  it 'sends a file uploaded before to its expense, dispatching nothing' do
+  it 'stays on the page, adding a line for the file to the upload report' do
+    upload(pdf)
+
+    body = last_response.body.force_encoding(Encoding::UTF_8)
+    expect(body).to include('selector #upload-report', 'mode append', 'upload-report__item--uploaded',
+                            '<strong>receipt.pdf</strong> uploaded, being read')
+    expect(body).not_to include('window.location')
+  end
+
+  it 'reports a file uploaded before, linking to its expense, dispatching nothing' do
     upload(pdf)
     expense_id = uploaded_documents.last.payload.expense_id
 
     expect { upload(pdf, filename: 'again.pdf') }.not_to(change { uploaded_documents.size })
-    expect(last_response.body).to include("/submissions/#{expense_id}'")
+    expect(last_response.body.force_encoding(Encoding::UTF_8)).to include(
+      '<strong>again.pdf</strong> was uploaded before: ', "href=\"/submissions/#{expense_id}\""
+    )
+  end
+
+  it 'offers a form taking many files, sent one at a time as the command’s one file' do
+    get '/'
+
+    expect(last_response.body).to include('type="file"', 'name="command[payload][file]"', 'multiple',
+                                          'data-on:submit__prevent="(async () =>', 'id="upload-report"')
+    expect(last_response.body).not_to include("data-on:submit=\"@post")
   end
 
   it 'refuses a file type it cannot scan' do
