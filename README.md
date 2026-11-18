@@ -68,16 +68,18 @@ stateDiagram-v2
 <!-- mermaid Expenses::Expense reviewing -->
 ```mermaid
 stateDiagram-v2
-  state "category" as category {
-    state "category_confirmed" as category_category_confirmed
-    [*] --> category_category_confirmed : ChooseCategory
-    category_category_confirmed --> [*]
-  }
-  --
-  state "vat" as vat {
-    state "vat_confirmed" as vat_vat_confirmed
-    [*] --> vat_vat_confirmed : ConfirmVatTreatment
-    vat_vat_confirmed --> [*]
+  state "reviewing" as reviewing {
+    state "category" as category {
+      state "category_confirmed" as category_category_confirmed
+      [*] --> category_category_confirmed : ChooseCategory
+      category_category_confirmed --> [*]
+    }
+    --
+    state "vat" as vat {
+      state "vat_confirmed" as vat_vat_confirmed
+      [*] --> vat_vat_confirmed : ConfirmVatTreatment
+      vat_vat_confirmed --> [*]
+    }
   }
 ```
 <!-- /mermaid -->

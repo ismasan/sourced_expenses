@@ -46,6 +46,11 @@ def split(chart)
 
   parts = composites.to_h do |name, lines|
     body = lines.map { |l| l.gsub(/\b#{name}_(\w+)/, '\1') }
+    # A parallel state's regions are split by `--`, which Mermaid only
+    # accepts inside a composite, so keep those wrapped.
+    if body.include?('  --')
+      body = ["  state \"#{name}\" as #{name} {", *body.map { |l| "  #{l}" }, '  }']
+    end
     [name, body]
   end
   [top, parts]
