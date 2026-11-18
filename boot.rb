@@ -6,7 +6,7 @@ require 'sidereal'
 require 'zeitwerk'
 require 'dotenv'
 
-# Secrets such as OPENAI_API_KEY, from .env when there is one. Variables
+# Secrets such as OPENAI_API_KEY (or another LLM provider's), from .env when there is one. Variables
 # already in the environment win. .env is never committed.
 Dotenv.load
 

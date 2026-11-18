@@ -6,7 +6,7 @@
 #   docker build -t sourced-expenses .
 #   docker run --rm -p 9292:9292 --env-file .env -v sourced-expenses:/app/storage sourced-expenses
 #
-# Secrets (OPENAI_API_KEY) come from the environment at run time, never
+# Secrets (OPENAI_API_KEY, or another LLM provider's) come from the environment at run time, never
 # from the image: .dockerignore leaves .env out of the build.
 
 ARG RUBY_VERSION=4.0.5

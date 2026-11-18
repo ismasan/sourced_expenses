@@ -1,6 +1,6 @@
 # Sourced Expenses
 
-A [Sidereal](https://github.com/ismasan/sidereal) + [Sourced](https://github.com/ismasan/sourced) app that tracks expenses from scanned receipts and invoices, after [this write-up](https://gist.github.com/julik/405662cc3106fe73ae2e46073f483b62). Uploads are scanned with OpenAI and listed on the home page as they go.
+A [Sidereal](https://github.com/ismasan/sidereal) + [Sourced](https://github.com/ismasan/sourced) app that tracks expenses from scanned receipts and invoices, after [this write-up](https://gist.github.com/julik/405662cc3106fe73ae2e46073f483b62). Uploads are scanned by an LLM (OpenAI by default) and listed on the home page as they go.
 
 https://github.com/user-attachments/assets/cfff0917-b71f-42b0-8cf4-f792b5111e46
 
@@ -90,7 +90,7 @@ Each is its own consumer group, so slow work never blocks the machine.
 
 | Class | Does |
 | --- | --- |
-| `Expenses::Scanner` | Runs each scan step against OpenAI (`Expenses::ScanSteps`, prompts in `Expenses::Prompts`). Shrinks images over 500 KB with ImageMagick. |
+| `Expenses::Scanner` | Runs each scan step against the LLM (`Expenses::ScanSteps`, prompts in `Expenses::Prompts`). Shrinks images over 500 KB with ImageMagick. |
 | `Expenses::Categorizer` | Suggests a category from `Expenses::CATEGORIES` via a [RubyLLM judgment](https://rubyllm.com/judgments/). A person's `ChooseCategory` always wins. |
 | `Expenses::CurrencyConverter` | Converts filed totals to `REPORTING_CURRENCY` at the ECB rate for the expense's date ([Frankfurter](https://frankfurter.dev)). |
 | `Expenses::Submissions` | Read model for the home page, plus the FTS5 search index (`submissions_search`). |
@@ -110,9 +110,11 @@ Requires ImageMagick (`brew install imagemagick`). `bin/dev` reloads on change i
 
 | Env var | Default | |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | — | Required for scanning (env or `.env`) |
-| `OPENAI_MODEL` | `gpt-4.1` | Scanning model |
-| `OPENAI_JUDGMENT_MODEL` | `gpt-6-luna` | Categorization model |
+| `LLM_PROVIDER` | `openai` | Scanning provider: any [RubyLLM](https://rubyllm.com) provider that reads PDFs and images |
+| `LLM_MODEL` | `gpt-4.1` | Scanning model (an OpenAI one by default: name one for another provider) |
+| `LLM_JUDGMENT_PROVIDER` | `openai` | Categorization provider: one that answers RubyLLM judgments (openai, azure, ollama, ollama_cloud, openrouter, typesafe) |
+| `LLM_JUDGMENT_MODEL` | `gpt-6-luna` | Categorization model (an OpenAI one by default: name one for another provider) |
+| `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, … | — | Each provider's credentials, named after its RubyLLM settings (env or `.env`) |
 | `REPORTING_CURRENCY` | `GBP` | Currency totals are in |
 | `FILING_COUNTRY` | `GB` | Decides VAT treatment |
 | `SCAN_TIMEOUT` | `10m` | Scan gives up after this |
@@ -131,7 +133,7 @@ Migrations run on start. Leave values in `.env` unquoted.
 ## Test
 
 ```sh
-bundle exec rspec   # OpenAI and exchange rates are faked
+bundle exec rspec   # the LLM and exchange rates are faked
 ```
 
 ## Command line
