@@ -41,7 +41,7 @@ def split(chart)
   end
 
   composites.each_key do |name|
-    top.map! { |l| l.sub(/^(\s*)#{name}_(\w+) --> (\w+) : on_final$/, "\\1#{name} --> \\3 : \\2") }
+    top.map! { |l| l.sub(/^(\s*)#{name}_(\w+) --> (\w+) : on_final( \(H\*?\))?$/, "\\1#{name} --> \\3 : \\2\\4") }
   end
 
   parts = composites.to_h do |name, lines|

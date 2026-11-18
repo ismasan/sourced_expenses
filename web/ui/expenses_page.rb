@@ -2,7 +2,8 @@
 
 module UI
   # Every upload, newest first, a page at a time, with filters: by state
-  # (UI::StateFilter) and category in a sidebar, by the expense's date, and
+  # (UI::StateFilter), category, and whose category and VAT treatment it
+  # is (UI::ReviewFilter) in a sidebar, by the expense's date, and
   # by what it says (q, Expenses::Submissions.search: the top bar's search
   # box, UI::Components::Search, sends it here). Live: it re-renders
   # whenever the read model commits.
@@ -14,8 +15,9 @@ module UI
   # month's or a year's link filters the list to it.
   #
   # The filters and the page number are in the query string
-  # (?state[]=filed&category[]=travel&q=uber&from=2025-11-01&to=2025-11-30&page=2),
-  # typed by the query schema: an unknown state or category, a page below 1 or a date that isn't
+  # (?state[]=filed&category[]=travel&category_status[]=chosen&vat_status[]=suggested&q=uber
+  # &from=2025-11-01&to=2025-11-30&page=2), typed by the query schema: an unknown state,
+  # category or status, a page below 1 or a date that isn't
   # YYYY-MM-DD is a 400. A blank date or search is none. Any range works, though the
   # chart only makes whole months and years. The layout puts the params in the params
   # signal, so a live re-render keeps them.
@@ -30,6 +32,8 @@ module UI
     query_schema(
       state: StateFilter::Param,
       category: CategoryParam,
+      category_status: ReviewFilter::CategoryParam,
+      vat_status: ReviewFilter::VatParam,
       q?: Types::String.nullable,
       from?: Types::Date.nullable,
       to?: Types::Date.nullable,
@@ -40,10 +44,12 @@ module UI
 
     def channel_name = 'expenses.>'
 
-    # The list's URL for +states+, +categories+, +search+, the dates +from+
-    # and +to+, and +page+.
-    def self.path_for(states: [], categories: [], search: nil, from: nil, to: nil, page: 1)
-      query = states.map { "state[]=#{it}" } + categories.map { "category[]=#{it}" }
+    # The list's URL for +states+, +categories+, +category_statuses+,
+    # +vat_statuses+, +search+, the dates +from+ and +to+, and +page+.
+    def self.path_for(states: [], categories: [], category_statuses: [], vat_statuses: [], search: nil, from: nil, to: nil,
+                      page: 1)
+      query = states.map { "state[]=#{it}" } + categories.map { "category[]=#{it}" } +
+              category_statuses.map { "category_status[]=#{it}" } + vat_statuses.map { "vat_status[]=#{it}" }
       query << "q=#{URI.encode_www_form_component(search)}" if search
       query << "from=#{from.iso8601}" if from
       query << "to=#{to.iso8601}" if to
@@ -54,8 +60,8 @@ module UI
     def self.load(params, _ctx)
       db = Sidereal.config['db']
       search = params[:q].to_s.strip
-      filters = { states: params[:state], categories: params[:category], search: (search unless search.empty?),
-                  from: params[:from], to: params[:to] }
+      filters = { states: params[:state], categories: params[:category], category_statuses: params[:category_status],
+                  vat_statuses: params[:vat_status], search: (search unless search.empty?), from: params[:from], to: params[:to] }
       page = params[:page]
       rows, total = Expenses::Submissions.page(db, **filters, page:, per_page: PER_PAGE)
       # Past the end (fewer rows since the link was made): the last page.
@@ -66,12 +72,16 @@ module UI
       # Each group's counts are within the other group's choice.
       new(rows:, total:, **filters, page:, counts: Expenses::Submissions.counts(db, **filters.except(:states)),
           category_counts: Expenses::Submissions.category_counts(db, **filters.except(:categories)),
+          category_status_counts: Expenses::Submissions.status_counts(db, :category_statuses, **filters.except(:category_statuses)),
+          vat_status_counts: Expenses::Submissions.status_counts(db, :vat_statuses, **filters.except(:vat_statuses)),
           ledger_total: ledger_total(db, **filters),
           month_totals: Expenses::Ledger.months(db, Sidereal.config['reporting_currency'], categories: filters[:categories],
                                                                                     matching: Expenses::Submissions.search(db, filters[:search])))
     end
 
-    # The filed expenses in the dates, categories and search chosen, or this month's.
+    # The filed expenses in the dates, categories and search chosen, or
+    # this month's: whatever the states and statuses, as every filed one's
+    # category and VAT treatment are a person's.
     def self.ledger_total(db, from:, to:, categories:, search:, **)
       currency = Sidereal.config['reporting_currency']
       matching = Expenses::Submissions.search(db, search)
@@ -83,11 +93,16 @@ module UI
     end
 
     def initialize(rows:, total:, states:, categories:, from:, to:, page:, counts:, category_counts:, ledger_total:,
-                   month_totals:, search: nil)
+                   month_totals:, search: nil, category_statuses: [], vat_statuses: [], category_status_counts: {},
+                   vat_status_counts: {})
       @rows = rows
       @total = total
       @states = states
       @categories = categories
+      @category_statuses = category_statuses
+      @vat_statuses = vat_statuses
+      @category_status_counts = category_status_counts
+      @vat_status_counts = vat_status_counts
       @search = search
       @category_counts = category_counts
       @from = from
@@ -104,8 +119,7 @@ module UI
           h1(class: 'expenses-page__title') { 'All expenses' }
           render Components::LedgerTotal.new(@ledger_total, categories: @categories, search: @search)
         end
-        render Components::MonthChart.new(@month_totals, from: @from, to: @to, states: @states, categories: @categories,
-                                                         search: @search)
+        render Components::MonthChart.new(@month_totals, from: @from, to: @to, search: @search, **list_filters)
 
         # One plain GET form for every filter, the states in the sidebar and
         # the dates above the list: changing one reloads the list with them
@@ -130,11 +144,17 @@ module UI
 
     def pages = [(@total + PER_PAGE - 1) / PER_PAGE, 1].max
 
-    def filtered? = @states.any? || @categories.any? || @search || @from || @to
+    def filtered? = list_filters.values.any?(&:any?) || @search || @from || @to
+
+    # The sidebar's filters, as path_for takes them.
+    def list_filters
+      { states: @states, categories: @categories, category_statuses: @category_statuses, vat_statuses: @vat_statuses }
+    end
 
     # The categories with how many have each, then the states, each with
-    # its stage's colour and how many are in it: in the dates chosen, and
-    # the other group's choice.
+    # its stage's colour and how many are in it, then whose category and
+    # VAT treatment it is: each in the dates chosen, and the other groups'
+    # choices.
     def render_filters
       aside(class: 'filters', aria: { label: 'Filters' }) do
         render_category_filters
@@ -148,6 +168,8 @@ module UI
             end
           end
         end
+        render_status_filters('Category', 'category_status[]', ReviewFilter::CATEGORY, @category_statuses, @category_status_counts)
+        render_status_filters('VAT treatment', 'vat_status[]', ReviewFilter::VAT, @vat_statuses, @vat_status_counts)
         # Without JavaScript the change doesn't submit: this does.
         noscript { button(type: 'submit', class: 'button') { 'Apply' } }
         a(class: 'filters__clear', href: self.class.path) { 'Clear filters' } if filtered?
@@ -166,6 +188,19 @@ module UI
             input(type: 'checkbox', name: 'category[]', value: key, checked: @categories.include?(key))
             span(class: 'filter__label') { label }
             span(class: 'filter__count') { @category_counts.fetch(key, 0).to_s }
+          end
+        end
+      end
+    end
+
+    def render_status_filters(legend, name, options, chosen, counts)
+      fieldset(class: 'filters__group') do
+        legend(class: 'filters__legend') { "#{legend} is" }
+        options.each do |option|
+          label(class: 'filter filter--status') do
+            input(type: 'checkbox', name:, value: option.key, checked: chosen.include?(option.key))
+            span(class: 'filter__label') { option.label }
+            span(class: 'filter__count') { counts.fetch(option.key, 0).to_s }
           end
         end
       end
@@ -192,7 +227,7 @@ module UI
       plain ' matching '
       strong { "“#{@search}”" }
       plain ' · '
-      a(href: self.class.path_for(states: @states, categories: @categories, from: @from, to: @to)) { 'Clear search' }
+      a(href: self.class.path_for(**list_filters, from: @from, to: @to)) { 'Clear search' }
     end
 
     def render_pager
@@ -207,7 +242,7 @@ module UI
 
     def pager_link(text, page, rel:)
       if page.between?(1, pages)
-        a(class: "pager__link pager__link--#{rel}", href: self.class.path_for(states: @states, categories: @categories, search: @search, from: @from, to: @to, page:), rel:) { text }
+        a(class: "pager__link pager__link--#{rel}", href: self.class.path_for(**list_filters, search: @search, from: @from, to: @to, page:), rel:) { text }
       else
         span(class: "pager__link pager__link--#{rel} pager__link--disabled", aria: { hidden: 'true' }) { text }
       end

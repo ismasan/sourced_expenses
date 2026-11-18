@@ -16,7 +16,11 @@ module Expenses
       def expense(history) = Expense.new(expense_id:).tap { it.evolve(history) }
       def value(history) = expense(history).machine.value
       def scanning(state) = { Scanning::State => state }
-      def filed(state) = { Filed::State => state }
+      def reviewing(category: :initial, vat: :initial) = { Reviewing => { category:, vat: } }
+
+      def choose(given, category = 'general') = history(cmd(ChooseCategory, category:), given:)
+      def confirm(given, treatment = 'domestic') = history(cmd(ConfirmVatTreatment, treatment:), given:)
+      def reviewed(given) = confirm(choose(given))
 
       # A clean extraction: plausible, with a spelled-out recent date.
       def extraction(**overrides)
@@ -70,7 +74,7 @@ module Expenses
         end
 
         it 'prefills the form from the scan, in cents, with the cleaned text' do
-          expect(value(scanned)).to eq(Reviewing)
+          expect(value(scanned)).to eq(reviewing)
           expect(expense(scanned).context.draft).to include(
             net_price_cents: 2000, tax_amount_cents: 420, currency: 'EUR',
             incurred_on: Date.new(2026, 8, 9), supplier_country_code: 'NL'
@@ -85,7 +89,7 @@ module Expenses
         it 'keeps the original text when the cleanup fails' do
           done = history(cmd(Scanning::FailCleanup, reason: 'timeout'), given: extracted(description: 'CafÃ© - Lunch'))
 
-          expect(value(done)).to eq(Reviewing)
+          expect(value(done)).to eq(reviewing)
           expect(expense(done).context.draft[:description]).to eq('CafÃ© - Lunch')
         end
 
@@ -212,55 +216,125 @@ module Expenses
 
         it 'lets a person fill in the form when the scan failed' do
           failed = history(cmd(Scanning::FailPreparation, reason: 'Corrupt file'), given: uploaded)
-          expect(value(history(cmd(EnterManually), given: failed))).to eq(Reviewing)
+          expect(value(history(cmd(EnterManually), given: failed))).to eq(reviewing)
+        end
+      end
+
+      describe 'reviewing' do
+        def vat(history) = expense(history).context.suggested_vat_treatment
+
+        it 'suggests domestic VAT from a supplier in the filing country' do
+          expect(vat(scanned)).to eq('domestic')
+          expect(expense(scanned).context.vat_needs_review?).to be(false)
+        end
+
+        it 'suggests reverse charge first' do
+          expect(vat(scanned(reverse_charge: true, tax_amount: 0.0, supplier_country_code: 'IE'))).to eq('reverse_charge')
+        end
+
+        it 'suggests no VAT when none was booked' do
+          expect(vat(scanned(tax_amount: 0.0, supplier_country_code: 'US'))).to eq('no_vat')
+        end
+
+        it 'flags foreign VAT, and VAT from an unknown supplier country, for a closer look' do
+          [scanned(supplier_country_code: 'DE'), scanned(supplier_country_code: nil)].each do |foreign|
+            expect(vat(foreign)).to eq('foreign_vat')
+            expect(expense(foreign).context.vat_needs_review?).to be(true)
+          end
+        end
+
+        it 'suggests nothing for a form filled in by hand' do
+          by_hand = history(cmd(Scanning::FailPreparation, reason: 'Corrupt file'), cmd(EnterManually), given: uploaded)
+
+          expect(vat(by_hand)).to be_nil
+          expect(expense(by_hand).context.vat_needs_review?).to be(true)
+        end
+
+        it 'forgets the last scan’s form on a rescan, so a failed one suggests nothing' do
+          by_hand = history(cmd(Rescan, reference_date: today), cmd(Scanning::FailPreparation, reason: 'Corrupt file'),
+                            cmd(EnterManually), given: scanned)
+
+          expect(expense(by_hand).context.draft).to eq({})
+          expect(vat(by_hand)).to be_nil
+        end
+
+        it 'files nothing until the category is chosen and the VAT treatment confirmed, in either order' do
+          can_file = ->(history) { expense(history).handles_command?(cmd(SaveExpense, **form)) }
+          expect(can_file.(scanned)).to be(false)
+
+          vat_first = confirm(scanned, 'import')
+          expect(value(vat_first)).to eq(reviewing(vat: VatConfirmed))
+          expect(can_file.(vat_first)).to be(false)
+          expect(value(choose(vat_first))).to eq(Reviewed)
+
+          category_first = choose(scanned, 'travel')
+          expect(value(category_first)).to eq(reviewing(category: CategoryConfirmed))
+          expect(can_file.(category_first)).to be(false)
+
+          done = confirm(category_first)
+          expect(value(done)).to eq(Reviewed)
+          expect(can_file.(done)).to be(true)
+          expect(expense(done).context).to have_attributes(category: 'travel', vat_treatment: 'domestic',
+                                                           vat_treatment_confirmed?: true)
+        end
+
+        it 'takes a change to a step already done while the other waits' do
+          rechosen = choose(choose(scanned, 'travel'), 'general')
+
+          expect(value(rechosen)).to eq(reviewing(category: CategoryConfirmed))
+          expect(expense(rechosen).context.category).to eq('general')
+          expect(expense(confirm(confirm(scanned), 'import')).context.vat_treatment).to eq('import')
+        end
+
+        it 'takes a change of mind once reviewed, and ignores repeats' do
+          changed = history(cmd(ConfirmVatTreatment, treatment: 'import'), cmd(ChooseCategory, category: 'travel'),
+                            given: reviewed(scanned))
+
+          expect(value(changed)).to eq(Reviewed)
+          expect(expense(changed).context).to have_attributes(vat_treatment: 'import', category: 'travel')
+          expect(history(cmd(ConfirmVatTreatment, treatment: 'import'), given: changed)).to eq(changed)
+        end
+
+        describe 'scanned again' do
+          def scan_again(given)
+            history(cmd(Rescan, reference_date: today),
+                    cmd(Scanning::CompletePreparation, processed_file_ref: 'tmp/lunch-small.jpg'),
+                    cmd(Scanning::CompleteExtraction, **extraction),
+                    cmd(Scanning::CompleteCleanup, description: 'Café Central - Lunch', tax_description: 'BTW 21%'), given:)
+          end
+
+          it 'keeps a step done before the rescan' do
+            expect(value(scan_again(confirm(scanned, 'import')))).to eq(reviewing(vat: VatConfirmed))
+          end
+
+          it 'comes back reviewed once both were done' do
+            expect(value(scan_again(reviewed(scanned)))).to eq(Reviewed)
+          end
         end
       end
 
       describe 'filing' do
-        it 'infers domestic VAT from a supplier in the filing country' do
-          done = file(scanned)
+        it 'files the reviewed form' do
+          done = file(reviewed(scanned))
 
-          expect(value(done)).to eq(filed(Filed::VatInferred))
-          expect(expense(done).context.vat_treatment).to eq('domestic')
+          expect(value(done)).to eq(Filed)
+          expect(expense(done).context.filed).to include(net_price_cents: 2000, supplier_country_code: 'NL')
         end
 
-        it 'infers again when corrected in place, staying filed' do
-          corrected = file(file(scanned), supplier_country_code: 'DE')
+        it 'keeps the confirmed VAT treatment when corrected in place, staying filed' do
+          corrected = file(file(confirm(choose(scanned), 'import')), supplier_country_code: 'DE')
 
-          expect(value(corrected)).to eq(filed(Filed::VatNeedsReview))
-          expect(expense(corrected).context.vat_treatment).to eq('foreign_vat')
+          expect(value(corrected)).to eq(Filed)
+          expect(expense(corrected).context).to have_attributes(vat_treatment: 'import', suggested_vat_treatment: 'foreign_vat')
           expect(expense(corrected).handles_command?(cmd(DiscardDocument))).to be(false)
         end
 
-        it 'infers reverse charge first' do
-          done = file(scanned, reverse_charge: true, tax_amount_cents: 0, supplier_country_code: 'IE')
-          expect(expense(done).context.vat_treatment).to eq('reverse_charge')
-        end
+        it 'takes a change of category or VAT treatment once filed' do
+          changed = history(cmd(ConfirmVatTreatment, treatment: 'no_vat'), cmd(ChooseCategory, category: 'travel'),
+                            given: file(reviewed(scanned)))
 
-        it 'infers no VAT when none was booked' do
-          expect(expense(file(scanned, tax_amount_cents: 0, supplier_country_code: 'US')).context.vat_treatment).to eq('no_vat')
-        end
-
-        it 'flags foreign VAT for review' do
-          done = file(scanned, supplier_country_code: 'DE')
-
-          expect(value(done)).to eq(filed(Filed::VatNeedsReview))
-          expect(expense(done).context.vat_treatment).to eq('foreign_vat')
-        end
-
-        it 'treats VAT from an unknown supplier country as foreign' do
-          expect(value(file(scanned, supplier_country_code: nil))).to eq(filed(Filed::VatNeedsReview))
-        end
-
-        it "keeps a person's choice for good, through edits" do
-          confirmed = history(cmd(Filed::ConfirmVatTreatment, treatment: 'import'), given: file(scanned, supplier_country_code: 'DE'))
-          expect(value(confirmed)).to eq(filed(Filed::VatConfirmed))
-
-          expect(expense(confirmed).context.draft).to include(supplier_country_code: 'DE')
-
-          refiled = file(confirmed, supplier_country_code: 'FR')
-          expect(value(refiled)).to eq(filed(Filed::VatConfirmed))
-          expect(expense(refiled).context.vat_treatment).to eq('import')
+          expect(value(changed)).to eq(Filed)
+          expect(expense(changed).context).to have_attributes(vat_treatment: 'no_vat', category: 'travel')
         end
       end
     end

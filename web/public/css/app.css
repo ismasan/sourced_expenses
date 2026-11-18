@@ -4,7 +4,8 @@
    Colour means one thing here: whose move it is. Everything else is black,
    white and grey.
      working  blue, moving   the scan has it, nothing to do but wait
-     yours    yellow         waiting for a person (and every primary button)
+     yours    yellow         waiting for a person (and every primary button):
+                             the attention colour, see "Attention" below
      problem  red            the scan stopped or rejected it
      done     green          filed
      closed   grey           discarded or voided */
@@ -18,8 +19,14 @@
 
   --working: #1c2cf0;
   --working-2: #4351ff;
-  --yours: #ffe01a;
-  --yours-2: #f2cf00;
+  /* Attention: anything waiting for a person, or pending their say. */
+  --attention: #ffe01a;
+  --attention-2: #f2cf00;          /* hovered, or a thinner mark that needs more weight */
+  --attention-ink: var(--ink);     /* text on it */
+  --attention-edge: var(--ink);    /* its border or accent */
+
+  --yours: var(--attention);       /* the stage that means it */
+  --yours-2: var(--attention-2);
   --problem: #d3200c;
   --done: #0a7a3c;
   --closed: #8a8a8a;
@@ -323,8 +330,8 @@ input[type="file"]::file-selector-button {
 .button:hover,
 input[type="file"]::file-selector-button:hover { background: var(--ink); color: var(--paper); }
 .button:active { transform: translateY(1px); }
-.button--primary { background: var(--yours); }
-.button--primary:hover { background: var(--yours-2); color: var(--ink); }
+.button--primary { background: var(--attention); color: var(--attention-ink); }
+.button--primary:hover { background: var(--attention-2); color: var(--attention-ink); }
 .button:disabled,
 fieldset:disabled .button { opacity: 0.4; cursor: not-allowed; background: var(--paper); color: var(--ink); }
 /* What's already chosen: filled black, with a tick. */
@@ -333,6 +340,9 @@ fieldset:disabled .button { opacity: 0.4; cursor: not-allowed; background: var(-
 .button--selected:disabled { opacity: 1; color: var(--paper); background: var(--ink); }
 .button--selected:disabled { cursor: default; }
 .button--selected::before { content: "✓"; margin-right: 0.45em; }
+/* Proposed, not chosen yet: choosing it confirms it. */
+.button--suggested { border-style: dashed; }
+
 
 input[type="text"],
 input[type="number"],
@@ -387,7 +397,7 @@ input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--in
   border-radius: var(--radius);
 }
 .badge--large { padding: 0.3rem 0.85rem; font-size: 1rem; }
-.badge--yours { background: var(--yours); color: var(--ink); border-color: var(--ink); }
+.badge--yours { background: var(--attention); color: var(--attention-ink); border-color: var(--attention-edge); }
 .badge--problem { background: var(--problem); color: #fff; }
 .badge--done { background: var(--done); color: #fff; }
 .badge--closed { color: var(--ink-2); border-color: var(--closed); }
@@ -436,7 +446,7 @@ input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--in
   transition: background 0.12s;
 }
 .upload__form > * + * { margin-top: 0; }
-.upload--dragging .upload__form { background: var(--yours); border-style: solid; }
+.upload--dragging .upload__form { background: var(--attention); border-style: solid; }
 .upload__prompt {
   font-size: clamp(1.4rem, 3.6vw, 2rem);
   font-weight: 800;
@@ -480,7 +490,7 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
   font-size: clamp(2rem, 7vw, 4rem);
   font-weight: 900;
   letter-spacing: -0.03em;
-  background: var(--yours);
+  background: var(--attention);
 }
 
 /* Each file of the last upload, a line each (UI::Components::UploadReport):
@@ -646,7 +656,8 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
   margin-bottom: 3rem;
 }
 @media (max-width: 44rem) { .submission-page__body { grid-template-columns: minmax(0, 1fr); } }
-.submission-page__panel { display: grid; gap: 1.25rem; min-width: 0; }
+/* --panel-w: how wide its blocks go, the lead and the forms alike, so their right edges line up. */
+.submission-page__panel { --panel-w: 44rem; display: grid; gap: 1.25rem; min-width: 0; }
 .submission-page__panel > p { margin: 0; }
 .submission-page__frozen { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 1.25rem; }
 
@@ -657,13 +668,10 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
   font-size: 1.15rem;
   font-weight: 600;
   line-height: 1.4;
-  max-width: 38em;
+  /* Its padding and border inside the width, as the forms have none. */
+  box-sizing: border-box;
+  max-width: var(--panel-w, 44rem);
   border-left: 6px solid var(--stage);
-}
-.submission-page--yours .panel-lead {
-  padding: 0.75rem 1rem;
-  background: var(--yours);
-  border-left-color: var(--ink);
 }
 .reason {
   margin: 0;
@@ -736,7 +744,7 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 .file-dialog__bar button:hover { background: var(--wash); }
 .file-dialog__file { flex: 1; min-height: 0; width: 100%; border: 0; object-fit: contain; background: var(--paper); }
 
-.review-form, .void-form { display: grid; gap: 1rem; max-width: 40rem; }
+.review-form, .void-form { display: grid; gap: 1rem; max-width: var(--panel-w, 44rem); }
 .review-form > * + *, .void-form > * + * { margin-top: 0; }
 .review-form__row { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 1rem; }
 .review-form__field { display: grid; gap: 0.3rem; margin: 0; }
@@ -745,9 +753,11 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 .review-form .button--primary { justify-self: start; margin-top: 0.25rem; }
 .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 .actions form > * + * { margin-top: 0; }
+/* The row that ends a review: what to do once the steps above are done. */
+.actions--final { margin-top: 0.5rem; padding-top: 1.25rem; border-top: 1px solid var(--rule); }
 
 /* The category: what's suggested or chosen, and a list to choose from. */
-.category { display: grid; gap: 0.5rem; max-width: 40rem; }
+.category { display: grid; gap: 0.5rem; max-width: var(--panel-w, 44rem); }
 .category > * + * { margin-top: 0; }
 .category__status { margin: 0; }
 .category__form { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: stretch; }
@@ -762,6 +772,8 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 }
 .category__form select:hover { background-color: var(--wash); }
 .category__form select:focus { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--ink); }
+/* A suggestion, not chosen yet: dashed, as its Confirm button. */
+.category__form--suggested select { border-style: dashed; }
 
 .filed {
   display: grid;
@@ -770,7 +782,7 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
   margin: 0;
   padding: 1rem 0;
   border-block: 2px solid var(--ink);
-  max-width: 40rem;
+  max-width: var(--panel-w, 44rem);
 }
 .filed dt { color: var(--ink-2); }
 .filed dd { margin: 0; font-weight: 600; }
@@ -1178,7 +1190,7 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 .filter__count { font-size: 0.85rem; color: var(--ink-2); }
 /* Categories have no stage: a plain edge, black when ticked. */
 .filters__group + .filters__group { margin-top: 1.75rem; }
-.filter--category:has(:checked) { --stage: var(--ink); }
+.filter--category:has(:checked), .filter--status:has(:checked) { --stage: var(--ink); }
 .filters__clear { display: inline-block; margin-top: 0.75rem; font-size: 0.95rem; font-weight: 600; }
 .filters noscript { display: block; margin-top: 0.75rem; }
 
@@ -1215,4 +1227,22 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
+}
+
+
+/* ---- Attention: anything waiting for a person, or pending their say ----
+
+   One look, in three sizes. Reach for these, or the variables, rather
+   than the colour. Last in the file, so they win over a component's own
+   look at the same specificity:
+     .button--primary     the action to take (with the buttons)
+     .attention           a fill: a badge, a highlight, a word
+     .callout--attention  a block saying what's wanted, ruled in ink on the left */
+
+.attention { background: var(--attention); color: var(--attention-ink); }
+.callout--attention {
+  padding: 0.75rem 1rem;
+  background: var(--attention);
+  color: var(--attention-ink);
+  border-left: 6px solid var(--attention-edge);
 }

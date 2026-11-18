@@ -43,28 +43,52 @@ RSpec.describe 'bin/sid expenses list | dispatch' do
          .to_h { [it.payload.expense_id, it.payload.category] }
   end
 
-  let!(:suggested) { row('uber', %w[filed filed.vat_inferred], category: 'travel') }
-  let!(:needs_vat) { row('hotel', %w[filed filed.vat_needs_review], category: 'accommodation_and_meals', on: Date.new(2026, 1, 5)) }
-  let!(:chosen) { row('github', %w[filed filed.vat_confirmed], category: 'software', category_chosen: true) }
-  let!(:none) { row('misc', %w[filed filed.vat_inferred]) }
-  let!(:reviewing) { row('taxi', %w[reviewing], category: 'travel') }
+  let!(:suggested) { row('uber', %w[reviewing reviewing.vat.vat_confirmed], category: 'travel', vat_treatment: 'domestic', vat_confirmed: true) }
+  let!(:hotel) do
+    row('hotel', %w[reviewing], category: 'accommodation_and_meals', vat_treatment: 'foreign_vat', filing_country: 'NL',
+                                on: Date.new(2026, 1, 5))
+  end
+  let!(:chosen) { row('github', %w[filed], category: 'software', category_chosen: true, vat_treatment: 'import', vat_confirmed: true) }
+  let!(:none) { row('misc', %w[reviewing]) }
+  let!(:ready) { row('taxi', %w[reviewed], category: 'travel', category_chosen: true, vat_treatment: 'domestic', vat_confirmed: true) }
 
   describe 'list' do
     it 'prints every field as JSON lines, with the state as --state takes it' do
-      expect(json_lines.find { it[:expense_id] == needs_vat }).to eq(
-        expense_id: needs_vat, state: 'vat_needs_review', filename: 'hotel.pdf', description: 'hotel', total_cents: 1000,
-        currency: 'GBP', incurred_on: '2026-01-05', category: 'accommodation_and_meals', category_chosen: false
+      expect(json_lines.find { it[:expense_id] == hotel }).to eq(
+        expense_id: hotel, state: 'reviewing', filename: 'hotel.pdf', description: 'hotel', total_cents: 1000,
+        currency: 'GBP', incurred_on: '2026-01-05', category: 'accommodation_and_meals', category_chosen: false,
+        vat_treatment: 'foreign_vat', vat_confirmed: false, filing_country: 'NL'
       )
     end
 
     it 'filters by state, category, whose category it is, and date' do
       ids = ->(*args) { json_lines(*args).map { it[:expense_id] }.sort }
 
-      expect(ids.('--state', 'filed,vat_needs_review', '--category-status', 'suggested')).to eq([suggested, needs_vat].sort)
-      expect(ids.('--category', 'travel')).to eq([suggested, reviewing].sort)
-      expect(ids.('--category-status', 'chosen')).to eq([chosen])
+      expect(ids.('--state', 'reviewing,filed', '--category-status', 'suggested')).to eq([suggested, hotel].sort)
+      expect(ids.('--category', 'travel')).to eq([suggested, ready].sort)
+      expect(ids.('--category-status', 'chosen')).to eq([chosen, ready].sort)
       expect(ids.('--category-status', 'none')).to eq([none])
-      expect(ids.('--from', '2026-02-01', '--state', 'vat_needs_review')).to eq([])
+      expect(ids.('--from', '2026-02-01', '--category', 'accommodation_and_meals')).to eq([])
+    end
+
+    it 'filters by the country it is filed in, any of several' do
+      db[:submissions].where(expense_id: [suggested, chosen]).update(filing_country: 'GB')
+      ids = ->(*args) { json_lines(*args).map { it[:expense_id] }.sort }
+
+      expect(ids.('--filing-country', 'nl')).to eq([hotel])
+      expect(ids.('--filing-country', 'GB,NL')).to eq([suggested, hotel, chosen].sort)
+      expect(ids.('--filing-country', 'GB', '--state', 'filed')).to eq([chosen])
+      expect { list('--filing-country', 'Netherlands') }.to raise_error(Sidereal::CLI::Error, /two-letter country codes, not NETHERLANDS/)
+    end
+
+    it 'filters by whose VAT treatment it is, any of several statuses' do
+      ids = ->(*args) { json_lines(*args).map { it[:expense_id] }.sort }
+
+      expect(ids.('--vat-status', 'suggested')).to eq([hotel])
+      expect(ids.('--vat-status', 'confirmed', '--state', 'reviewing')).to eq([suggested])
+      expect(ids.('--vat-status', 'suggested,none')).to eq([hotel, none].sort)
+      expect(ids.('--vat-status', 'confirmed', '--category-status', 'suggested,none')).to eq([suggested])
+      expect(list('--vat-status', 'suggested')).to include('foreign_vat (suggested)')
     end
 
     it 'filters by what the expenses say, as the search box does' do
@@ -73,27 +97,28 @@ RSpec.describe 'bin/sid expenses list | dispatch' do
       end
 
       expect(json_lines('--search', 'UBE').map { it[:expense_id] }).to eq([suggested])
-      expect(json_lines('--search', 'travel', '--state', 'reviewing').map { it[:expense_id] }).to eq([reviewing])
+      expect(json_lines('--search', 'travel', '--state', 'reviewed').map { it[:expense_id] }).to eq([ready])
     end
 
     it 'prints a table to read' do
-      expect(list('--category-status', 'chosen')).to include(chosen, 'filed', '10.00 GBP', 'Software and web services', 'github', '1 expense')
+      expect(list('--state', 'filed')).to include(chosen, 'filed', '10.00 GBP', 'Software and web services', 'github', '1 expense')
     end
 
     it 'refuses filters it does not know' do
       expect { list('--state', 'lost') }.to raise_error(Sidereal::CLI::Error, 'No such state: lost')
       expect { list('--category', 'snacks') }.to raise_error(Sidereal::CLI::Error, 'No such category: snacks')
       expect { list('--category-status', 'maybe') }.to raise_error(Sidereal::CLI::Error, /suggested, chosen, none/)
+      expect { list('--vat-status', 'maybe') }.to raise_error(Sidereal::CLI::Error, /suggested, confirmed, none/)
     end
   end
 
   describe 'dispatch' do
     it 'sends a command for each listed expense, its payload from the line' do
-      lines = list('--state', 'filed,vat_needs_review', '--category-status', 'suggested', '--json')
+      lines = list('--state', 'reviewing', '--category-status', 'suggested', '--json')
 
       expect(dispatch(lines, 'expenses.choose_category')).to include('2 commands')
-      expect(choices.slice(suggested, needs_vat, chosen, none, reviewing))
-        .to eq(suggested => 'travel', needs_vat => 'accommodation_and_meals')
+      expect(choices.slice(suggested, hotel, chosen, none, ready))
+        .to eq(suggested => 'travel', hotel => 'accommodation_and_meals')
     end
 
     it 'takes attributes given to it over the lines’' do

@@ -86,19 +86,19 @@ module CLI
     # with --json one JSON object per line, for `bin/sid expenses dispatch`
     # (or jq) to take.
     #
-    #   bin/sid expenses list --state filed,vat_needs_review --category-status suggested
+    #   bin/sid expenses list --state reviewing --category-status suggested --vat-status confirmed
     class List < Sidereal::CLI::Command
       self.description = 'List expenses, filtered: a table, or JSON lines to pipe into `expenses dispatch`'
-
-      CATEGORY_STATUSES = %w[suggested chosen none].freeze
 
       options do
         # Submissions::STATES' keys, written out: this file loads with the
         # components, before the app's classes can.
         option '--state <states>', 'Only in these states, comma-separated: scanning, reviewing, rejected, ' \
-                                   'scan_failed, vat_needs_review, filed, discarded, voided'
+                                   'scan_failed, reviewed, filed, discarded, voided'
         option '--category <keys>', 'Only with these categories, comma-separated (keys, as `--json` prints them)'
-        option '--category-status <status>', "Only those whose category is #{CATEGORY_STATUSES.join(', ')} (none: no category yet)"
+        option '--category-status <statuses>', 'Only those whose category is, comma-separated: suggested, chosen, none (no category yet)'
+        option '--vat-status <statuses>', 'Only those whose VAT treatment is, comma-separated: suggested, confirmed, none (none yet)'
+        option '--filing-country <codes>', 'Only those filed in these countries, comma-separated (two-letter codes, e.g. GB,NL)'
         option '--search <text>', 'Only those whose description, vendor, filename or category has every word, as the search box finds them'
         option '--from <date>', 'Only dated on or after this day (YYYY-MM-DD)'
         option '--to <date>', 'Only dated on or before this day (YYYY-MM-DD)'
@@ -124,34 +124,37 @@ module CLI
         unknown = categories - ::Expenses::CATEGORIES.keys
         raise Sidereal::CLI::Error, "No such category: #{unknown.join(', ')}" if unknown.any?
 
-        status = @options[:category_status]
-        if status && !CATEGORY_STATUSES.include?(status)
-          raise Sidereal::CLI::Error, "--category-status is one of #{CATEGORY_STATUSES.join(', ')}"
-        end
+        filing_countries = list(:filing_country).map(&:upcase)
+        unknown = filing_countries.grep_v(/\A[A-Z]{2}\z/)
+        raise Sidereal::CLI::Error, "--filing-country takes two-letter country codes, not #{unknown.join(', ')}" if unknown.any?
+
+        category_statuses = statuses(:category_status, ::Expenses::Submissions::CATEGORY_STATUSES)
+        vat_statuses = statuses(:vat_status, ::Expenses::Submissions::VAT_STATUSES)
 
         limit = @options[:limit] && Integer(@options[:limit], 10, exception: false)
         raise Sidereal::CLI::Error, '--limit is a number' if @options[:limit] && !limit&.positive?
 
         search = @options[:search].to_s.strip
-        { states:, categories:, status:, search: (search unless search.empty?), from: date(:from), to: date(:to), limit: }
+        { states:, categories:, category_statuses:, vat_statuses:, filing_countries:, search: (search unless search.empty?), from: date(:from),
+          to: date(:to), limit: }
       end
 
-      def dataset(states:, categories:, status:, search:, from:, to:, limit:)
-        ds = ::Expenses::Submissions.in_states(Sidereal.config['db'], states, categories:, search:, from:, to:)
-        ds = case status
-             when 'suggested' then ds.exclude(category: nil).where(category_chosen: false)
-             when 'chosen' then ds.where(category_chosen: true)
-             when 'none' then ds.where(category: nil)
-             else ds
-             end
+      # The statuses given as --+key+, each a key of +known+.
+      def statuses(key, known)
+        given = list(key)
+        return given if (given - known.keys).empty?
+
+        raise Sidereal::CLI::Error, "--#{key.to_s.tr('_', '-')} is any of #{known.keys.join(', ')}"
+      end
+
+      def dataset(states:, limit:, **filters)
+        ds = ::Expenses::Submissions.in_states(Sidereal.config['db'], states, **filters)
         ds = ds.limit(limit) if limit
         ds.reverse(:uploaded_at)
       end
 
       # Where the row is, as one of Submissions::STATES' keys.
       def state_of(row)
-        return 'vat_needs_review' if row.in?('filed.vat_needs_review')
-
         (::Expenses::Submissions::STATES.keys & row.machine).first || 'scanning'
       end
 
@@ -159,7 +162,8 @@ module CLI
         {
           expense_id: row.expense_id, state: state_of(row), filename: row.filename, description: row.description,
           total_cents: row.total_cents, currency: row.currency, incurred_on: row.incurred_on&.iso8601,
-          category: row.category, category_chosen: row.category_chosen
+          category: row.category, category_chosen: row.category_chosen,
+          vat_treatment: row.vat_treatment, vat_confirmed: row.vat_confirmed, filing_country: row.filing_country
         }
       end
 
@@ -167,8 +171,9 @@ module CLI
         rows.each do |r|
           total = r[:total_cents] ? format('%.2f %s', r[:total_cents] / 100.0, r[:currency]) : ''
           category = r[:category] ? "#{::Expenses.category_label(r[:category])}#{r[:category_chosen] ? '' : ' (suggested)'}" : ''
+          vat = r[:vat_treatment] ? "#{r[:vat_treatment]}#{r[:vat_confirmed] ? '' : ' (suggested)'}" : ''
           terminal.print_line :key, r[:expense_id], :reset, '  ', r[:state].ljust(16), (r[:incurred_on] || '').ljust(12),
-                              total.rjust(14), '  ', category.ljust(40), (r[:description] || r[:filename]).to_s
+                              total.rjust(14), '  ', category.ljust(40), vat.ljust(28), (r[:description] || r[:filename]).to_s
         end
         terminal.print_line :reset, "#{rows.size} #{rows.size == 1 ? 'expense' : 'expenses'}"
       end
@@ -193,7 +198,7 @@ module CLI
     # dispatched and the errors are listed. --dry-run lists what would be
     # dispatched (and isn't an attribute of any command).
     #
-    #   bin/sid expenses list --state filed --category-status suggested --json |
+    #   bin/sid expenses list --state reviewing --category-status suggested --json |
     #     bin/sid expenses dispatch expenses.choose_category
     #   bin/sid expenses list --category general --json | bin/sid expenses dispatch expenses.choose_category --category office_costs
     class Dispatch < Sidereal::CLI::Commands::Dispatch

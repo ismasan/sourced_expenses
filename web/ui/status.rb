@@ -7,7 +7,7 @@ module UI
   #
   # Every status belongs to a stage, and the stage is what the colours mean:
   #   working  the scan has it: nothing to do but wait   (blue, moving)
-  #   yours    it's waiting for a person: review, VAT    (yellow, like the buttons)
+  #   yours    it's waiting for a person: review, file   (yellow, like the buttons)
   #   problem  the scan stopped or rejected it: decide   (red)
   #   done     filed                                     (green)
   #   closed   discarded or voided                       (grey)
@@ -36,7 +36,7 @@ module UI
 
     STAGES = {
       'uploading' => :working, 'scanning' => :working,
-      'reviewing' => :yours, 'vat_review' => :yours,
+      'reviewing' => :yours, 'reviewed' => :yours,
       'rejected' => :problem, 'failed' => :problem,
       'filed' => :done, 'closed' => :closed
     }.freeze
@@ -53,10 +53,9 @@ module UI
       return ["#{SCAN_STEPS[step]}…", 'scanning'] if step
       return ['Scanning…', 'scanning'] if paths.include?('scanning')
       return ['Ready to review', 'reviewing'] if paths.include?('reviewing')
+      return ['Ready to file', 'reviewed'] if paths.include?('reviewed')
       return ['Not a receipt', 'rejected'] if paths.include?('rejected')
       return ['Scan failed', 'failed'] if paths.include?('scan_failed')
-      return ['Check the VAT', 'vat_review'] if paths.include?('filed.vat_needs_review')
-      return ['Filed, VAT confirmed', 'filed'] if paths.include?('filed.vat_confirmed')
       return ['Filed', 'filed'] if paths.include?('filed')
       return ['Discarded', 'closed'] if paths.include?('discarded')
       return ['Voided', 'closed'] if paths.include?('voided')

@@ -25,7 +25,7 @@ RSpec.describe 'Searching expenses' do
   # projectors leave them.
   def expense(description, vendor: nil, category: nil, cents: 1000, on: Date.today, at: Time.now)
     SecureRandom.hex(16).tap do |expense_id|
-      row = { expense_id:, filename: "#{description.downcase.tr(' ', '-')}.pdf", machine: '["filed","filed.vat_confirmed"]',
+      row = { expense_id:, filename: "#{description.downcase.tr(' ', '-')}.pdf", machine: '["filed"]',
               description:, vendor:, category:, total_cents: cents, currency: 'GBP', incurred_on: on,
               uploaded_at: at, updated_at: at }
       db[:submissions].insert(row)
@@ -63,7 +63,9 @@ RSpec.describe 'Searching expenses' do
 
       expect([found('horeca'), found('0042'), found('entertaining'), found('lunch')]).to all(eq(['Café Central - Lunch']))
 
-      project(*scanned, cmd(Expenses::Expense::SaveExpense, description: 'Team dinner', net_price_cents: 2000, tax_amount_cents: 420,
+      project(*scanned, cmd(Expenses::Expense::ChooseCategory, category: 'business_entertaining'),
+              cmd(Expenses::Expense::ConfirmVatTreatment, treatment: 'domestic'),
+              cmd(Expenses::Expense::SaveExpense, description: 'Team dinner', net_price_cents: 2000, tax_amount_cents: 420,
                                                            currency: 'EUR', incurred_on: date, supplier_country_code: 'NL'))
       expect(found('lunch')).to be_empty
       expect(found('dinner')).to eq(['Team dinner'])

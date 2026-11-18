@@ -63,7 +63,7 @@ module UI
     def page_signals = live? ? super : {}
 
     def view_template
-      status = Status.for(paths)
+      status = @status = Status.for(paths)
       div(id: 'submission-page', class: ['submission-page', "submission-page--#{status.stage}"]) do
         p(class: 'submission-page__back') { a(href: '/') { 'All uploads' } }
 
@@ -107,7 +107,7 @@ module UI
     # Where the kinds sit on the track: the stage it's at, by index.
     TRACK_AT = {
       'uploading' => 0, 'scanning' => 1, 'rejected' => 1, 'failed' => 1,
-      'reviewing' => 2, 'vat_review' => 3, 'filed' => 3
+      'reviewing' => 2, 'reviewed' => 3, 'filed' => 3
     }.freeze
 
     # The four stages an upload goes through, the one it's at in its status
@@ -214,6 +214,7 @@ module UI
         lead('Reading the document. Nothing for you to do yet: a form to check fills in here when it’s done.')
         actions
       when 'reviewing' then render_review
+      when 'reviewed' then render_reviewed
       when 'rejected'
         lead('This doesn’t look like a receipt or invoice. Fill it in by hand if it is one, or discard it.')
         blockquote(class: 'reason') { @doc.verification&.dig(:explanation) }
@@ -222,22 +223,67 @@ module UI
         lead('The scan stopped before it finished. Scan it again, or fill it in by hand.')
         blockquote(class: 'reason') { @doc.failure&.dig(:reason) }
         actions(primary: E::Rescan)
-      when 'filed', 'vat_review' then render_filed
+      when 'filed' then render_filed
       else lead("This upload was #{status_word}. It isn’t in your expenses.")
       end
     end
 
-    # What the panel is about, and whose move it is.
-    def lead(text) = p(class: 'panel-lead') { text }
+    # What the panel is about, and whose move it is: called out for
+    # attention when it's a person's.
+    def lead(text) = p(class: ['panel-lead', ('callout--attention' if @status&.stage == :yours)]) { text }
 
     def status_word = paths.include?('voided') ? 'voided' : 'discarded'
 
-    # The prefilled form: what the scan read, for a person to check and save.
+    # Two steps, in either order, before the form can be filed: the
+    # category and the VAT treatment. What the scan read is shown, for
+    # the VAT treatment's sake: it's suggested from these figures.
     def render_review
-      lead('Your turn. Check what was read, correct anything that’s wrong, and save it as an expense.')
-      render_form('Save expense')
+      lead('Your turn. Choose the category and confirm the VAT treatment, in either order. Then check the form and file it.')
+      render_draft
       render_category
-      actions
+      render_vat
+      actions(final: true)
+    end
+
+    # Both steps done: the form, to correct, then the two steps, then filing
+    # it: the review's last step, with the other ways out beside it. The
+    # button is outside the form, so it names it.
+    def render_reviewed
+      lead('Category and VAT treatment confirmed. Check what was read, correct anything that’s wrong, and file it.')
+      render_form(id: REVIEW_FORM)
+      render_category
+      render_vat
+      actions(final: true) do
+        button(type: :submit, form: REVIEW_FORM, class: 'button button--primary') { 'File expense' }
+      end
+    end
+
+    REVIEW_FORM = 'review-form'
+
+    # What the scan read, or nothing yet for a form filled in by hand.
+    def render_draft
+      draft = @doc.draft || {}
+      unless draft[:net_price_cents]
+        p(class: 'filed__note') { 'Nothing was read: you’ll fill in the form once both steps are done.' }
+        return
+      end
+
+      net, tax, currency = draft.values_at(:net_price_cents, :tax_amount_cents, :currency)
+      dl(class: 'filed') do
+        dt { 'Description' }
+        dd { draft[:description] }
+        dt { 'Total' }
+        dd { format('%.2f %s', (net + tax) / 100.0, currency) }
+        dt { 'Of which VAT' }
+        dd do
+          plain format('%.2f %s', tax / 100.0, currency)
+          plain ', reverse charged' if draft[:reverse_charge]
+        end
+        dt { 'Supplier country' }
+        dd { draft[:supplier_country_code] || span(class: 'filed__note') { 'Unknown' } }
+        dt { 'Date' }
+        dd { draft[:incurred_on].to_s }
+      end
     end
 
     # ---- The category ----
@@ -259,13 +305,16 @@ module UI
           elsif (failure = @doc.categorization_failure)
             plain 'No category suggested: '
             span(class: 'filed__note') { failure[:reason] }
-          elsif @doc.filed || @doc.extraction
+          elsif @doc.extraction
             span(class: 'filed__note') { 'Suggesting a category…' }
           else
-            span(class: 'filed__note') { 'A category is suggested once it’s filed, or choose one now.' }
+            span(class: 'filed__note') { 'Nothing was read to suggest one from: choose a category.' }
           end
         end
-        command E::ChooseCategory, class: 'category__form' do |f|
+        # A suggestion isn't chosen yet: the list shows it dashed, and the
+        # button confirms it.
+        suggested = !@doc.category_chosen? && @doc.category
+        command E::ChooseCategory, class: ['category__form', ('category__form--suggested' if suggested)] do |f|
           f.payload_fields(expense_id: @expense_id)
           select(name: 'command[payload][category]', aria: { label: 'Category' }) do
             option(value: '', disabled: true, selected: @doc.category.nil?) { 'Choose a category' }
@@ -273,14 +322,20 @@ module UI
               option(value: key, title: description, selected: key == @doc.category) { label }
             end
           end
-          button(type: :submit, class: 'button') { @doc.category_chosen? ? 'Change' : 'Choose' }
+          if suggested
+            button(type: :submit, class: 'button button--primary button--suggested') { 'Confirm' }
+          else
+            button(type: :submit, class: 'button') { @doc.category_chosen? ? 'Change' : 'Choose' }
+          end
         end
       end
     end
 
-    def render_form(submit)
+    # The form, with its own +submit+ button, or none for one outside it
+    # (with form: +id+).
+    def render_form(submit = nil, id: nil)
       draft = (@doc.draft || {}).compact
-      command E::SaveExpense.new(payload: { expense_id: @expense_id, **draft }), class: 'review-form' do |f|
+      command E::SaveExpense.new(payload: { expense_id: @expense_id, **draft }), class: 'review-form', id: do |f|
         f.payload_fields(expense_id: @expense_id)
         field('Description') { f.text_field :description }
         div(class: 'review-form__row') do
@@ -298,7 +353,7 @@ module UI
           f.check_box :reverse_charge
           span { 'VAT reverse charged' }
         end
-        button(type: :submit, class: 'button button--primary') { submit }
+        button(type: :submit, class: 'button button--primary') { submit } if submit
       end
     end
 
@@ -310,9 +365,12 @@ module UI
     end
 
     # Rescan, fill in by hand, discard: whichever the expense accepts now.
-    # +primary+, the one to offer first, in the call-to-action colour.
-    def actions(primary: nil)
-      div(class: 'actions') do
+    # +primary+, the one to offer first, in the call-to-action colour. A
+    # block renders what goes before them all. +final+ for the row that
+    # ends a review, set apart from the steps above it.
+    def actions(primary: nil, final: false)
+      div(class: ['actions', ('actions--final' if final)]) do
+        yield if block_given?
         [[E::EnterManually, 'Fill in by hand'], [E::Rescan, 'Scan again'], [E::DiscardDocument, 'Discard']]
           .select { |klass, _| can?(klass) }
           .partition { |klass, _| klass == primary }.flatten(1)
@@ -321,12 +379,14 @@ module UI
     end
 
     # +selected+ marks the button for what's already chosen (aria-pressed);
-    # +disabled+ when choosing it again would change nothing.
-    def action(klass, text, primary: false, selected: nil, disabled: false, **fields)
+    # +suggested+ for what's proposed but not chosen yet, which choosing
+    # confirms; +disabled+ when choosing it again would change nothing.
+    def action(klass, text, primary: false, selected: nil, suggested: false, disabled: false, **fields)
       command klass, key: fields.values.join('-').then { it.empty? ? 'cmd' : it } do |f|
         f.payload_fields(expense_id: @expense_id, **fields)
         button(type: :submit, disabled:,
-               class: ['button', ('button--primary' if primary && !selected), ('button--selected' if selected)],
+               class: ['button', ('button--primary' if (primary || suggested) && !selected), ('button--selected' if selected),
+                       ('button--suggested' if suggested)],
                aria: { pressed: selected.nil? ? nil : selected.to_s }) { text }
       end
     end
@@ -357,9 +417,49 @@ module UI
       'foreign_vat' => 'Foreign VAT', 'no_vat' => 'No VAT'
     }.freeze
 
+    # The rule's suggestion, or the person's treatment, and a button for
+    # each. Choosing the suggested one confirms it.
+    def render_vat
+      return unless can?(E::ConfirmVatTreatment)
+
+      confirmed = @doc.vat_treatment_confirmed?
+      suggested = @doc.suggested_vat_treatment
+      section(class: 'category', aria: { label: 'VAT treatment' }) do
+        p(class: 'category__status') do
+          if confirmed
+            plain 'VAT treatment: '
+            strong { VAT_LABELS.fetch(@doc.vat_treatment, @doc.vat_treatment) }
+          elsif suggested.nil?
+            plain 'VAT treatment: '
+            span(class: 'filed__note') { 'nothing was read to suggest one from. Choose one.' }
+          else
+            plain 'Suggested VAT treatment: '
+            strong { VAT_LABELS.fetch(suggested, suggested) }
+            note = @doc.vat_needs_review? ? ' Another country’s VAT: check it closely.' : ''
+            span(class: 'filed__note') { "#{note} Choose it to confirm, or choose another." }
+          end
+        end
+        div(class: 'actions', role: 'group', aria: { label: 'VAT treatment' }) do
+          Expenses::VAT_TREATMENTS.each do |treatment|
+            current = @doc.vat_treatment.to_s == treatment
+            label = VAT_LABELS[treatment]
+            if current && confirmed
+              # Chosen already: nothing to do.
+              action(E::ConfirmVatTreatment, label, treatment:, selected: true, disabled: true)
+            elsif current
+              # Suggested: choosing it confirms it.
+              action(E::ConfirmVatTreatment, "Confirm #{label}", treatment:, selected: false, suggested: true)
+            else
+              action(E::ConfirmVatTreatment, label, treatment:, selected: false)
+            end
+          end
+        end
+      end
+    end
+
     def render_filed
       filed = @doc.filed
-      lead('Filed. It’s in your expenses.') unless paths.include?('filed.vat_needs_review')
+      lead('Filed. It’s in your expenses.')
       dl(class: 'filed') do
         dt { 'Description' }
         dd { filed[:description] }
@@ -372,40 +472,14 @@ module UI
         dd { filed[:incurred_on].to_s }
         dt { 'Category' }
         dd do
-          if @doc.category
-            plain Expenses.category_label(@doc.category)
-            plain(@doc.category_chosen? ? ', chosen' : ', suggested')
-          else
-            span(class: 'filed__note') { 'None yet' }
-          end
+          plain Expenses.category_label(@doc.category)
         end
         dt { 'VAT treatment' }
-        dd do
-          plain VAT_LABELS.fetch(@doc.vat_treatment.to_s, @doc.vat_treatment.to_s)
-          plain(@doc.vat_treatment_confirmed? ? ', confirmed' : ', suggested')
-        end
-      end
-
-      if can?(E::Filed::ConfirmVatTreatment)
-        confirmed = @doc.vat_treatment_confirmed?
-        if paths.include?('filed.vat_needs_review')
-          lead("Your turn. This has another country’s VAT. Suggested: #{VAT_LABELS[@doc.vat_treatment.to_s]}. Choose it to confirm, or choose another.")
-        elsif confirmed
-          p { 'How the VAT is treated. Choose another to change it:' }
-        else
-          p { "Suggested from the document: #{VAT_LABELS[@doc.vat_treatment.to_s]}. Choose it to confirm, or choose another:" }
-        end
-        div(class: 'actions', role: 'group', aria: { label: 'VAT treatment' }) do
-          Expenses::VAT_TREATMENTS.each do |treatment|
-            current = @doc.vat_treatment.to_s == treatment
-            # Choosing the suggested one confirms it; the confirmed one is chosen already.
-            action(E::Filed::ConfirmVatTreatment, VAT_LABELS[treatment], treatment:, selected: current, disabled: current && confirmed,
-                                                        primary: paths.include?('filed.vat_needs_review'))
-          end
-        end
+        dd { VAT_LABELS.fetch(@doc.vat_treatment.to_s, @doc.vat_treatment.to_s) }
       end
 
       render_category
+      render_vat
 
       details(class: 'filed__edit') do
         summary { 'Correct it' }

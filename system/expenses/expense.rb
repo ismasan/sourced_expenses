@@ -5,18 +5,26 @@ require 'date'
 module Expenses
   # One uploaded receipt or invoice, from the upload to a filed expense.
   #
-  #   initial ─UploadDocument─▶ scanning ──on_final scanned─────────▶ reviewing ─SaveExpense─▶ filed ⟲ SaveExpense
-  #                             (Scanning) ├on_final not_an_invoice─▶ rejected                (Filed)
+  #   initial ─UploadDocument─▶ scanning ──on_final scanned─────────▶ reviewing ─done─▶ reviewed ─SaveExpense─▶ filed ⟲ SaveExpense
+  #                             (Scanning) ├on_final not_an_invoice─▶ rejected
   #                                        ├on_final failed─────────▶ scan_failed
   #                                        └after 10m: TimeOutScan──▶ scan_failed
+  #
+  #   reviewing:  category  ─ChooseCategory──────▶ category_confirmed
+  #               vat       ─ConfirmVatTreatment─▶ vat_confirmed
+  #
   #   rejected, scan_failed ─EnterManually─▶ reviewing
-  #   reviewing, rejected, scan_failed ─Rescan─▶ scanning
+  #   reviewing, reviewed, rejected, scan_failed ─Rescan─▶ scanning
   #   filed ─VoidExpense─▶ voided;  anything before filed ─DiscardDocument─▶ discarded
-  #   reviewing, filed ⟲ SuggestCategory | FailCategorization | ChooseCategory
+  #   reviewing, reviewed, filed ⟲ SuggestCategory | FailCategorization | ChooseCategory | ConfirmVatTreatment
   #
   # The model never writes the expense and never decides its tax treatment:
-  # the scan prefills a form, and a person files it. Its category is the
-  # model's suggestion (Expenses::Categorizer) until a person chooses one.
+  # the scan prefills a form, and a person files it. Reviewing has two steps,
+  # in either order: choosing the category (the model's suggestion, from
+  # Expenses::Categorizer, until a person chooses one) and confirming the VAT
+  # treatment (the rule's, Document#suggested_vat_treatment, until a person
+  # confirms one). Only once both are done is the expense reviewed, and only
+  # a reviewed expense can be filed.
   class Expense < Sourced::Machine
     partition_by expense_id: Types::ExpenseID
     message_prefix 'expenses'
@@ -31,6 +39,10 @@ module Expenses
     # ---- States ----
 
     Reviewing = State(:reviewing)
+    CategoryConfirmed = State(:category_confirmed)
+    VatConfirmed = State(:vat_confirmed)
+    Reviewed = State(:reviewed)
+    Filed = State(:filed)
     Rejected = State(:rejected)
     ScanFailed = State(:scan_failed)
     Discarded = State(:discarded)
@@ -129,6 +141,11 @@ module Expenses
       attribute :category, Category
     end
 
+    # A person's VAT treatment: for good, until they confirm another.
+    ConfirmVatTreatment = Command(:confirm_vat_treatment) do
+      attribute :treatment, Types::String.options(VAT_TREATMENTS)
+    end
+
     # ---- Events ----
 
     DocumentUploaded = Event(:document_uploaded) do
@@ -162,9 +179,8 @@ module Expenses
       attribute :payment_reference, Types::String.nullable
     end
 
-    # The rule's treatment, until a person confirms one.
-    VatTreatmentInferred = Event(:vat_treatment_inferred) do
-      attribute :treatment, Types::String.options(VAT_TREATMENTS)
+    VatTreatmentConfirmed = Event(:vat_treatment_confirmed) do
+      attribute :treatment, String
     end
 
     ExpenseVoided = Event(:expense_voided) do
@@ -212,23 +228,14 @@ module Expenses
 
     # ---- The statechart ----
 
-    # Saving the form, the first time or again once filed. A person's VAT
-    # choice is for good: saving again doesn't re-infer it.
-    FILE_EXPENSE = proc do |doc, cmd|
-      expense = cmd.payload.to_h.except(:expense_id)
-      event ExpenseFiled, expense
-      unless doc.vat_treatment_confirmed?
-        event VatTreatmentInferred, treatment: Document.infer_vat_treatment(
-          **expense.slice(:reverse_charge, :tax_amount_cents, :supplier_country_code),
-          filing_country: doc.filing_country
-        )
-      end
+    # Saving the form, the first time or again once filed.
+    FILE_EXPENSE = proc do |_doc, cmd|
+      event ExpenseFiled, cmd.payload
     end
 
-    # The category, in reviewing and filed alike: a suggestion can land
-    # before or after the form is saved. A person's choice is never
+    # The model's category, whenever it lands. A person's choice is never
     # replaced by a suggestion, and repeats change nothing.
-    CATEGORIZE = proc do
+    SUGGEST_CATEGORY = proc do
       command SuggestCategory do |doc, cmd|
         unless doc.category_chosen? || doc.category_suggestion == cmd.payload.to_h.except(:expense_id)
           event CategorySuggested, cmd.payload.to_h.except(:expense_id)
@@ -238,11 +245,22 @@ module Expenses
       command FailCategorization do |doc, cmd|
         event CategorizationFailed, cmd.payload.to_h.except(:expense_id) unless doc.category_chosen?
       end
+    end
 
+    # Changing their mind, once a step is done. Repeats change nothing.
+    CHANGE_REVIEW = proc do
       command ChooseCategory do |doc, cmd|
-        unless doc.category_chosen? && doc.category == cmd.payload.category
-          event CategoryChosen, category: cmd.payload.category
-        end
+        event CategoryChosen, cmd.payload unless doc.category == cmd.payload.category
+      end
+
+      command ConfirmVatTreatment do |doc, cmd|
+        event VatTreatmentConfirmed, cmd.payload unless doc.vat_treatment == cmd.payload.treatment
+      end
+    end
+
+    RESCAN = proc do
+      command Rescan => Scanning do |_doc, cmd|
+        event ScanRequested, reference_date: cmd.payload.reference_date
       end
     end
 
@@ -255,7 +273,7 @@ module Expenses
 
     # The progress a person waiting sees is the step scanning is at.
     state Scanning do
-      on_final Scanning::Scanned => Reviewing,
+      on_final Scanning::Scanned => Reviewing.history,
                Scanning::NotAnInvoice => Rejected,
                Scanning::Failed => ScanFailed
 
@@ -268,42 +286,68 @@ module Expenses
       command DiscardDocument => Discarded
     end
 
-    # The prefilled form, waiting for a person.
+    # The prefilled form, waiting for a person to choose its category and
+    # confirm its VAT treatment, in either order. Entered through its
+    # history, so a step done before a rescan stays done.
     state Reviewing do
-      command SaveExpense => Filed, &FILE_EXPENSE
-      instance_exec(&CATEGORIZE)
-
-      command Rescan => Scanning do |_doc, cmd|
-        event ScanRequested, reference_date: cmd.payload.reference_date
+      region :category do
+        initial do
+          command ChooseCategory => CategoryConfirmed do |_doc, cmd|
+            event CategoryChosen, cmd.payload
+          end
+        end
+        final CategoryConfirmed
       end
 
+      region :vat do
+        initial do
+          command ConfirmVatTreatment => VatConfirmed do |_doc, cmd|
+            event VatTreatmentConfirmed, cmd.payload
+          end
+        end
+        final VatConfirmed
+      end
+
+      done Reviewed
+
+      # A step already done, changed while the other waits: its region is
+      # final, so the change comes here.
+      instance_exec(&CHANGE_REVIEW)
+      instance_exec(&SUGGEST_CATEGORY)
+      instance_exec(&RESCAN)
+      command DiscardDocument => Discarded
+    end
+
+    # Category and VAT treatment confirmed: ready to file.
+    state Reviewed do
+      command SaveExpense => Filed, &FILE_EXPENSE
+      instance_exec(&SUGGEST_CATEGORY)
+      instance_exec(&CHANGE_REVIEW)
+      instance_exec(&RESCAN)
       command DiscardDocument => Discarded
     end
 
     # Not a receipt, says the verification call, with its explanation
     # (doc.verification) to show the person.
     state Rejected do
-      command EnterManually => Reviewing
-      command Rescan => Scanning do |_doc, cmd|
-        event ScanRequested, reference_date: cmd.payload.reference_date
-      end
+      command EnterManually => Reviewing.history
+      instance_exec(&RESCAN)
       command DiscardDocument => Discarded
     end
 
     # A step failed (doc.failure), or the scan timed out.
     state ScanFailed do
-      command EnterManually => Reviewing
-      command Rescan => Scanning do |_doc, cmd|
-        event ScanRequested, reference_date: cmd.payload.reference_date
-      end
+      command EnterManually => Reviewing.history
+      instance_exec(&RESCAN)
       command DiscardDocument => Discarded
     end
 
-    # Corrections are saved in place, re-entering filed: the VAT
-    # treatment is inferred again unless a person has confirmed one.
+    # Corrections are saved in place, re-entering filed. The category and
+    # VAT treatment stay as confirmed, unless a person changes them.
     state Filed do
       command SaveExpense => Filed, &FILE_EXPENSE
-      instance_exec(&CATEGORIZE)
+      instance_exec(&SUGGEST_CATEGORY)
+      instance_exec(&CHANGE_REVIEW)
 
       command VoidExpense => Voided do |_doc, cmd|
         event ExpenseVoided, reason: cmd.payload.reason

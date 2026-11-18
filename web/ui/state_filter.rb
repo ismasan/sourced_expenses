@@ -10,7 +10,7 @@ module UI
 
     OPTIONS = [
       Option.new('reviewing', 'Ready to review', :yours),
-      Option.new('vat_needs_review', 'Check the VAT', :yours),
+      Option.new('reviewed', 'Ready to file', :yours),
       Option.new('rejected', 'Not a receipt', :problem),
       Option.new('scan_failed', 'Scan failed', :problem),
       Option.new('scanning', 'Being read', :working),

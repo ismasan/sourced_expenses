@@ -45,6 +45,12 @@ module Expenses
        cmd(Expense::Scanning::CompleteCleanup, id, description: 'Café Central - Lunch', tax_description: 'BTW 21%')]
     end
 
+    # Reviewed, and ready to file: the category chosen, the VAT confirmed.
+    def reviewed(id = expense_id, category: 'general')
+      [*reviewing(id), cmd(Expense::ConfirmVatTreatment, id, treatment: 'domestic'),
+       cmd(Expense::ChooseCategory, id, category:)]
+    end
+
     # Projects the history +commands+ make for expense +id+, one message at a
     # time, as separate batches would: each with the history up to it, as
     # the router hands an event-sourced projector.
@@ -58,36 +64,36 @@ module Expenses
     def row(id = expense_id) = db[:ledger].where(expense_id: id).first
 
     it 'has nothing for an expense not filed yet' do
-      project(*reviewing)
+      project(*reviewed)
 
       expect(row).to be_nil
     end
 
     it 'records a filed expense, its conversion to come' do
-      project(*reviewing, save)
+      project(*reviewed, save)
 
       expect(row).to include(incurred_on: date, currency: 'EUR', amount_cents: 2420, reporting_currency: nil, reporting_cents: nil)
     end
 
     it 'takes the conversion once recorded' do
-      project(*reviewing, save, converted)
+      project(*reviewed, save, converted)
 
       expect(row).to include(reporting_currency: 'GBP', reporting_cents: 2113)
     end
 
     it 'clears the conversion when a correction changes the total, until it is converted again' do
-      project(*reviewing, save, converted, save(net_price_cents: 3000))
+      project(*reviewed, save, converted, save(net_price_cents: 3000))
       expect(row).to include(amount_cents: 3420, reporting_currency: nil, reporting_cents: nil)
     end
 
     it 'keeps it when a correction leaves the total alone' do
-      project(*reviewing, save, converted, save(description: 'Team lunch'))
+      project(*reviewed, save, converted, save(description: 'Team lunch'))
 
       expect(row).to include(description: 'Team lunch', reporting_cents: 2113)
     end
 
     it 'deletes every row when its group is reset, to build them again' do
-      project(*reviewing, save)
+      project(*reviewed, save)
       expect(row).not_to be_nil
 
       Ledger.on_reset
@@ -96,7 +102,7 @@ module Expenses
     end
 
     it 'drops a voided expense' do
-      project(*reviewing, save, converted, cmd(Expense::VoidExpense, reason: 'Duplicate'))
+      project(*reviewed, save, converted, cmd(Expense::VoidExpense, reason: 'Duplicate'))
 
       expect(row).to be_nil
     end
@@ -105,26 +111,25 @@ module Expenses
       def suggest(category) = cmd(Expense::SuggestCategory, category:, probability: 0.9, description: 'Lunch')
       def choose(category) = cmd(Expense::ChooseCategory, category:)
 
-      it 'keeps a category suggested before the expense was filed' do
-        project(*reviewing, suggest('travel'), save)
+      it 'files the category chosen in review' do
+        project(*reviewing, suggest('travel'), choose('travel'), cmd(Expense::ConfirmVatTreatment, treatment: 'domestic'), save)
 
         expect(row).to include(category: 'travel')
       end
 
-      it 'takes a person’s choice over any later suggestion' do
-        project(*reviewing, save, suggest('travel'), choose('business_entertaining'), suggest('general'))
+      it 'takes a change of category once filed, over any later suggestion' do
+        project(*reviewed, save, choose('business_entertaining'), suggest('general'))
 
         expect(row).to include(category: 'business_entertaining')
       end
 
       it 'totals only the categories given, across any range and month by month' do
-        travel, software, none = Array.new(3) { SecureRandom.hex(16) }
-        project(*reviewing(travel), save(travel, currency: 'GBP', net_price_cents: 1000, tax_amount_cents: 0),
-                cmd(Expense::ChooseCategory, travel, category: 'travel'), id: travel)
-        project(*reviewing(software), save(software, currency: 'GBP', net_price_cents: 500, tax_amount_cents: 0,
-                                                      incurred_on: Date.new(2025, 9, 2)),
-                cmd(Expense::ChooseCategory, software, category: 'software'), id: software)
-        project(*reviewing(none), save(none, currency: 'GBP', net_price_cents: 200, tax_amount_cents: 0), id: none)
+        travel, software, other = Array.new(3) { SecureRandom.hex(16) }
+        project(*reviewed(travel, category: 'travel'), save(travel, currency: 'GBP', net_price_cents: 1000, tax_amount_cents: 0),
+                id: travel)
+        project(*reviewed(software, category: 'software'), save(software, currency: 'GBP', net_price_cents: 500, tax_amount_cents: 0,
+                                                                          incurred_on: Date.new(2025, 9, 2)), id: software)
+        project(*reviewed(other), save(other, currency: 'GBP', net_price_cents: 200, tax_amount_cents: 0), id: other)
 
         expect(Ledger.month(db, 'GBP', date, categories: %w[travel])).to have_attributes(cents: 1000, expenses: 1)
         expect(Ledger.total(db, 'GBP', categories: %w[travel software])).to have_attributes(cents: 1500, expenses: 2)
@@ -137,10 +142,10 @@ module Expenses
     describe '.months' do
       it 'totals every month from the first expense to the one given, oldest first, empty ones too' do
         a, b, c, earlier = Array.new(4) { SecureRandom.hex(16) }
-        project(*reviewing(a), save(a), converted(a), id: a)
-        project(*reviewing(b), save(b, currency: 'GBP', net_price_cents: 1000, tax_amount_cents: 0), id: b)
-        project(*reviewing(c), save(c, incurred_on: Date.new(2025, 8, 3)), id: c)
-        project(*reviewing(earlier), save(earlier, currency: 'GBP', incurred_on: Date.new(2025, 7, 31)), id: earlier)
+        project(*reviewed(a), save(a), converted(a), id: a)
+        project(*reviewed(b), save(b, currency: 'GBP', net_price_cents: 1000, tax_amount_cents: 0), id: b)
+        project(*reviewed(c), save(c, incurred_on: Date.new(2025, 8, 3)), id: c)
+        project(*reviewed(earlier), save(earlier, currency: 'GBP', incurred_on: Date.new(2025, 7, 31)), id: earlier)
 
         months = Ledger.months(db, 'GBP', date: Date.new(2025, 10, 31))
 
@@ -154,7 +159,7 @@ module Expenses
       end
 
       it 'runs to the last expense, when dated after the day given' do
-        project(*reviewing, save(currency: 'GBP', incurred_on: Date.new(2025, 12, 2)))
+        project(*reviewed, save(currency: 'GBP', incurred_on: Date.new(2025, 12, 2)))
 
         expect(Ledger.months(db, 'GBP', date: Date.new(2025, 10, 31)).map(&:from)).to eq([Date.new(2025, 12, 1)])
       end
@@ -170,11 +175,11 @@ module Expenses
     describe '.month' do
       it "totals a month's expenses in a currency, by their own dates, saying how many aren't converted yet" do
         a, b, c, d, other_month = Array.new(5) { SecureRandom.hex(16) }
-        project(*reviewing(a), save(a), converted(a), id: a)
-        project(*reviewing(b), save(b, currency: 'GBP', net_price_cents: 1000, tax_amount_cents: 0), id: b)
-        project(*reviewing(c), save(c), id: c)
-        project(*reviewing(d), save(d), converted(d, reporting_currency: 'USD', reporting_cents: 2810), id: d)
-        project(*reviewing(other_month), save(other_month, incurred_on: Date.new(2025, 11, 1)),
+        project(*reviewed(a), save(a), converted(a), id: a)
+        project(*reviewed(b), save(b, currency: 'GBP', net_price_cents: 1000, tax_amount_cents: 0), id: b)
+        project(*reviewed(c), save(c), id: c)
+        project(*reviewed(d), save(d), converted(d, reporting_currency: 'USD', reporting_cents: 2810), id: d)
+        project(*reviewed(other_month), save(other_month, incurred_on: Date.new(2025, 11, 1)),
                 converted(other_month, incurred_on: Date.new(2025, 11, 1)), id: other_month)
 
         expect(Ledger.month(db, 'GBP', Date.new(2025, 10, 31))).to eq(
@@ -186,9 +191,9 @@ module Expenses
 
       it 'totals any range, open at either end' do
         a, b, outside = Array.new(3) { SecureRandom.hex(16) }
-        project(*reviewing(a), save(a), converted(a), id: a)
-        project(*reviewing(b), save(b, currency: 'GBP', net_price_cents: 1000, tax_amount_cents: 0), id: b)
-        project(*reviewing(outside), save(outside, incurred_on: Date.new(2025, 11, 1)), id: outside)
+        project(*reviewed(a), save(a), converted(a), id: a)
+        project(*reviewed(b), save(b, currency: 'GBP', net_price_cents: 1000, tax_amount_cents: 0), id: b)
+        project(*reviewed(outside), save(outside, incurred_on: Date.new(2025, 11, 1)), id: outside)
 
         expect(Ledger.total(db, 'GBP', from: Date.new(2025, 10, 20), to: Date.new(2025, 10, 31))).to have_attributes(cents: 3113, expenses: 2)
         expect(Ledger.total(db, 'GBP', from: Date.new(2025, 10, 20))).to have_attributes(expenses: 3)

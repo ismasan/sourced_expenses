@@ -14,18 +14,21 @@ stateDiagram-v2
   [*] --> scanning : UploadDocument
   scanning --> scan_failed : after 10m / TimeOutScan
   scanning --> discarded : DiscardDocument
-  reviewing --> filed : SaveExpense
   reviewing --> scanning : Rescan
   reviewing --> discarded : DiscardDocument
-  rejected --> reviewing : EnterManually
+  reviewing --> reviewed : done
+  reviewed --> filed : SaveExpense
+  reviewed --> scanning : Rescan
+  reviewed --> discarded : DiscardDocument
+  rejected --> reviewing : EnterManually (H)
   rejected --> scanning : Rescan
   rejected --> discarded : DiscardDocument
-  scan_failed --> reviewing : EnterManually
+  scan_failed --> reviewing : EnterManually (H)
   scan_failed --> scanning : Rescan
   scan_failed --> discarded : DiscardDocument
   filed --> filed : SaveExpense
   filed --> voided : VoidExpense
-  scanning --> reviewing : scanned
+  scanning --> reviewing : scanned (H)
   scanning --> rejected : not_an_invoice
   scanning --> scan_failed : failed
   discarded --> [*]
@@ -60,18 +63,22 @@ stateDiagram-v2
 ```
 <!-- /mermaid -->
 
-`Expense::Filed` (`system/expenses/expense/filed.rb`) holds the VAT treatment, inferred by rule (never by the model) against `FILING_COUNTRY`.
+`reviewing` has two steps, in either order: choosing the category (suggested by `Expenses::Categorizer`) and confirming the VAT treatment (suggested by rule from the scanned figures against `FILING_COUNTRY`, never by the model). Once both are done the expense is `reviewed`, and only then can it be filed. A rescan comes back to `reviewing` through its history, so a step already done stays done.
 
-<!-- mermaid Expenses::Expense filed -->
+<!-- mermaid Expenses::Expense reviewing -->
 ```mermaid
 stateDiagram-v2
-  [*] --> inferring_vat
-  inferring_vat --> vat_confirmed : always [vat_treatment_confirmed?]
-  inferring_vat --> vat_needs_review : always [vat_needs_review?]
-  inferring_vat --> vat_inferred : always
-  vat_needs_review --> vat_confirmed : ConfirmVatTreatment
-  vat_inferred --> vat_confirmed : ConfirmVatTreatment
-  vat_confirmed --> vat_confirmed : ConfirmVatTreatment
+  state "category" as category {
+    state "category_confirmed" as category_category_confirmed
+    [*] --> category_category_confirmed : ChooseCategory
+    category_category_confirmed --> [*]
+  }
+  --
+  state "vat" as vat {
+    state "vat_confirmed" as vat_vat_confirmed
+    [*] --> vat_vat_confirmed : ConfirmVatTreatment
+    vat_vat_confirmed --> [*]
+  }
 ```
 <!-- /mermaid -->
 
@@ -140,13 +147,14 @@ bin/sid sourced groups list                       # consumer groups and their st
 bin/sid db migrations add <name>                  # new Sequel migration
 bin/sid expenses upload ~/receipts/*.pdf          # upload documents to scan
 bin/sid expenses list --state filed --json        # filter expenses
+bin/sid expenses list --vat-status suggested      # by whose VAT treatment (or --category-status) it is
 bin/sid expenses dispatch <Command>               # a command per JSON line on stdin
 ```
 
 For example, confirming every suggested category:
 
 ```sh
-bin/sid expenses list --state filed,vat_needs_review --category-status suggested --json |
+bin/sid expenses list --state reviewing --category-status suggested --json |
   bin/sid expenses dispatch expenses.choose_category
 ```
 

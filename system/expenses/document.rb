@@ -10,7 +10,7 @@ module Expenses
   # The decisions between LLM calls live here, as plain Ruby the chart's
   # guards and handlers call: whether an extraction is plausible, whether its
   # date needs a second look, how extracted floats become an expense, and
-  # which VAT treatment a filed expense gets.
+  # which VAT treatment to suggest for it.
   class Document
     # A receipt normally reaches us within weeks of the purchase, so an
     # all-numeric date that lands far from the reference date (or after it)
@@ -23,7 +23,7 @@ module Expenses
     attr_accessor :expense_id, :filename, :content_type, :file_ref, :filing_country,
                   :reference_date, :processed_file_ref, :extraction, :verification,
                   :date_recheck, :cleanup, :failure, :draft, :filed,
-                  :vat_treatment, :vat_treatment_confirmed, :converted,
+                  :confirmed_vat_treatment, :converted,
                   :conversion_failure, :category, :category_suggestion,
                   :category_chosen, :categorization_failure
     attr_reader :scans
@@ -33,10 +33,11 @@ module Expenses
       @draft = {}
     end
 
-    # A new scan of the same file forgets the last one's results. The form
-    # a person already saved (filed) stays.
+    # A new scan of the same file forgets the last one's results, the form
+    # it prefilled included. The form a person already saved (filed) stays.
     def start_scan(reference_date)
       @scans += 1
+      @draft = filed || {}
       @reference_date = reference_date
       @processed_file_ref = nil
       @extraction = nil
@@ -159,10 +160,35 @@ module Expenses
       'foreign_vat'
     end
 
-    # Another country's VAT, as far as the rule can tell: a person should look.
-    def vat_needs_review? = vat_treatment == 'foreign_vat'
+    # The rule's treatment for the form as it stands (the scan's, or what
+    # was filed), or nil with no figures to go on (filled in by hand).
+    def suggested_vat_treatment
+      return nil if draft[:tax_amount_cents].nil?
 
-    def vat_treatment_confirmed? = vat_treatment_confirmed == true
+      self.class.infer_vat_treatment(
+        reverse_charge: draft[:reverse_charge] == true, tax_amount_cents: draft[:tax_amount_cents],
+        supplier_country_code: draft[:supplier_country_code], filing_country:
+      )
+    end
+
+    # The rule's treatment for the form +extraction+ (a scan's) prefills,
+    # without a Document: for read models that keep only what they show.
+    def self.suggested_vat_treatment(extraction, filing_country:)
+      doc = new
+      doc.filing_country = filing_country
+      doc.extraction = extraction
+      doc.draft = doc.attributes
+      doc.suggested_vat_treatment
+    end
+
+    # The treatment in force: the person's, or else the rule's suggestion.
+    def vat_treatment = confirmed_vat_treatment || suggested_vat_treatment
+
+    def vat_treatment_confirmed? = !confirmed_vat_treatment.nil?
+
+    # Another country's VAT, as far as the rule can tell, or nothing to tell
+    # from: a person should look closely.
+    def vat_needs_review? = [nil, 'foreign_vat'].include?(suggested_vat_treatment)
 
     # ---- The filed total in the reporting currency ----
 

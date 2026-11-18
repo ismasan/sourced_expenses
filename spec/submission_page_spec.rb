@@ -41,19 +41,29 @@ RSpec.describe 'A submission' do
      cmd(Expenses::Expense::Scanning::CompleteCleanup, description: 'Café Central — Lunch', tax_description: 'BTW 21%')]
   end
 
+  # Category chosen and VAT confirmed: ready to file.
+  let(:reviewed) do
+    [*scanned, cmd(Expenses::Expense::ChooseCategory, category: 'travel'),
+     cmd(Expenses::Expense::ConfirmVatTreatment, treatment: 'domestic')]
+  end
+
   it 'shows the suggested category in review, with every category to choose from' do
     body = at(*scanned, cmd(Expenses::Expense::SuggestCategory, category: 'business_entertaining', probability: 0.82,
                                                                 description: 'Café Central — Lunch'))
 
     expect(body).to include('Suggested category: ', '<strong>Business entertaining</strong>', '82% sure',
-                            'value="business_entertaining" title="Meals, drinks, gifts or events for clients, prospects or suppliers" selected', '>Light, heat and power</option>', 'Choose</button>')
+                            'value="business_entertaining" title="Meals, drinks, gifts or events for clients, prospects or suppliers" selected', '>Light, heat and power</option>')
+    # A suggestion looks unconfirmed until a person confirms it.
+    expect(body).to include('category__form category__form--suggested',
+                            '<button type="submit" class="button button--primary button--suggested">Confirm</button>')
   end
 
   it 'shows a filed expense’s chosen category' do
     form = { description: 'Lunch', net_price_cents: 2000, tax_amount_cents: 420, currency: 'EUR', incurred_on: Date.new(2026, 8, 9) }
-    body = at(*scanned, cmd(Expenses::Expense::SaveExpense, **form), cmd(Expenses::Expense::ChooseCategory, category: 'travel'))
+    body = at(*reviewed, cmd(Expenses::Expense::SaveExpense, **form))
 
-    expect(body).to include('Travel, chosen', 'Category: <strong>Travel</strong>', 'Change</button>')
+    expect(body).to include('Category: <strong>Travel</strong>', 'Change</button>')
+    expect(body).not_to include('button--suggested', 'category__form--suggested')
   end
 
   it 'has the category in its history, on the Diagram tab and travelling back' do
@@ -82,6 +92,7 @@ RSpec.describe 'A submission' do
     body = at(upload)
 
     expect(body).to include('Preparing the file…', "/files/#{jpeg}/thumbnail", 'file-dialog', 'Discard')
+    expect(body).not_to include('callout--attention')
     expect(body).not_to include('Save expense')
   end
 
@@ -105,15 +116,50 @@ RSpec.describe 'A submission' do
     expect(body).to include('Step 4 of', 'class="statechart', %(href="/submissions/#{expense_id}/at/4"))
   end
 
-  it 'prefills the review form from the scan' do
+  it 'asks for the category and the VAT treatment before the form, with what the scan read' do
     body = at(*scanned)
 
-    expect(body).to include('Ready to review', 'Save expense', 'value="Café Central — Lunch"', 'value="2000"',
+    expect(body).to include('<p class="panel-lead callout--attention">')
+    expect(body).to include('Ready to review', 'Café Central — Lunch', '24.20 EUR', 'Suggested VAT treatment: ',
+                            '<strong>Domestic</strong>', 'Choose a category', 'Scan again')
+    expect(body).not_to include('File expense', 'value="2000"')
+    # The suggested treatment isn't chosen yet: choosing it confirms it.
+    expect(body).to match(%r{<button type="submit" class="button button--primary button--suggested" aria-pressed="false">Confirm Domestic</button>})
+    expect(body).not_to include('button--selected')
+  end
+
+  it 'flags another country’s VAT for a closer look' do
+    expect(at(*scanned[0..1], cmd(Expenses::Expense::Scanning::CompleteExtraction, **extraction, supplier_country_code: 'DE'),
+              scanned.last)).to include('<strong>Foreign VAT</strong>', 'Another country’s VAT: check it closely.')
+  end
+
+  it 'keeps a step done in view, to change, while the other waits' do
+    body = at(*scanned, cmd(Expenses::Expense::ConfirmVatTreatment, treatment: 'import'))
+
+    expect(body).to include('Ready to review', 'VAT treatment: <strong>Import</strong>', 'Choose a category')
+    expect(body).to match(%r{<button type="submit" disabled class="button button--selected" aria-pressed="true">Import</button>})
+  end
+
+  it 'prefills the form from the scan once reviewed' do
+    body = at(*reviewed)
+
+    expect(body).to include('Ready to file', 'File expense', 'value="Café Central — Lunch"', 'value="2000"',
                             'value="420"', 'value="2026-08-09"', 'Scan again')
   end
 
+  it 'files it last, after the two steps, beside the other ways out' do
+    body = at(*reviewed)
+    file = body.index('<button type="submit" form="review-form" class="button button--primary">File expense</button>')
+
+    expect(body).to include('<form class="review-form" id="review-form"')
+    expect(file).to be > body.index('aria-label="VAT treatment"')
+    expect(file).to be > body.index('aria-label="Category"')
+    expect(body.index('>Scan again</button>')).to be > file
+    expect(body[body.index('id="review-form"')...file]).not_to include('File expense')
+  end
+
   it 'files the expense the form posts' do
-    at(*scanned)
+    at(*reviewed)
     post '/commands', command: { type: Expenses::Expense::SaveExpense.type, _cid: 'x', payload: {
       expense_id:, description: 'Lunch', net_price_cents: '2000', tax_amount_cents: '420', tax_description: 'BTW 21%',
       currency: 'EUR', incurred_on: '2026-08-09', supplier_country_code: 'NL', reverse_charge: '0', payment_reference: ''
@@ -124,12 +170,12 @@ RSpec.describe 'A submission' do
   end
 
   it 'shows a filed expense with its VAT treatment' do
-    body = at(*scanned, cmd(Expenses::Expense::SaveExpense, description: 'Lunch', net_price_cents: 2000, tax_amount_cents: 420,
-                                            currency: 'EUR', incurred_on: Date.new(2026, 8, 9), supplier_country_code: 'NL'))
+    body = at(*reviewed, cmd(Expenses::Expense::SaveExpense, description: 'Lunch', net_price_cents: 2000, tax_amount_cents: 420,
+                                             currency: 'EUR', incurred_on: Date.new(2026, 8, 9), supplier_country_code: 'NL'))
 
-    expect(body).to include('Filed', '24.20 EUR', 'Domestic, suggested', 'Correct it', 'Void')
-    # The suggested treatment is the chosen one, and still choosable: that confirms it.
-    expect(body).to match(%r{<button type="submit" class="button button--selected" aria-pressed="true">Domestic</button>})
+    expect(body).to include('Filed', '24.20 EUR', 'VAT treatment: <strong>Domestic</strong>', 'Correct it', 'Void')
+    # The confirmed treatment is chosen already; another changes it.
+    expect(body).to match(%r{<button type="submit" disabled class="button button--selected" aria-pressed="true">Domestic</button>})
     expect(body).to match(%r{<button type="submit" class="button" aria-pressed="false">Import</button>})
   end
 
@@ -140,7 +186,7 @@ RSpec.describe 'A submission' do
     end
 
     it 'is on its way once filed' do
-      expect(at(*scanned, save)).to include('In GBP', 'Converting…')
+      expect(at(*reviewed, save)).to include('In GBP', 'Converting…')
     end
 
     it 'shows once converted, with the rate' do
@@ -148,7 +194,7 @@ RSpec.describe 'A submission' do
                                                            reporting_currency: 'GBP', reporting_cents: 2113, rate: 0.8731,
                                                            rate_date: Date.new(2026, 8, 7))
 
-      expect(at(*scanned, save, converted)).to include('21.13 GBP', 'at 0.8731 on 7 Aug 2026')
+      expect(at(*reviewed, save, converted)).to include('21.13 GBP', 'at 0.8731 on 7 Aug 2026')
     end
   end
 

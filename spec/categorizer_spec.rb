@@ -74,74 +74,52 @@ module Expenses
       ])
     end
 
-    it 'leaves a filing alone that its suggestion is for' do
-      scanned = history(*reviewing)
-      suggested = suggest(last(Expense::Scanning::Scanned, scanned), given: scanned)
-      FAKE_LLM.reset!
-      filed = history(save, given: suggested)
-
-      expect(dispatched(last(Expense::ExpenseFiled, filed))).to be_empty
-      expect(FAKE_LLM.categorized).to be_empty
-    end
-
-    it 'suggests again for a filing with another description' do
-      scanned = history(*reviewing)
-      suggested = suggest(last(Expense::Scanning::Scanned, scanned), given: scanned)
-      FAKE_LLM.category = { category: 'business_entertaining', probability: 0.7 }
-      filed = history(save(description: 'Taxi to client dinner'), given: suggested)
-
-      expect(dispatched(last(Expense::ExpenseFiled, filed)).map { payload(it) }).to eq([
-        { category: 'business_entertaining', probability: 0.7, description: 'Taxi to client dinner' }
-      ])
-      expect(FAKE_LLM.categorized.last).to include(description: 'Taxi to client dinner', vendor: 'Uber', total: '18.50 GBP')
-    end
-
     it 'never suggests over a category a person chose' do
       scanned = history(*reviewing)
-      chosen = history(cmd(Expense::ChooseCategory, category: 'motor_expenses'), given: scanned)
-      filed = history(save(description: 'Taxi'), given: chosen)
+      history(cmd(Expense::ChooseCategory, category: 'motor_expenses'), given: scanned)
 
-      expect(dispatched(last(Expense::ExpenseFiled, filed))).to be_empty
+      expect(dispatched(last(Expense::Scanning::Scanned, scanned))).to be_empty
       expect(FAKE_LLM.categorized).to be_empty
     end
 
     # A new group catching up on a store with expenses in it already.
     describe 'catching up on existing expenses' do
-      it 'categorizes a filed expense from its filing, not its old scan' do
-        filed = history(*reviewing, save)
+      it 'suggests for one still in review' do
+        scanned = history(*reviewing)
 
-        expect(dispatched(last(Expense::Scanning::Scanned, filed))).to be_empty
-        expect(dispatched(last(Expense::ExpenseFiled, filed)).map(&:class)).to eq([Expense::SuggestCategory])
-      end
-
-      it 'categorizes an expense filled in by hand once it is filed' do
-        failed = history(upload, cmd(Expense::Scanning::FailPreparation, reason: 'Unreadable'))
-        filed = history(cmd(Expense::EnterManually), save(description: 'Train to Leeds'), given: failed)
-
-        expect(dispatched(last(Expense::ExpenseFiled, filed)).map { payload(it)[:description] }).to eq(['Train to Leeds'])
+        expect(dispatched(last(Expense::Scanning::Scanned, scanned)).map(&:class)).to eq([Expense::SuggestCategory])
       end
 
       it 'tries again one whose categorization failed' do
-        filed = history(*reviewing, save)
-        history(cmd(Expense::FailCategorization, description: 'Uber - Trip', reason: 'Down'), given: filed)
+        scanned = history(*reviewing)
+        history(cmd(Expense::FailCategorization, description: 'Uber - Trip', reason: 'Down'), given: scanned)
 
-        expect(dispatched(last(Expense::ExpenseFiled, filed)).map(&:class)).to eq([Expense::SuggestCategory])
+        expect(dispatched(last(Expense::Scanning::Scanned, scanned)).map(&:class)).to eq([Expense::SuggestCategory])
       end
 
-      it 'skips a voided expense' do
-        filed = history(*reviewing, save)
-        history(cmd(Expense::VoidExpense, reason: 'Duplicate'), given: filed)
+      it 'skips a filed expense' do
+        scanned = history(*reviewing)
+        history(cmd(Expense::ConfirmVatTreatment, treatment: 'domestic'), cmd(Expense::ChooseCategory, category: 'travel'),
+                save, given: scanned)
 
-        expect(dispatched(last(Expense::ExpenseFiled, filed))).to be_empty
+        expect(dispatched(last(Expense::Scanning::Scanned, scanned))).to be_empty
+        expect(FAKE_LLM.categorized).to be_empty
+      end
+
+      it 'skips a discarded expense' do
+        scanned = history(*reviewing)
+        history(cmd(Expense::DiscardDocument), given: scanned)
+
+        expect(dispatched(last(Expense::Scanning::Scanned, scanned))).to be_empty
         expect(FAKE_LLM.categorized).to be_empty
       end
 
       it 'skips one it has a suggestion for already (a reset group)' do
-        filed = history(*reviewing, save)
-        suggest(last(Expense::ExpenseFiled, filed), given: filed)
+        scanned = history(*reviewing)
+        suggest(last(Expense::Scanning::Scanned, scanned), given: scanned)
         FAKE_LLM.reset!
 
-        expect(dispatched(last(Expense::ExpenseFiled, filed))).to be_empty
+        expect(dispatched(last(Expense::Scanning::Scanned, scanned))).to be_empty
         expect(FAKE_LLM.categorized).to be_empty
       end
     end
@@ -149,14 +127,14 @@ module Expenses
     describe 'the expense' do
       def doc(messages) = Expense.new(expense_id:).tap { it.evolve(messages) }.context
 
-      it 'takes the suggestion in review and once filed' do
+      it 'takes the suggestion in review, until a person chooses' do
         scanned = history(*reviewing)
         suggested = history(cmd(Expense::SuggestCategory, category: 'travel', probability: 0.9, description: 'Uber - Trip'), given: scanned)
-        filed = history(save, cmd(Expense::SuggestCategory, category: 'motor_expenses', probability: 0.6, description: 'Uber - Trip'),
-                        given: suggested)
+        resuggested = history(cmd(Expense::SuggestCategory, category: 'motor_expenses', probability: 0.6, description: 'Uber'),
+                              given: suggested)
 
         expect(doc(suggested)).to have_attributes(category: 'travel', category_chosen?: false)
-        expect(doc(filed)).to have_attributes(category: 'motor_expenses', category_chosen?: false)
+        expect(doc(resuggested)).to have_attributes(category: 'motor_expenses', category_chosen?: false)
       end
 
       it 'keeps a person’s choice over any later suggestion' do

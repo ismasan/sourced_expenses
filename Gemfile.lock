@@ -1,6 +1,6 @@
 GIT
   remote: https://github.com/ismasan/sidereal.git
-  revision: b39f91169a6af99e84986966ad30cc450a9c57a5
+  revision: 64454cffe03ea098abe1484bc8ab4034368cc6d6
   specs:
     sidereal (0.1.0)
       async
@@ -17,7 +17,7 @@ GIT
 
 GIT
   remote: https://github.com/ismasan/sourced-ui.git
-  revision: 7ba6450fffc6951395fb5b14b50a71e6ca4e53de
+  revision: c045b92cef20ee17d3e0c9fbcfa843dd158a627c
   specs:
     sourced-ui (0.1.0)
       logger

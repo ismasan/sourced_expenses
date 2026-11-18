@@ -26,7 +26,7 @@ RSpec.describe 'The expense lists' do
   end
 
   # A filed expense dated +on+, in the list and the ledger.
-  def filed(filename, on:, cents:, paths: %w[filed filed.vat_confirmed], at: Time.now)
+  def filed(filename, on:, cents:, paths: %w[filed], at: Time.now)
     submission(filename, *paths, on:, at:).tap do |expense_id|
       db[:ledger].insert(expense_id:, incurred_on: on, currency: 'EUR', amount_cents: cents, reporting_currency: 'GBP',
                          reporting_cents: cents, updated_at: Time.now)
@@ -37,8 +37,8 @@ RSpec.describe 'The expense lists' do
     submission('reading.pdf', 'scanning', 'scanning.extracting', at: Time.now - 60)
     submission('storing.pdf', at: Time.now - 50)
     submission('review.pdf', 'reviewing', at: Time.now - 40)
-    submission('vat.pdf', 'filed', 'filed.vat_needs_review', at: Time.now - 30)
-    submission('filed.pdf', 'filed', 'filed.vat_confirmed', at: Time.now - 20)
+    submission('ready.pdf', 'reviewed', at: Time.now - 30)
+    submission('filed.pdf', 'filed', at: Time.now - 20)
     submission('icon.png', 'rejected', at: Time.now - 10)
     submission('gone.pdf', 'discarded', at: Time.now)
   end
@@ -51,7 +51,7 @@ RSpec.describe 'The expense lists' do
 
       expect(Expenses::Submissions.counts(db)).to eq(
         'scanning' => 2, 'reviewing' => 1, 'rejected' => 1, 'scan_failed' => 0,
-        'vat_needs_review' => 1, 'filed' => 1, 'discarded' => 1, 'voided' => 0
+        'reviewed' => 1, 'filed' => 1, 'discarded' => 1, 'voided' => 0
       )
     end
 
@@ -59,7 +59,7 @@ RSpec.describe 'The expense lists' do
       seed
 
       rows, total = Expenses::Submissions.page(db, states: Expenses::Submissions::NEEDS_YOU, per_page: 2)
-      expect([rows.map(&:filename), total]).to eq([%w[icon.png vat.pdf], 3])
+      expect([rows.map(&:filename), total]).to eq([%w[icon.png ready.pdf], 3])
       rows, = Expenses::Submissions.page(db, states: Expenses::Submissions::NEEDS_YOU, page: 2, per_page: 2)
       expect(rows.map(&:filename)).to eq(%w[review.pdf])
     end
@@ -72,7 +72,7 @@ RSpec.describe 'The expense lists' do
     being_read, needs_you = last_response.body.split('id="needs-you"')
     expect(being_read).to include('id="being-read"', '>Being read<span class="submissions__count">2<')
     expect(filenames(being_read)).to eq(%w[storing.pdf reading.pdf])
-    expect(filenames(needs_you)).to eq(%w[icon.png vat.pdf review.pdf])
+    expect(filenames(needs_you)).to eq(%w[icon.png ready.pdf review.pdf])
   end
 
   it 'leaves out the list of those being read with none' do
@@ -92,7 +92,7 @@ RSpec.describe 'The expense lists' do
   end
 
   it 'says so when nothing needs a person' do
-    submission('filed.pdf', 'filed', 'filed.vat_confirmed')
+    submission('filed.pdf', 'filed')
     get '/'
 
     expect(last_response.body).to include('Nothing needs you right now')
@@ -102,13 +102,13 @@ RSpec.describe 'The expense lists' do
     seed
     get '/expenses'
 
-    expect(filenames(last_response.body)).to eq(%w[gone.pdf icon.png filed.pdf vat.pdf review.pdf storing.pdf reading.pdf])
+    expect(filenames(last_response.body)).to eq(%w[gone.pdf icon.png filed.pdf ready.pdf review.pdf storing.pdf reading.pdf])
     expect(last_response.body).to include('1–7 of 7')
   end
 
   it 'shows each expense’s category, a suggestion apart from a person’s choice' do
     db[:submissions].where(expense_id: submission('uber.pdf', 'reviewing')).update(description: 'Uber - Trip', category: 'travel')
-    db[:submissions].where(expense_id: submission('github.pdf', 'filed', 'filed.vat_confirmed'))
+    db[:submissions].where(expense_id: submission('github.pdf', 'filed'))
                     .update(description: 'GitHub', category: 'software', category_chosen: true)
     get '/expenses'
 
@@ -124,10 +124,10 @@ RSpec.describe 'The expense lists' do
     end
 
     before do
-      categorized('uber.pdf', 'travel', 'filed', 'filed.vat_confirmed')
+      categorized('uber.pdf', 'travel', 'filed')
       categorized('train.pdf', 'travel', 'reviewing')
-      categorized('github.pdf', 'software', 'filed', 'filed.vat_confirmed')
-      categorized('render.pdf', 'software', 'filed', 'filed.vat_confirmed')
+      categorized('github.pdf', 'software', 'filed')
+      categorized('render.pdf', 'software', 'filed')
       submission('misc.pdf', 'scanning')
     end
 
@@ -194,6 +194,55 @@ RSpec.describe 'The expense lists' do
     expect(filenames(last_response.body)).to eq(%w[filed.pdf storing.pdf reading.pdf])
     expect(last_response.body).to include('value="scanning" checked', 'value="filed" checked', 'Clear filters')
     expect(last_response.body).to include('&quot;params&quot;:{&quot;state&quot;:[&quot;scanning&quot;,&quot;filed&quot;]}')
+  end
+
+  describe 'by whose category and VAT treatment it is' do
+    before do
+      db[:submissions].where(expense_id: submission('uber.pdf', 'reviewing', at: Time.now - 30))
+                      .update(category: 'travel', vat_treatment: 'domestic')
+      db[:submissions].where(expense_id: submission('hotel.pdf', 'reviewing', at: Time.now - 20))
+                      .update(category: 'travel', category_chosen: true, vat_treatment: 'foreign_vat')
+      db[:submissions].where(expense_id: submission('github.pdf', 'filed', at: Time.now - 10))
+                      .update(category: 'software', category_chosen: true, vat_treatment: 'import', vat_confirmed: true)
+      submission('misc.pdf', 'reviewing')
+    end
+
+    def count(body, name, value) = body[%r{name="#{Regexp.escape(name)}" value="#{value}"[^>]*>.*?filter__count">(\d+)<}m, 1]&.to_i
+
+    it 'filters by any of each group’s statuses, both groups together' do
+      get '/expenses?category_status[]=chosen&vat_status[]=suggested'
+      expect(filenames(last_response.body)).to eq(%w[hotel.pdf])
+      expect(last_response.body).to include('value="chosen" checked', 'value="suggested" checked', 'Clear filters')
+
+      get '/expenses?vat_status[]=suggested&vat_status[]=none'
+      expect(filenames(last_response.body)).to eq(%w[misc.pdf hotel.pdf uber.pdf])
+    end
+
+    it 'counts each status within the other filters, not its own group' do
+      get '/expenses?category_status[]=chosen&state[]=reviewing'
+      body = last_response.body
+
+      expect([count(body, 'category_status[]', 'suggested'), count(body, 'category_status[]', 'chosen'),
+              count(body, 'category_status[]', 'none')]).to eq([1, 1, 1])
+      expect([count(body, 'vat_status[]', 'suggested'), count(body, 'vat_status[]', 'confirmed'),
+              count(body, 'vat_status[]', 'none')]).to eq([1, 0, 0])
+    end
+
+    it 'keeps the statuses in its links' do
+      26.times { |i| submission("r#{i}.pdf", 'reviewing', at: Time.now - 100 - i) }
+      get '/expenses?category_status[]=none&vat_status[]=none'
+
+      body = last_response.body
+      expect(body).to include('href="/expenses?category_status[]=none&vat_status[]=none&page=2" rel="next"')
+      # The chart's months too.
+      expect(body).to match(%r{class="month-chart__link" href="/expenses\?category_status\[\]=none&vat_status\[\]=none&from=})
+    end
+
+    it 'refuses a status it does not know' do
+      get '/expenses?vat_status[]=maybe'
+
+      expect(last_response.status).to eq(400)
+    end
   end
 
   describe 'the chart' do
@@ -305,7 +354,7 @@ RSpec.describe 'The expense lists' do
 
     before do
       filed('early.pdf', on: nov + 2, cents: 1000, at: Time.now - 40)
-      filed('vat.pdf', on: nov + 9, cents: 5000, paths: %w[filed filed.vat_needs_review], at: Time.now - 30)
+      filed('mid.pdf', on: nov + 9, cents: 5000, at: Time.now - 30)
       filed('late.pdf', on: nov + 20, cents: 2000, at: Time.now - 20)
       filed('december.pdf', on: Date.new(2025, 12, 3), cents: 4000, at: Time.now - 10)
       submission('reading.pdf', 'scanning', 'scanning.extracting')
@@ -314,7 +363,7 @@ RSpec.describe 'The expense lists' do
     it 'lists those dated in the range, leaving out ones with no date yet' do
       get '/expenses?from=2025-11-01&to=2025-11-30'
 
-      expect(filenames(last_response.body)).to eq(%w[late.pdf vat.pdf early.pdf])
+      expect(filenames(last_response.body)).to eq(%w[late.pdf mid.pdf early.pdf])
       expect(last_response.body).to include('href="/expenses" aria-label="November 2025: 80.00 GBP, 3 expenses" aria-current="true"')
     end
 
@@ -323,7 +372,7 @@ RSpec.describe 'The expense lists' do
       expect(filenames(last_response.body)).to eq(%w[december.pdf late.pdf])
 
       get '/expenses?to=2025-11-15'
-      expect(filenames(last_response.body)).to eq(%w[vat.pdf early.pdf])
+      expect(filenames(last_response.body)).to eq(%w[mid.pdf early.pdf])
       # Not a whole month: none is chosen, but the dates can still be cleared.
       expect(last_response.body).to include('>All dates<')
       expect(last_response.body).not_to include('month-chart__link--chosen')
@@ -333,7 +382,7 @@ RSpec.describe 'The expense lists' do
       get '/expenses?from=&to=&state[]=filed'
 
       expect(last_response.status).to eq(200)
-      expect(filenames(last_response.body)).to eq(%w[december.pdf late.pdf early.pdf])
+      expect(filenames(last_response.body)).to eq(%w[december.pdf late.pdf mid.pdf early.pdf])
     end
 
     it 'lists nothing for a range that ends before it starts' do
@@ -351,7 +400,7 @@ RSpec.describe 'The expense lists' do
     it 'counts the states in the range' do
       get '/expenses?from=2025-11-01&to=2025-11-30'
 
-      expect(last_response.body).to match(%r{value="filed"[^>]*>.*?filter__count">2<}m)
+      expect(last_response.body).to match(%r{value="filed"[^>]*>.*?filter__count">3<}m)
     end
 
     it 'totals every filed expense in the range, in the reporting currency, whatever the states' do

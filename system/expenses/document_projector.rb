@@ -76,13 +76,8 @@ module Expenses
       doc.forget_stale_conversion
     end
 
-    evolve E::VatTreatmentInferred do |doc, evt|
-      doc.vat_treatment = evt.payload.treatment
-    end
-
-    evolve E::Filed::VatTreatmentConfirmed do |doc, evt|
-      doc.vat_treatment = evt.payload.treatment
-      doc.vat_treatment_confirmed = true
+    evolve E::VatTreatmentConfirmed do |doc, evt|
+      doc.confirmed_vat_treatment = evt.payload.treatment
     end
 
     evolve E::ConversionRecorded do |doc, evt|

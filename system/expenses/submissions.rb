@@ -21,12 +21,13 @@ module Expenses
 
     Row = ::Data.define(:expense_id, :filename, :machine, :failure, :rejection, :description,
                         :total_cents, :currency, :incurred_on, :category, :category_chosen,
-                        :uploaded_at, :updated_at) do
+                        :vat_treatment, :vat_confirmed, :filing_country, :uploaded_at, :updated_at) do
       def in?(path) = machine.include?(path)
     end
 
     COLUMNS = %i[filename content_type file_ref machine failure rejection description vendor
-                 total_cents currency incurred_on category category_chosen uploaded_at updated_at].freeze
+                 total_cents currency incurred_on category category_chosen filing_country vat_treatment
+                 vat_confirmed uploaded_at updated_at].freeze
 
     # The machine's paths are a JSON array: whether +path+ is one of them.
     def self.in_path(path)
@@ -40,32 +41,61 @@ module Expenses
     STATES = {
       'scanning' => Sequel.|(in_path('scanning'), { machine: '[]' }),
       'reviewing' => in_path('reviewing'),
+      'reviewed' => in_path('reviewed'),
       'rejected' => in_path('rejected'),
       'scan_failed' => in_path('scan_failed'),
-      'vat_needs_review' => in_path('filed.vat_needs_review'),
-      'filed' => Sequel.&(in_path('filed'), Sequel.~(in_path('filed.vat_needs_review'))),
+      'filed' => in_path('filed'),
       'discarded' => in_path('discarded'),
       'voided' => in_path('voided')
     }.freeze
 
     # The states waiting for a person.
-    NEEDS_YOU = %w[reviewing vat_needs_review rejected scan_failed].freeze
+    NEEDS_YOU = %w[reviewing reviewed rejected scan_failed].freeze
+
+    # Whose category it is: the model's suggestion, a person's choice, or
+    # none yet (still scanning, the model failed, or filled in by hand).
+    CATEGORY_STATUSES = {
+      'suggested' => Sequel.&(Sequel.~(category: nil), { category_chosen: false }),
+      'chosen' => { category_chosen: true },
+      'none' => { category: nil }
+    }.freeze
+
+    # Whose VAT treatment it is: the rule's suggestion, a person's, or none
+    # yet (still scanning, or nothing read to suggest one from).
+    VAT_STATUSES = {
+      'suggested' => Sequel.&(Sequel.~(vat_treatment: nil), { vat_confirmed: false }),
+      'confirmed' => { vat_confirmed: true },
+      'none' => { vat_treatment: nil }
+    }.freeze
 
     # Rows in any of +states+ (STATES keys; all rows when there are none),
     # with any of +categories+ (CATEGORIES keys; any category or none, when
-    # there are none), dated +from+ to +to+ (either may be nil, for no
+    # there are none), in any of +category_statuses+ (CATEGORY_STATUSES
+    # keys) and any of +vat_statuses+ (VAT_STATUSES keys; either, none for
+    # any), filed in any of +filing_countries+ (ISO 3166-1 alpha-2 codes;
+    # any, for none), dated +from+ to +to+ (either may be nil, for no
     # bound), matching +search+ (see .search; nil or blank for any). A
     # range leaves out rows with no date yet: still scanning, or never read.
-    def self.in_states(db, states = [], categories: [], from: nil, to: nil, search: nil)
-      conditions = STATES.values_at(*(STATES.keys & states))
-      ds = conditions.empty? ? db[:submissions] : db[:submissions].where(Sequel.|(*conditions))
+    def self.in_states(db, states = [], categories: [], category_statuses: [], vat_statuses: [], filing_countries: [],
+                       from: nil, to: nil, search: nil)
+      ds = any_of(db[:submissions], STATES, states)
+      ds = any_of(ds, CATEGORY_STATUSES, category_statuses)
+      ds = any_of(ds, VAT_STATUSES, vat_statuses)
       ds = ds.where(category: categories) if categories.any?
+      ds = ds.where(filing_country: filing_countries) if filing_countries.any?
       ds = ds.where { incurred_on >= from } if from
       ds = ds.where { incurred_on <= to } if to
       ids = search(db, search)
       ds = ds.where(expense_id: ids) if ids
       ds
     end
+
+    # +ds+ where any of +conditions+ named by +keys+ holds: all of it for none.
+    def self.any_of(ds, conditions, keys)
+      chosen = conditions.values_at(*(conditions.keys & keys))
+      chosen.empty? ? ds : ds.where(Sequel.|(*chosen))
+    end
+    private_class_method :any_of
 
     # The ids of the rows matching +text+, as a dataset to filter by
     # (`where(expense_id: ...)`, here or in another table), or nil for a
@@ -88,27 +118,37 @@ module Expenses
       ds
     end
 
-    # One page of +states+ and +categories+, dated +from+ to +to+, matching +search+.
+    # One page of the rows .in_states finds for +filters+.
     # @return [Array(Array<Row>, Integer)] the page's rows, and how many there are in all
-    def self.page(db, states: [], categories: [], from: nil, to: nil, search: nil, page: 1, per_page: 25)
-      ds = in_states(db, states, categories:, from:, to:, search:)
+    def self.page(db, states: [], page: 1, per_page: 25, **filters)
+      ds = in_states(db, states, **filters)
       rows = ds.reverse(:uploaded_at).limit(per_page, (page - 1) * per_page).map { row(it) }
       [rows, ds.count]
     end
 
-    # How many rows with +categories+, dated +from+ to +to+, matching
-    # +search+, are in each of STATES.
+    # How many of the rows .in_states finds for +filters+ (all but states)
+    # are in each of STATES.
     # @return [Hash{String => Integer}]
-    def self.counts(db, categories: [], from: nil, to: nil, search: nil)
-      STATES.to_h { |key, _| [key, in_states(db, [key], categories:, from:, to:, search:).count] }
+    def self.counts(db, **filters)
+      STATES.to_h { |key, _| [key, in_states(db, [key], **filters).count] }
     end
 
-    # How many rows in +states+, dated +from+ to +to+, matching +search+,
-    # have each category: only categories some row has.
+    # The status filters .in_states takes, by keyword.
+    STATUS_FILTERS = { category_statuses: CATEGORY_STATUSES, vat_statuses: VAT_STATUSES }.freeze
+
+    # How many of the rows .in_states finds for +filters+ (all but +filter+,
+    # a STATUS_FILTERS key) are in each of its statuses.
     # @return [Hash{String => Integer}]
-    def self.category_counts(db, states: [], from: nil, to: nil, search: nil)
-      in_states(db, states, from:, to:, search:).exclude(category: nil).group_and_count(:category)
-                                                .to_h { [it[:category], it[:count]] }
+    def self.status_counts(db, filter, states: [], **filters)
+      STATUS_FILTERS.fetch(filter).to_h { |status, _| [status, in_states(db, states, **filters, filter => [status]).count] }
+    end
+
+    # How many of the rows .in_states finds for +filters+ (all but
+    # categories) have each category: only categories some row has.
+    # @return [Hash{String => Integer}]
+    def self.category_counts(db, states: [], **filters)
+      in_states(db, states, **filters).exclude(category: nil).group_and_count(:category)
+                                       .to_h { [it[:category], it[:count]] }
     end
 
     # The latest uploads first.
@@ -127,7 +167,7 @@ module Expenses
       db[:submissions_search].delete
     end
 
-    context { { machine: [], category_chosen: false } }
+    context { { machine: [], category_chosen: false, vat_confirmed: false } }
 
     load_context do |partition|
       row = db[:submissions].where(expense_id: partition[:expense_id]).first
@@ -139,18 +179,24 @@ module Expenses
         row[:expense_id] = evt.payload.expense_id
         row[:machine] = (row[:machine] - evt.payload.exited) | evt.payload.entered
         row[:updated_at] = evt.created_at
+        # A scan that didn't finish prefills no form, so suggests no VAT
+        # treatment: as the machine's Document#suggested_vat_treatment.
+        if !row[:vat_confirmed] && (evt.payload.entered & %w[rejected scan_failed]).any?
+          row[:vat_treatment] = nil
+        end
       end
     end
 
     evolve Expense::DocumentUploaded do |row, evt|
-      row.merge!(evt.payload.to_h.slice(:expense_id, :filename, :content_type, :file_ref))
+      row.merge!(evt.payload.to_h.slice(:expense_id, :filename, :content_type, :file_ref, :filing_country))
       row[:uploaded_at] = evt.created_at
     end
 
-    # A rescan starts from nothing.
+    # A rescan starts from nothing, but for a person's VAT treatment.
     evolve Expense::ScanRequested do |row, _evt|
       row.merge!(failure: nil, rejection: nil, description: nil, vendor: nil, total_cents: nil, currency: nil,
                  incurred_on: nil)
+      row[:vat_treatment] = nil unless row[:vat_confirmed]
     end
 
     evolve Expense::StepFailed do |row, evt|
@@ -170,6 +216,10 @@ module Expenses
         currency: evt.payload.currency,
         incurred_on: Types.iso_date(evt.payload.date)
       )
+      unless row[:vat_confirmed]
+        row[:vat_treatment] = Document.suggested_vat_treatment(evt.payload.to_h.except(:expense_id),
+                                                               filing_country: row[:filing_country])
+      end
     end
 
     evolve Expense::Scanning::DateRechecked do |row, evt|
@@ -197,6 +247,11 @@ module Expenses
     evolve Expense::CategoryChosen do |row, evt|
       row[:category] = evt.payload.category
       row[:category_chosen] = true
+    end
+
+    evolve Expense::VatTreatmentConfirmed do |row, evt|
+      row[:vat_treatment] = evt.payload.treatment
+      row[:vat_confirmed] = true
     end
 
     sync do |context:, **|
