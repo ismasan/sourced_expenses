@@ -9,9 +9,14 @@ require 'sourced/ui/components'
 # commanders in web/app.rb, and any Sourced deciders and projectors in system/.
 # It replaces Sidereal's own store and dispatcher.
 #
-# Register deciders and projectors here, once they exist:
-#
-#   Sourced.register(Todos)
+# It registers the Sourced reactors in system/, from the scan in boot.rb that
+# declares the components there: each file whose class is a decider,
+# projector, machine or other reactor, as Zeitwerk names it
+# (system/expenses/ledger.rb defines Expenses::Ledger). Base classes that
+# handle no messages are skipped. So they can `dep` system/ components, and a
+# reload registers them again. A reactor anywhere else is registered by hand,
+# here: `Sourced.register(Todos)`. It loads before the system/ components are
+# declared, so it can't `dep` one.
 #
 # The integration mounts Sourced's own components under `sourced`, so any of
 # them can be re-implemented — the last implementation of a key wins:
@@ -45,10 +50,3 @@ end
 # home page lists. A model call takes seconds and holds a worker, so there
 # are enough for a few scans while the machine and read model keep up.
 Sidereal.config.config!('sourced.workers.count') { 8 }
-
-Sourced.register(Expenses::Expense)
-Sourced.register(Expenses::Scanner)
-Sourced.register(Expenses::CurrencyConverter)
-Sourced.register(Expenses::Categorizer)
-Sourced.register(Expenses::Submissions)
-Sourced.register(Expenses::Ledger)

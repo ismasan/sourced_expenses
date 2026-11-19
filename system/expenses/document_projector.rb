@@ -11,9 +11,10 @@ module Expenses
   # own, so one adding an evolve block of its own changes nothing for the
   # other.
   #
-  # Expense must load first (config/components/sourced.rb registers it before
-  # boot.rb eager loads): this class names Expense's events, and Expense
-  # adopts it partway through its own body.
+  # Expense must load first: this class names Expense's events, and Expense
+  # adopts it partway through its own body. The system/ scan in boot.rb loads
+  # files alphabetically, and categorizer.rb names Expense before this file
+  # loads.
   class DocumentProjector < Sourced::Projector::Inline
     E = Expense
     S = Expense::Scanning
