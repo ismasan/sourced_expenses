@@ -16,15 +16,10 @@ module Expenses
 
     dep :llm, :file_store
 
-    # The document each step works on, as the machine sees it.
-    evolve DocumentProjector
-
-    # A reaction's history includes what came after its trigger, so whether
-    # the step is still to do is projection.current?: nothing evolved since.
-    # Discarding appends only the state event, so it's evolved here to count.
-    # Every other way out of a step appends an event the projector evolves
-    # (the step's result, a StepFailed, a rescan's ScanRequested).
-    evolve(Expense::Discarded) { |_doc, _evt| nil }
+    # The document each step works on, as the machine sees it, plus
+    # Discarded, so a discarded expense's step isn't current (see
+    # ScannerProjector).
+    evolve ScannerProjector
 
     S = Expense::Scanning
 

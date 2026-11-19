@@ -6,15 +6,10 @@ module Expenses
   # currency and its category.
   #
   # Shared by whoever needs the document: the Expense machine (its guards and
-  # handlers decide on it) and the Scanner (each step works on it). Each
-  # adopts it with `evolve DocumentProjector` and gets a subclass of its
-  # own, so one adding an evolve block of its own changes nothing for the
-  # other.
-  #
-  # Expense must load first: this class names Expense's events, and Expense
-  # adopts it partway through its own body. The system/ scan in boot.rb loads
-  # files alphabetically, and categorizer.rb names Expense before this file
-  # loads.
+  # handlers decide on it) and the Scanner (each step works on it). The
+  # machine evolves with this class itself (`evolve DocumentProjector`), so
+  # an evolve block only one of them needs goes on a subclass: the Scanner's
+  # is ScannerProjector.
   class DocumentProjector < Sourced::Projector::Inline
     E = Expense
     S = Expense::Scanning
