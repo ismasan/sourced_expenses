@@ -15,7 +15,6 @@ module UI
       Option.new('scan_failed', 'Scan failed', :problem),
       Option.new('scanning', 'Being read', :working),
       Option.new('filed', 'Filed', :done),
-      Option.new('discarded', 'Discarded', :closed),
       Option.new('voided', 'Voided', :closed)
     ].freeze
 

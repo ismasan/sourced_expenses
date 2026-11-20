@@ -53,6 +53,19 @@ module Expenses
                                      total_cents: 2420, currency: 'EUR', incurred_on: Date.new(2026, 8, 9))
     end
 
+    it 'removes a discarded expense from the list and the search index' do
+      project(uploaded)
+      expect(row).not_to be_nil
+      expect(db[:submissions_search].where(expense_id:).count).to eq(1)
+
+      discarded = decided(Expense, { expense_id: }, cmd(Expense::DiscardDocument), given: uploaded)
+      project(discarded - uploaded)
+
+      expect(row).to be_nil
+      expect(db[:submissions].where(expense_id:).count).to eq(0)
+      expect(db[:submissions_search].where(expense_id:).count).to eq(0)
+    end
+
     it 'keeps why a scan failed' do
       failed = decided(Expense, { expense_id: }, cmd(Expense::Scanning::FailPreparation, reason: 'Too big'), given: uploaded)
       project(failed)

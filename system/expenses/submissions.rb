@@ -12,6 +12,8 @@ module Expenses
   # table, trigram tokenizer): its description, vendor, filename and
   # category, for #search.
   #
+  # A discarded expense leaves both: it's gone from the lists and search.
+  #
   # Sidereal publishes Submissions::Projected after every committed batch,
   # which is what the page reacts to.
   class Submissions < Sourced::Projector::StateStored
@@ -36,7 +38,8 @@ module Expenses
 
     # Where an expense is, for filtering: one key per state a person tells
     # apart, each a condition on the machine's paths. The top-level states
-    # exclude each other, so every row is in exactly one. (No paths yet:
+    # exclude each other, so every row is in exactly one. (Discarded ones
+    # have no row. No paths yet:
     # the upload is still being stored, which counts as scanning, and so
     # does waiting for a scanning slot.)
     STATES = {
@@ -46,7 +49,6 @@ module Expenses
       'rejected' => in_path('rejected'),
       'scan_failed' => in_path('scan_failed'),
       'filed' => in_path('filed'),
-      'discarded' => in_path('discarded'),
       'voided' => in_path('voided')
     }.freeze
 
@@ -258,13 +260,16 @@ module Expenses
     sync do |context:, **|
       next unless context[:filename]
 
-      row = context.slice(*COLUMNS).merge(machine: JSON.generate(context[:machine]))
-      db[:submissions].insert_conflict(target: :expense_id, update: row)
-                      .insert(row.merge(expense_id: context[:expense_id]))
+      expense_id = context[:expense_id]
       # FTS5 tables have no upsert: the old entry goes, the new one in.
       index = db[:submissions_search]
-      index.where(expense_id: context[:expense_id]).delete
-      index.insert(expense_id: context[:expense_id], body: Submissions.search_body(context))
+      index.where(expense_id:).delete
+      # Discarded: the row goes too, and nothing comes back (it's final).
+      next db[:submissions].where(expense_id:).delete if context[:machine].include?('discarded')
+
+      row = context.slice(*COLUMNS).merge(machine: JSON.generate(context[:machine]))
+      db[:submissions].insert_conflict(target: :expense_id, update: row).insert(row.merge(expense_id:))
+      index.insert(expense_id:, body: Submissions.search_body(context))
     end
 
     # What a row is found by, a line each.
