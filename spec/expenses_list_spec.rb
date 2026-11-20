@@ -40,7 +40,6 @@ RSpec.describe 'The expense lists' do
     submission('ready.pdf', 'reviewed', at: Time.now - 30)
     submission('filed.pdf', 'filed', at: Time.now - 20)
     submission('icon.png', 'rejected', at: Time.now - 10)
-    submission('gone.pdf', 'discarded', at: Time.now)
   end
 
   def filenames(body) = body.scan(/class="submission__file">([^<]+)</).flatten
@@ -51,7 +50,7 @@ RSpec.describe 'The expense lists' do
 
       expect(Expenses::Submissions.counts(db)).to eq(
         'scanning' => 2, 'reviewing' => 1, 'rejected' => 1, 'scan_failed' => 0,
-        'reviewed' => 1, 'filed' => 1, 'discarded' => 1, 'voided' => 0
+        'reviewed' => 1, 'filed' => 1, 'voided' => 0
       )
     end
 
@@ -102,8 +101,8 @@ RSpec.describe 'The expense lists' do
     seed
     get '/expenses'
 
-    expect(filenames(last_response.body)).to eq(%w[gone.pdf icon.png filed.pdf ready.pdf review.pdf storing.pdf reading.pdf])
-    expect(last_response.body).to include('1–7 of 7')
+    expect(filenames(last_response.body)).to eq(%w[icon.png filed.pdf ready.pdf review.pdf storing.pdf reading.pdf])
+    expect(last_response.body).to include('1–6 of 6')
   end
 
   it 'shows each expense’s category, a suggestion apart from a person’s choice' do
