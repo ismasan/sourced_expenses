@@ -29,6 +29,13 @@ module Expenses
     partition_by expense_id: Types::ExpenseID
     message_prefix 'expenses'
 
+    # How many expenses scan at once (MAX_SCANS, see
+    # config/components/scan_queue.rb): the capacity Queued enqueues with.
+    dep 'expenses.max_scans' => 'max_scans'
+
+    # The queue scans wait in (see Queued).
+    ScanQueue = WorkQueue.config('scans')
+
     # How long a scan may take, every LLM call and its retries included,
     # before it's given up on.
     SCAN_TIMEOUT = ENV.fetch('SCAN_TIMEOUT', '10m')
@@ -69,8 +76,8 @@ module Expenses
       attribute :reference_date, Types::Date.default { Date.today }
     end
 
-    # Dispatched by ScanQueue when the expense gets a scanning slot, never by
-    # a person.
+    # Appended by ScanQueue when the expense's scan gets a slot: what Queued
+    # enqueued it as. Never sent by a person.
     StartScan = Command(:start_scan)
 
     # Dispatched by scanning's timer, never by a person.
@@ -276,13 +283,22 @@ module Expenses
       end
     end
 
-    # Waiting for a scanning slot (ScanQueue caps how many scan at once).
-    # Discarded before its turn, it gives its place up.
+    # Waiting for a slot to scan in: ScanQueue lets max_scans expenses scan at
+    # once, and appends StartScan when it's this one's turn. Discarded before
+    # its turn, it gives its place up. The slot is held through every step of
+    # the scan, until it leaves Scanning.
     state Queued do
-      entry(ScanQueue::Enqueue) { |_doc, entered| dispatch ScanQueue::Enqueue, item_id: entered.payload.expense_id }
+      entry WorkQueue::Enqueue do |_doc, entered|
+        dispatch ScanQueue.enqueue(
+          StartScan, 
+          expense_id: entered.payload.expense_id
+        ).with_capacity(max_scans)
+      end
 
-      exit ScanQueue::Release | nil do |_doc, left_by|
-        dispatch ScanQueue::Release, item_id: left_by.payload.expense_id unless left_by.payload.entered.include?('scanning')
+      exit WorkQueue::Release | nil do |_doc, left_by|
+        next if left_by.payload.entered.include?('scanning')
+
+        dispatch ScanQueue.release(StartScan, expense_id: left_by.payload.expense_id)
       end
 
       command StartScan => Scanning
@@ -297,7 +313,9 @@ module Expenses
                Scanning::NotAnInvoice => Rejected,
                Scanning::Failed => ScanFailed
 
-      exit(ScanQueue::Release) { |_doc, left_by| dispatch ScanQueue::Release, item_id: left_by.payload.expense_id }
+      exit WorkQueue::Release do |_doc, left_by|
+        dispatch ScanQueue.release(StartScan, expense_id: left_by.payload.expense_id)
+      end
 
       after(SCAN_TIMEOUT => TimeOutScan)
 

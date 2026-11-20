@@ -14,7 +14,6 @@ RSpec.describe 'The expense lists' do
     db.transaction(rollback: :always, auto_savepoint: true) do
       db[:submissions].delete
       db[:ledger].delete
-      db[:queues].delete
       example.run
     end
   end
@@ -76,17 +75,26 @@ RSpec.describe 'The expense lists' do
     expect(filenames(needs_you)).to eq(%w[icon.png ready.pdf review.pdf])
   end
 
-  it 'shows the scan queue under the drop zone: idle, then busy' do
-    get '/'
-    upload, rest = last_response.body.split('id="queue-scans"')
-    expect(upload).to include('class="upload')
-    expect(rest).to include('Idle: room for 3 scans at once')
+  it "shows the scan queue's bar along the bottom of every page while it's busy, with a stream of its own" do
+    bar = %r{<section id="queue-scans" class="queue-bar"([^>]*)>}
+    ['/', '/expenses'].each do |path|
+      get path
+      expect(last_response.body[bar, 1]).to include('hidden'), path
+      expect(last_response.body).to include(%(data-init="@get('/queues/scans/updates')"))
+    end
 
-    db[:queues].insert(queue_name: 'scans', group_id: 'expenses.scan_queue', state: '{}', capacity: 3, queued: 4,
-                       in_flight: 3, enqueued_total: 9, started_total: 5, released_total: 2, last_position: 1,
-                       updated_at: Time.now)
-    get '/'
-    expect(last_response.body).to include('3 of 3 running · 4 waiting', '2 scans done', 'aria-label="3 of 3 slots in use"')
+    q = WorkQueue
+    items = Array.new(9) { SecureRandom.hex(16) }
+    start = ->(id) { { type: Expenses::Expense::StartScan.type, payload: { expense_id: id } } }
+    queue = { queue_name: 'scans' }
+    Sourced.store.append(items.map { q::Enqueued.new(payload: { **queue, capacity: 3, item_id: it, start: start.(it) }) } +
+                         items.take(5).map { q::Started.new(payload: { **queue, item_id: it }) } +
+                         items.take(2).map { q::Released.new(payload: { **queue, item_id: it }) })
+    ['/', '/expenses'].each do |path|
+      get path
+      expect(last_response.body[bar, 1]).not_to include('hidden'), path
+      expect(last_response.body).to include('3 of 3 slots in use · 4 documents waiting')
+    end
   end
 
   it 'leaves out the list of those being read with none' do

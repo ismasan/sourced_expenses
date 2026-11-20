@@ -40,7 +40,7 @@ stateDiagram-v2
 
 `Expense::Scanning` (`system/expenses/expense/scanning.rb`) is the OCR pipeline. Each LLM step waits for the `Expenses::Scanner` worker's `Complete…` / `Fail…`; the `checking_*` states are guarded decisions.
 
-An upload or rescan waits in `queued` until `Expenses::ScanQueue` gives it a scanning slot (`StartScan`), so at most `MAX_SCANS` scan at once. The scan's timeout starts with the scan, not the wait, and leaving `scanning` (or `queued`, discarded before its turn) frees the slot.
+An upload or rescan waits in `queued` until the scan queue (a `WorkQueue` queue named `scans`) gives its scan a slot and appends `StartScan`, the command the expense enqueued it with, so at most `MAX_SCANS` expenses are in `scanning` at once, each making its model calls in turn. The scan's timeout starts with the scan, not the wait, and leaving `scanning` (or `queued`, discarded before its turn) frees the slot.
 
 <!-- mermaid Expenses::Expense scanning -->
 ```mermaid
@@ -96,7 +96,7 @@ Each is its own consumer group, so slow work never blocks the machine.
 
 | Class | Does |
 | --- | --- |
-| `Expenses::ScanQueue` | Caps the scans in flight at `MAX_SCANS`: dispatches each queued expense's `StartScan` when a slot is free. A `Queuer` (`system/queuer.rb`): a capped work queue that keeps its state in the `queues` table, with counts for showing its progress. |
+| `WorkQueue` | Capped work queues (`system/work_queue.rb`), one per `queue_name`, each with the capacity its latest `Enqueue` gave. A caller names its queue with `WorkQueue.config` and dispatches what it builds: `Expense::ScanQueue = WorkQueue.config('scans')`, enqueued with `ScanQueue.enqueue(StartScan, expense_id:).with_capacity(max_scans)` at `MAX_SCANS`, and each expense holds its slot through every step of its scan. It records `Enqueued`, `Started`, `Released` and `Dropped`, and appends each item's start message (an expense's `StartScan`) in the same commit as its `Started`. A plain reactor (a decider may only append to its own partition), which snapshots each queue's state every 100 history messages so a claim never reads its whole history. The home page shows the scan queue from the same snapshot and history (`ScanQueue.status`), following its events. |
 | `Expenses::Scanner` | Runs each scan step against the LLM (`Expenses::ScanSteps`, prompts in `Expenses::Prompts`). Shrinks images over 500 KB with ImageMagick. |
 | `Expenses::Categorizer` | Suggests a category from `Expenses::CATEGORIES` via a [RubyLLM judgment](https://rubyllm.com/judgments/). A person's `ChooseCategory` always wins. |
 | `Expenses::CurrencyConverter` | Converts filed totals to `REPORTING_CURRENCY` at the ECB rate for the expense's date ([Frankfurter](https://frankfurter.dev)). |
@@ -125,7 +125,7 @@ Requires ImageMagick (`brew install imagemagick`). `bin/dev` reloads on change i
 | `REPORTING_CURRENCY` | `GBP` | Currency totals are in |
 | `FILING_COUNTRY` | `GB` | Decides VAT treatment |
 | `SCAN_TIMEOUT` | `10m` | Scan gives up after this |
-| `MAX_SCANS` | `3` | Scans at once, each making several model calls in turn |
+| `MAX_SCANS` | `3` | Expenses scanning at once (a scan makes up to four model calls, in turn) |
 | `EXCHANGE_RATES_URL` | Frankfurter | Alternative Frankfurter instance |
 | `PORT`, `HOST`, `COUNT` | | Server port, host, worker processes |
 

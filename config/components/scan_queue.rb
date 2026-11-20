@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-# How many expenses Expenses::ScanQueue lets scan at once, 3 unless
-# MAX_SCANS says otherwise. Each scan makes several model calls, one after
-# another, so this caps the model calls in flight for scanning.
+# How many expenses scan at once (Expense's scan queue, a WorkQueue), 3 unless
+# MAX_SCANS says otherwise. Each scan makes up to four model calls, one
+# after another, so this caps the model calls in flight for scanning.
 #
 #   MAX_SCANS=5 bin/dev
 Sidereal.config.tap do |c|

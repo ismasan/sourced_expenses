@@ -2,7 +2,8 @@
 
 module UI
   # Page layout: Sidereal's BasicLayout styles, plus this app's own stylesheet
-  # in web/public/css/app.css.
+  # in web/public/css/app.css. Every page has the scan queue's bar along its
+  # bottom while the queue is busy (Components::QueueBar).
   class Layout < Sidereal::Components::BasicLayout
     FONTS = 'https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..900;1,400..900&display=swap'
 
@@ -18,7 +19,7 @@ module UI
           link(rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: true)
           link(rel: 'stylesheet', href: FONTS)
           style { raw safe(STYLES) }
-          link(rel: 'stylesheet', href: '/css/app.css?27')
+          link(rel: 'stylesheet', href: '/css/app.css?29')
         end
 
         body do
@@ -26,6 +27,10 @@ module UI
           div(class: 'page') do
             render page
           end
+          render Components::QueueBar.scans
+          # The bar's own stream, outside it so patching the bar doesn't open
+          # another (App's /queues/scans/updates).
+          div(data: { init: "@get('/queues/scans/updates')" })
         end
       end
     end

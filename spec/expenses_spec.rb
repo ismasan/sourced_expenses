@@ -73,38 +73,43 @@ module Expenses
       end
 
       describe 'the scan queue' do
-        it 'waits in queued on upload, enqueuing itself on ScanQueue' do
+        let(:job) { WorkQueue.item_id(StartScan, expense_id:) }
+
+        it 'waits in queued on upload, enqueuing its scan with the capacity and the command its slot appends' do
           expect(value(queued)).to eq(Queued)
 
-          enqueue = dispatched_entering(queued).grep(ScanQueue::Enqueue)
-          expect(enqueue.map { it.payload.to_h }).to eq([{ queue_name: 'scans', item_id: expense_id }])
+          enqueue = dispatched_entering(queued).grep(WorkQueue::Enqueue)
+          expect(enqueue.map { it.payload.to_h }).to eq(
+            [{ queue_name: 'scans', capacity: 3, item_id: job,
+               start: { type: StartScan.type, payload: { expense_id: } } }]
+          )
         end
 
-        it 'keeps its slot moving on to scanning' do
+        it 'moves on to scanning when its slot starts it, keeping the slot' do
           expect(value(uploaded)).to eq(scanning(Scanning::Preparing))
-          expect(dispatched_entering(uploaded).grep(ScanQueue::Release)).to be_empty
+          expect(dispatched_entering(uploaded).grep(WorkQueue::Release)).to be_empty
         end
 
         it 'gives its place up when discarded before its turn' do
           discarded = history(cmd(DiscardDocument), given: queued)
 
-          release = dispatched_entering(discarded).grep(ScanQueue::Release)
-          expect(release.map { it.payload.to_h }).to eq([{ queue_name: 'scans', item_id: expense_id }])
+          release = dispatched_entering(discarded).grep(WorkQueue::Release)
+          expect(release.map { it.payload.to_h }).to eq([{ queue_name: 'scans', item_id: job }])
         end
 
         it 'frees its slot leaving scanning, however it leaves' do
           [cmd(DiscardDocument), cmd(TimeOutScan), cmd(Scanning::FailPreparation, reason: 'Corrupt file')].each do |leave|
             left = history(leave, given: uploaded)
-            expect(dispatched_entering(left).grep(ScanQueue::Release).size).to eq(1), leave.class.name
+            expect(dispatched_entering(left).grep(WorkQueue::Release).map { it.payload.item_id }).to eq([job]), leave.class.name
           end
-          expect(dispatched_entering(scanned).grep(ScanQueue::Release).size).to eq(1)
+          expect(dispatched_entering(scanned).grep(WorkQueue::Release).size).to eq(1)
         end
 
         it 'queues again on a rescan' do
           rescanned = history(cmd(Rescan, reference_date: today), given: scanned)
 
           expect(value(rescanned)).to eq(Queued)
-          expect(dispatched_entering(rescanned).grep(ScanQueue::Enqueue).size).to eq(1)
+          expect(dispatched_entering(rescanned).grep(WorkQueue::Enqueue).size).to eq(1)
         end
 
         it 'ignores a StartScan that arrives once it has left the queue' do

@@ -10,14 +10,36 @@ class App < Sidereal::App
   E = Expenses::Expense
 
   # One channel per expense, so a submission's page only hears about its
-  # own, and one per work queue (a Queuer's Changed). The home page listens
+  # own, and one per work queue (its events). The home page listens
   # to all of them (expenses.>).
   channel_name do |msg|
     queue_name = msg.payload.respond_to?(:queue_name) && msg.payload.queue_name
     expense_id = msg.payload.respond_to?(:expense_id) && msg.payload.expense_id
-    if queue_name then "expenses.queues.#{queue_name}"
+    if queue_name then App.channel_for_queue(queue_name)
     elsif expense_id then "expenses.#{expense_id}"
     else 'system'
+    end
+  end
+
+  # A work queue's channel: under expenses., so the pages listening to every
+  # expense (expenses.>) hear it too.
+  def self.channel_for_queue(name) = "expenses.queues.#{name}"
+
+  private def channel_for_queue(name) = self.class.channel_for_queue(name)
+
+  # The scan queue's bar on every page (UI::Components::QueueBar), live: a
+  # page hears only its own channel, so the bar has a stream of its own,
+  # re-rendered on each of the queue's events, as changed: so the queue
+  # going idle shows as done, and the bar leaves.
+  get '/queues/scans/updates' do
+    channel = pubsub.subscribe(channel_for_queue(Expenses::Expense::ScanQueue.name))
+    datastar.on_client_disconnect { channel.stop }
+            .on_server_disconnect { channel.stop }
+            .on_error { channel.stop }
+
+    datastar.stream do |sse|
+      sse.patch_elements UI::Components::QueueBar.scans
+      channel.start { |_evt, _channel| sse.patch_elements UI::Components::QueueBar.scans(changed: true) }
     end
   end
 
