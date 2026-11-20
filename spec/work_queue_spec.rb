@@ -189,7 +189,7 @@ module Expenses
     end
 
     describe 'a queue, as its callers name it' do
-      let(:queue) { WorkQueue.config('scans') }
+      let(:queue) { WorkQueue.define('scans') }
       let(:id) { ids[0] }
 
       it 'builds an Enqueue of the start message, its id the message’s type and payload' do
@@ -246,7 +246,7 @@ module Expenses
       end
 
       it 'is DEFAULT_CAPACITY until an Enqueue gives it one' do
-        queue = WorkQueue.config('other')
+        queue = WorkQueue.define('other')
         enqueue(ids[0], queue:)
         enqueue(ids[1], queue:)
         drain
@@ -283,7 +283,7 @@ module Expenses
       ids.each { upload(it) }
       drain
       other = SecureRandom.hex(16)
-      enqueue(other, capacity: 1, queue: WorkQueue.config('other'))
+      enqueue(other, capacity: 1, queue: WorkQueue.define('other'))
       drain
 
       expect(started).to eq([*ids[0..1], other])

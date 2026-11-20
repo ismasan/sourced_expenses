@@ -34,7 +34,7 @@ module Expenses
     dep 'expenses.max_scans' => 'max_scans'
 
     # The queue scans wait in (see Queued).
-    ScanQueue = WorkQueue.config('scans')
+    ScanQueue = WorkQueue.define('scans')
 
     # How long a scan may take, every LLM call and its retries included,
     # before it's given up on.

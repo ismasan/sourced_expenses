@@ -12,7 +12,7 @@ require 'json'
 # dispatch (a reaction's +dispatch+ takes anything answering +to_message+).
 # What it declares it dispatches is the commands' classes:
 #
-#   ScanQueue = WorkQueue.config('scans')
+#   ScanQueue = WorkQueue.define('scans')
 #
 #   entry WorkQueue::Enqueue do |_doc, entered|
 #     dispatch ScanQueue.enqueue(StartScan, expense_id: entered.payload.expense_id).with_capacity(3)
@@ -151,7 +151,7 @@ class WorkQueue
     # The queue +name+, for a caller to enqueue in and release from.
     # @param name [String]
     # @return [Queue]
-    def config(name) = Queue.new(name:)
+    def define(name) = Queue.new(name:)
 
     # An item's id: its start message's type and its payload as canonical
     # JSON (keys sorted, at every depth). The payload is the message's, as
