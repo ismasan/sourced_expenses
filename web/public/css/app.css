@@ -508,6 +508,45 @@ input[type="file"]::file-selector-button { margin-right: 0.75rem; padding: 0.4re
 .upload-report__item--already { border-left-color: var(--closed); }
 .upload-report__item--skipped { border-left-color: var(--problem); }
 
+/* The scan queue, under the drop zone (UI::Components::QueueStatus): a box
+   per slot, striped while in use, and the counts beside them. */
+.upload + .queue-status { margin-top: -2.25rem; }
+.queue-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-bottom: 3rem;
+}
+.queue-status__title { margin: 0; font-size: 0.95rem; font-weight: 700; }
+.queue-status__slots { display: flex; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.queue-status__slot {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+}
+.queue-status__slot--busy,
+.queue-status__fill {
+  border-color: var(--working);
+  background: var(--stripes);
+  animation: working 1.1s linear infinite;
+}
+.queue-status__bar {
+  width: min(12rem, 100%);
+  height: 1.1rem;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.queue-status__fill { display: block; height: 100%; }
+.queue-status__summary { margin: 0; color: var(--ink-2); }
+@media (prefers-reduced-motion: reduce) {
+  .queue-status__slot--busy,
+  .queue-status__fill { animation: none; }
+}
+
 /* Being read, above what needs you (UI::Components::BeingRead). */
 .submissions--being-read { margin-bottom: 3rem; }
 

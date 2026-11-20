@@ -11,20 +11,22 @@ https://github.com/user-attachments/assets/cfff0917-b71f-42b0-8cf4-f792b5111e46
 <!-- mermaid Expenses::Expense -->
 ```mermaid
 stateDiagram-v2
-  [*] --> scanning : UploadDocument
+  [*] --> queued : UploadDocument
+  queued --> scanning : StartScan
+  queued --> discarded : DiscardDocument
   scanning --> scan_failed : after 10m / TimeOutScan
   scanning --> discarded : DiscardDocument
-  reviewing --> scanning : Rescan
+  reviewing --> queued : Rescan
   reviewing --> discarded : DiscardDocument
   reviewing --> reviewed : done
   reviewed --> filed : SaveExpense
-  reviewed --> scanning : Rescan
+  reviewed --> queued : Rescan
   reviewed --> discarded : DiscardDocument
   rejected --> reviewing : EnterManually (H)
-  rejected --> scanning : Rescan
+  rejected --> queued : Rescan
   rejected --> discarded : DiscardDocument
   scan_failed --> reviewing : EnterManually (H)
-  scan_failed --> scanning : Rescan
+  scan_failed --> queued : Rescan
   scan_failed --> discarded : DiscardDocument
   filed --> filed : SaveExpense
   filed --> voided : VoidExpense
@@ -37,6 +39,8 @@ stateDiagram-v2
 <!-- /mermaid -->
 
 `Expense::Scanning` (`system/expenses/expense/scanning.rb`) is the OCR pipeline. Each LLM step waits for the `Expenses::Scanner` worker's `Complete…` / `Fail…`; the `checking_*` states are guarded decisions.
+
+An upload or rescan waits in `queued` until `Expenses::ScanQueue` gives it a scanning slot (`StartScan`), so at most `MAX_SCANS` scan at once. The scan's timeout starts with the scan, not the wait, and leaving `scanning` (or `queued`, discarded before its turn) frees the slot.
 
 <!-- mermaid Expenses::Expense scanning -->
 ```mermaid
@@ -92,6 +96,7 @@ Each is its own consumer group, so slow work never blocks the machine.
 
 | Class | Does |
 | --- | --- |
+| `Expenses::ScanQueue` | Caps the scans in flight at `MAX_SCANS`: dispatches each queued expense's `StartScan` when a slot is free. A `Queuer` (`system/queuer.rb`): a capped work queue that keeps its state in the `queues` table, with counts for showing its progress. |
 | `Expenses::Scanner` | Runs each scan step against the LLM (`Expenses::ScanSteps`, prompts in `Expenses::Prompts`). Shrinks images over 500 KB with ImageMagick. |
 | `Expenses::Categorizer` | Suggests a category from `Expenses::CATEGORIES` via a [RubyLLM judgment](https://rubyllm.com/judgments/). A person's `ChooseCategory` always wins. |
 | `Expenses::CurrencyConverter` | Converts filed totals to `REPORTING_CURRENCY` at the ECB rate for the expense's date ([Frankfurter](https://frankfurter.dev)). |
@@ -120,6 +125,7 @@ Requires ImageMagick (`brew install imagemagick`). `bin/dev` reloads on change i
 | `REPORTING_CURRENCY` | `GBP` | Currency totals are in |
 | `FILING_COUNTRY` | `GB` | Decides VAT treatment |
 | `SCAN_TIMEOUT` | `10m` | Scan gives up after this |
+| `MAX_SCANS` | `3` | Scans at once, each making several model calls in turn |
 | `EXCHANGE_RATES_URL` | Frankfurter | Alternative Frankfurter instance |
 | `PORT`, `HOST`, `COUNT` | | Server port, host, worker processes |
 

@@ -10,10 +10,15 @@ class App < Sidereal::App
   E = Expenses::Expense
 
   # One channel per expense, so a submission's page only hears about its
-  # own. The home page listens to all of them (expenses.>).
+  # own, and one per work queue (a Queuer's Changed). The home page listens
+  # to all of them (expenses.>).
   channel_name do |msg|
+    queue_name = msg.payload.respond_to?(:queue_name) && msg.payload.queue_name
     expense_id = msg.payload.respond_to?(:expense_id) && msg.payload.expense_id
-    expense_id ? "expenses.#{expense_id}" : 'system'
+    if queue_name then "expenses.queues.#{queue_name}"
+    elsif expense_id then "expenses.#{expense_id}"
+    else 'system'
+    end
   end
 
   # One file, of the one or many the upload form sends one at a time.

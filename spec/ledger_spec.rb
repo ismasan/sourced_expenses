@@ -40,6 +40,7 @@ module Expenses
     def reviewing(id = expense_id)
       [cmd(Expense::UploadDocument, id, filename: 'lunch.pdf', content_type: 'application/pdf', file_ref: 'f1',
                                         filing_country: 'NL', reference_date: date),
+       cmd(Expense::StartScan, id),
        cmd(Expense::Scanning::CompletePreparation, id, processed_file_ref: 'f1'),
        cmd(Expense::Scanning::CompleteExtraction, id, **extraction),
        cmd(Expense::Scanning::CompleteCleanup, id, description: 'Café Central - Lunch', tax_description: 'BTW 21%')]

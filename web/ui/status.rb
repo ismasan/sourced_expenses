@@ -52,6 +52,7 @@ module UI
       step = SCAN_STEPS.keys.find { paths.include?(it) }
       return ["#{SCAN_STEPS[step]}…", 'scanning'] if step
       return ['Scanning…', 'scanning'] if paths.include?('scanning')
+      return ['Waiting to be read…', 'scanning'] if paths.include?('queued')
       return ['Ready to review', 'reviewing'] if paths.include?('reviewing')
       return ['Ready to file', 'reviewed'] if paths.include?('reviewed')
       return ['Not a receipt', 'rejected'] if paths.include?('rejected')

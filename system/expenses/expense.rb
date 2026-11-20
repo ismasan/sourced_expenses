@@ -5,16 +5,16 @@ require 'date'
 module Expenses
   # One uploaded receipt or invoice, from the upload to a filed expense.
   #
-  #   initial ─UploadDocument─▶ scanning ──on_final scanned─────────▶ reviewing ─done─▶ reviewed ─SaveExpense─▶ filed ⟲ SaveExpense
-  #                             (Scanning) ├on_final not_an_invoice─▶ rejected
-  #                                        ├on_final failed─────────▶ scan_failed
-  #                                        └after 10m: TimeOutScan──▶ scan_failed
+  #   initial ─UploadDocument─▶ queued ─StartScan─▶ scanning ──on_final scanned─────────▶ reviewing ─done─▶ reviewed ─SaveExpense─▶ filed ⟲ SaveExpense
+  #                                                (Scanning) ├on_final not_an_invoice─▶ rejected
+  #                                                           ├on_final failed─────────▶ scan_failed
+  #                                                           └after 10m: TimeOutScan──▶ scan_failed
   #
   #   reviewing:  category  ─ChooseCategory──────▶ category_confirmed
   #               vat       ─ConfirmVatTreatment─▶ vat_confirmed
   #
   #   rejected, scan_failed ─EnterManually─▶ reviewing
-  #   reviewing, reviewed, rejected, scan_failed ─Rescan─▶ scanning
+  #   reviewing, reviewed, rejected, scan_failed ─Rescan─▶ queued
   #   filed ─VoidExpense─▶ voided;  anything before filed ─DiscardDocument─▶ discarded
   #   reviewing, reviewed, filed ⟲ SuggestCategory | FailCategorization | ChooseCategory | ConfirmVatTreatment
   #
@@ -38,6 +38,7 @@ module Expenses
 
     # ---- States ----
 
+    Queued = State(:queued)
     Reviewing = State(:reviewing)
     CategoryConfirmed = State(:category_confirmed)
     VatConfirmed = State(:vat_confirmed)
@@ -67,6 +68,10 @@ module Expenses
     Rescan = Command(:rescan) do
       attribute :reference_date, Types::Date.default { Date.today }
     end
+
+    # Dispatched by ScanQueue when the expense gets a scanning slot, never by
+    # a person.
+    StartScan = Command(:start_scan)
 
     # Dispatched by scanning's timer, never by a person.
     TimeOutScan = Command(:time_out_scan)
@@ -259,23 +264,40 @@ module Expenses
     end
 
     RESCAN = proc do
-      command Rescan => Scanning do |_doc, cmd|
+      command Rescan => Queued do |_doc, cmd|
         event ScanRequested, reference_date: cmd.payload.reference_date
       end
     end
 
     initial do
-      command UploadDocument => Scanning do |_doc, cmd|
+      command UploadDocument => Queued do |_doc, cmd|
         event DocumentUploaded, cmd.payload.to_h.slice(:filename, :content_type, :file_ref, :filing_country)
         event ScanRequested, reference_date: cmd.payload.reference_date
       end
     end
 
-    # The progress a person waiting sees is the step scanning is at.
+    # Waiting for a scanning slot (ScanQueue caps how many scan at once).
+    # Discarded before its turn, it gives its place up.
+    state Queued do
+      entry(ScanQueue::Enqueue) { |_doc, entered| dispatch ScanQueue::Enqueue, item_id: entered.payload.expense_id }
+
+      exit ScanQueue::Release | nil do |_doc, left_by|
+        dispatch ScanQueue::Release, item_id: left_by.payload.expense_id unless left_by.payload.entered.include?('scanning')
+      end
+
+      command StartScan => Scanning
+      command DiscardDocument => Discarded
+    end
+
+    # The progress a person waiting sees is the step scanning is at. The
+    # timeout runs from when its slot started it, not from the wait. Leaving
+    # it, however, frees the slot.
     state Scanning do
       on_final Scanning::Scanned => Reviewing.history,
                Scanning::NotAnInvoice => Rejected,
                Scanning::Failed => ScanFailed
+
+      exit(ScanQueue::Release) { |_doc, left_by| dispatch ScanQueue::Release, item_id: left_by.payload.expense_id }
 
       after(SCAN_TIMEOUT => TimeOutScan)
 

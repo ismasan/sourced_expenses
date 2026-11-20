@@ -37,9 +37,10 @@ module Expenses
     # Where an expense is, for filtering: one key per state a person tells
     # apart, each a condition on the machine's paths. The top-level states
     # exclude each other, so every row is in exactly one. (No paths yet:
-    # the upload is still being stored, which counts as scanning.)
+    # the upload is still being stored, which counts as scanning, and so
+    # does waiting for a scanning slot.)
     STATES = {
-      'scanning' => Sequel.|(in_path('scanning'), { machine: '[]' }),
+      'scanning' => Sequel.|(in_path('scanning'), in_path('queued'), { machine: '[]' }),
       'reviewing' => in_path('reviewing'),
       'reviewed' => in_path('reviewed'),
       'rejected' => in_path('rejected'),

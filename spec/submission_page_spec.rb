@@ -36,8 +36,9 @@ RSpec.describe 'A submission' do
     cmd(Expenses::Expense::UploadDocument, filename: 'lunch.jpg', content_type: 'image/jpeg', file_ref: jpeg, filing_country: 'NL',
                            reference_date: Date.new(2026, 8, 11))
   end
+  let(:start) { cmd(Expenses::Expense::StartScan) }
   let(:scanned) do
-    [upload, cmd(Expenses::Expense::Scanning::CompletePreparation, processed_file_ref: jpeg), cmd(Expenses::Expense::Scanning::CompleteExtraction, **extraction),
+    [upload, start, cmd(Expenses::Expense::Scanning::CompletePreparation, processed_file_ref: jpeg), cmd(Expenses::Expense::Scanning::CompleteExtraction, **extraction),
      cmd(Expenses::Expense::Scanning::CompleteCleanup, description: 'Café Central — Lunch', tax_description: 'BTW 21%')]
   end
 
@@ -89,7 +90,7 @@ RSpec.describe 'A submission' do
   end
 
   it 'shows the step, the thumbnail and the live statechart while scanning' do
-    body = at(upload)
+    body = at(upload, start)
 
     expect(body).to include('Preparing the file…', "/files/#{jpeg}/thumbnail", 'file-dialog', 'Discard')
     expect(body).not_to include('callout--attention')
@@ -97,7 +98,7 @@ RSpec.describe 'A submission' do
   end
 
   it 'has the statechart in a Diagram tab of its own' do
-    at(upload)
+    at(upload, start)
     expect(last_response.body).to include(%(href="/submissions/#{expense_id}/diagram"))
     expect(last_response.body).not_to include('class="statechart')
 
@@ -129,7 +130,7 @@ RSpec.describe 'A submission' do
   end
 
   it 'flags another country’s VAT for a closer look' do
-    expect(at(*scanned[0..1], cmd(Expenses::Expense::Scanning::CompleteExtraction, **extraction, supplier_country_code: 'DE'),
+    expect(at(*scanned[0..2], cmd(Expenses::Expense::Scanning::CompleteExtraction, **extraction, supplier_country_code: 'DE'),
               scanned.last)).to include('<strong>Foreign VAT</strong>', 'Another country’s VAT: check it closely.')
   end
 
@@ -202,7 +203,7 @@ RSpec.describe 'A submission' do
     body = at(*scanned)
 
     expect(body).to include('id="history"', 'Live', 'document_uploaded', 'runtime.scanning', 'extraction_recorded',
-                            'description: Café Central - Lunch', 'initial → scanning')
+                            'description: Café Central - Lunch', 'initial → queued', 'queued → scanning')
     expect(body.index('text_cleaned')).to be < body.index('document_uploaded')
   end
 
@@ -216,10 +217,12 @@ RSpec.describe 'A submission' do
   it 'travels to a past step, frozen and not listening' do
     at(*scanned)
     get "/submissions/#{expense_id}/at/3"
+    expect(last_response.body).to include('Step 3 of', 'Waiting to be read…')
 
+    get "/submissions/#{expense_id}/at/4"
     body = last_response.body
     expect(last_response.status).to eq(200)
-    expect(body).to include('Step 3 of', 'Back to live', 'Preparing the file…', 'submission-page__frozen')
+    expect(body).to include('Step 4 of', 'Back to live', 'Preparing the file…', 'submission-page__frozen')
     expect(body).not_to include("/updates/expenses.#{expense_id}")
     expect(body).not_to include('Save expense')
   end

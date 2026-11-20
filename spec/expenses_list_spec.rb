@@ -14,6 +14,7 @@ RSpec.describe 'The expense lists' do
     db.transaction(rollback: :always, auto_savepoint: true) do
       db[:submissions].delete
       db[:ledger].delete
+      db[:queues].delete
       example.run
     end
   end
@@ -73,6 +74,19 @@ RSpec.describe 'The expense lists' do
     expect(being_read).to include('id="being-read"', '>Being read<span class="submissions__count">2<')
     expect(filenames(being_read)).to eq(%w[storing.pdf reading.pdf])
     expect(filenames(needs_you)).to eq(%w[icon.png ready.pdf review.pdf])
+  end
+
+  it 'shows the scan queue under the drop zone: idle, then busy' do
+    get '/'
+    upload, rest = last_response.body.split('id="queue-scans"')
+    expect(upload).to include('class="upload')
+    expect(rest).to include('Idle: room for 3 scans at once')
+
+    db[:queues].insert(queue_name: 'scans', group_id: 'expenses.scan_queue', state: '{}', capacity: 3, queued: 4,
+                       in_flight: 3, enqueued_total: 9, started_total: 5, released_total: 2, last_position: 1,
+                       updated_at: Time.now)
+    get '/'
+    expect(last_response.body).to include('3 of 3 running · 4 waiting', '2 scans done', 'aria-label="3 of 3 slots in use"')
   end
 
   it 'leaves out the list of those being read with none' do

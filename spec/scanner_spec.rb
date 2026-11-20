@@ -34,8 +34,10 @@ module Expenses
       history.reverse.find { it.is_a?(Sourced::Machine::State) }
     end
 
+    # Uploaded, and given a scanning slot.
     def upload(file_ref = pdf, content_type: 'application/pdf')
-      cmd(Expense::UploadDocument, filename: 'lunch.pdf', content_type:, file_ref:, filing_country: 'NL', reference_date: today)
+      [cmd(Expense::UploadDocument, filename: 'lunch.pdf', content_type:, file_ref:, filing_country: 'NL', reference_date: today),
+       cmd(Expense::StartScan)]
     end
 
     # What the scanner appends for +event+: one message, or none.
@@ -44,7 +46,7 @@ module Expenses
     end
 
     it 'prepares a PDF as it is, on entering scanning' do
-      expect(dispatched(at(upload))).to contain_exactly(
+      expect(dispatched(at(*upload))).to contain_exactly(
         an_object_having_attributes(class: S::CompletePreparation, payload: having_attributes(processed_file_ref: pdf, downsized: false))
       )
     end
@@ -58,7 +60,7 @@ module Expenses
       end
       expect(file_store.read(big).size).to be > Images::MAX_BYTES
 
-      result = dispatched(at(upload(big, content_type: 'image/png')))[0]
+      result = dispatched(at(*upload(big, content_type: 'image/png')))[0]
       expect(result).to be_a(S::CompletePreparation)
       expect(result.payload.downsized).to be(true)
       prepared = file_store.read(result.payload.processed_file_ref)
@@ -69,7 +71,7 @@ module Expenses
     it 'extracts with the prompts, the reference date and the prepared file' do
       FAKE_LLM.answers[P::EXTRACTION_SCHEMA] = extraction
 
-      event = at(upload, cmd(S::CompletePreparation, processed_file_ref: pdf))
+      event = at(*upload, cmd(S::CompletePreparation, processed_file_ref: pdf))
       expect(dispatched(event)[0]).to have_attributes(class: S::CompleteExtraction, payload: having_attributes(**extraction))
 
       call = FAKE_LLM.calls[0]
@@ -81,14 +83,14 @@ module Expenses
     it "fails the step with the model's error" do
       FAKE_LLM.answers[P::EXTRACTION_SCHEMA] = LLM::Error.new('OpenAI is rate limiting requests')
 
-      event = at(upload, cmd(S::CompletePreparation, processed_file_ref: pdf))
+      event = at(*upload, cmd(S::CompletePreparation, processed_file_ref: pdf))
       expect(dispatched(event)[0]).to have_attributes(class: S::FailExtraction, payload: having_attributes(reason: 'OpenAI is rate limiting requests'))
     end
 
     it "fails the step when the answer doesn't fit the command" do
       FAKE_LLM.answers[P::DOCUMENT_VERIFICATION_SCHEMA] = { is_invoice_or_receipt: 'maybe', explanation: 'hm' }
 
-      event = at(upload, cmd(S::CompletePreparation, processed_file_ref: pdf),
+      event = at(*upload, cmd(S::CompletePreparation, processed_file_ref: pdf),
                  cmd(S::CompleteExtraction, **extraction, confidence: 'low'))
       expect(event).to be_a(S::Verifying)
       expect(dispatched(event)[0]).to have_attributes(class: S::FailVerification, payload: having_attributes(reason: include('is_invoice_or_receipt')))
@@ -100,7 +102,7 @@ module Expenses
         candidates: [{ 'date' => '2026-08-09', 'reading' => 'smudged 8', 'in_the_future' => false }]
       }
 
-      event = at(upload, cmd(S::CompletePreparation, processed_file_ref: pdf),
+      event = at(*upload, cmd(S::CompletePreparation, processed_file_ref: pdf),
                  cmd(S::CompleteExtraction, **extraction, date_as_printed: '09/03/2026', date: '2026-03-09'))
       expect(dispatched(event)[0]).to be_a(S::CompleteDateRecheck)
       expect(FAKE_LLM.calls[0][:instructions]).to include('"09/03/2026"', 'read it as 2026-03-09', '155 days before today')
@@ -109,7 +111,7 @@ module Expenses
     it 'cleans the text without the file' do
       FAKE_LLM.answers[P::CLEANUP_SCHEMA] = { description: 'Café Central — Lunch', tax_description: nil }
 
-      event = at(upload, cmd(S::CompletePreparation, processed_file_ref: pdf), cmd(S::CompleteExtraction, **extraction))
+      event = at(*upload, cmd(S::CompletePreparation, processed_file_ref: pdf), cmd(S::CompleteExtraction, **extraction))
       expect(event).to be_a(S::Cleaning)
       expect(dispatched(event)[0].payload).to have_attributes(description: 'Café Central — Lunch', tax_description: 'BTW 21%')
       expect(FAKE_LLM.calls[0][:file]).to be_nil
@@ -125,15 +127,15 @@ module Expenses
       end
 
       it 'does nothing once discarded' do
-        expect(dispatched(left([upload], cmd(Expense::DiscardDocument)))).to be_empty
+        expect(dispatched(left(upload, cmd(Expense::DiscardDocument)))).to be_empty
       end
 
       it 'does nothing once the step is done' do
-        expect(dispatched(left([upload], cmd(S::CompletePreparation, processed_file_ref: pdf)))).to be_empty
+        expect(dispatched(left(upload, cmd(S::CompletePreparation, processed_file_ref: pdf)))).to be_empty
       end
 
       it 'does nothing once timed out' do
-        expect(dispatched(left([upload], cmd(Expense::TimeOutScan)))).to be_empty
+        expect(dispatched(left(upload, cmd(Expense::TimeOutScan)))).to be_empty
       end
     end
   end

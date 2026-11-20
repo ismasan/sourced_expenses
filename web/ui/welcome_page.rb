@@ -1,10 +1,11 @@
 # frozen_string_literal: true
 
 module UI
-  # The home page: upload receipts and invoices, the uploads being read
-  # (BeingRead), and those waiting for a person (NeedsYou), both live, so
-  # an upload is followed here until it's ready to review. Every upload is
-  # on the expense list (ExpensesPage).
+  # The home page: upload receipts and invoices, how many are scanning and
+  # waiting to (QueueStatus), the uploads being read (BeingRead), and those
+  # waiting for a person (NeedsYou), all live, so an upload is followed here
+  # until it's ready to review. Every upload is on the expense list
+  # (ExpensesPage).
   class WelcomePage < Sidereal::Page
     path '/'
 
@@ -21,6 +22,10 @@ module UI
       browser.patch_elements UI::Components::LedgerTotal.current
     end
 
+    on Expenses::ScanQueue::Changed do |_evt|
+      browser.patch_elements UI::WelcomePage.scan_queue
+    end
+
     # Every expense's channel: the list follows them all.
     def channel_name = 'expenses.>'
 
@@ -28,6 +33,9 @@ module UI
     def self.needs_you
       Expenses::Submissions.page(Sidereal.config['db'], states: Expenses::Submissions::NEEDS_YOU, per_page: 50)
     end
+
+    # How many are scanning, and how many wait their turn (Expenses::ScanQueue).
+    def self.scan_queue = UI::Components::QueueStatus.for(Expenses::ScanQueue, title: 'Scanning', noun: 'scan')
 
     def self.load(_params, _ctx) = new(*needs_you)
 
@@ -46,6 +54,7 @@ module UI
           render UI::Components::LedgerTotal.current
         end
         render UI::Components::UploadForm.new
+        render UI::WelcomePage.scan_queue
         render UI::Components::BeingRead.load
         render UI::Components::NeedsYou.new(@rows, @total)
       end
