@@ -170,6 +170,12 @@ RSpec.describe 'A submission' do
     expect(saved.payload).to have_attributes(expense_id:, net_price_cents: 2000, payment_reference: nil)
   end
 
+  it 'gives each browser a session' do
+    get "/submissions/#{expense_id}"
+
+    expect(last_request.env['rack.session']).to respond_to(:id)
+  end
+
   it 'shows a filed expense with its VAT treatment' do
     body = at(*reviewed, cmd(Expenses::Expense::SaveExpense, description: 'Lunch', net_price_cents: 2000, tax_amount_cents: 420,
                                              currency: 'EUR', incurred_on: Date.new(2026, 8, 9), supplier_country_code: 'NL'))

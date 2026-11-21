@@ -9,6 +9,18 @@ class App < Sidereal::App
 
   E = Expenses::Expense
 
+  # A session per browser, so the commands it sends carry its session's
+  # channel, and the notices they cause (a retry, a failure) show only on
+  # its pages, not on every page following the expense. SESSION_SECRET in
+  # production, the same in every process (64 bytes or more); elsewhere a
+  # fixed one, so every process still reads the others' cookies.
+  DEV_SESSION_SECRET = 'sourced-expenses-development-session-secret-not-for-production-use'
+  session secret: ENV.fetch('SESSION_SECRET') {
+    raise KeyError, 'SESSION_SECRET is required in production' if Sidereal.environment == 'production'
+
+    DEV_SESSION_SECRET
+  }
+
   # One channel per expense, so a submission's page only hears about its
   # own, and one per work queue (its events). The home page listens
   # to all of them (expenses.>).
