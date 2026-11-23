@@ -67,3 +67,31 @@ RSpec.describe UI::Components::QueueBar do
     end
   end
 end
+
+RSpec.describe UI::Page do
+  let(:patched) { [] }
+  let(:sse) { double('sse', signals: {}).tap { |s| allow(s).to receive(:patch_elements) { |el| patched << el } } }
+
+  def react(page_class, evt) = Sidereal::Page::PageContext.new(sse, nil, page_class, params: {}).react(evt)
+  def started(queue_name) = WorkQueue::Started.new(payload: { queue_name:, item_id: 'x' })
+
+  it "is every page's, each following the scan queue's events" do
+    [UI::WelcomePage, UI::ExpensesPage, UI::SubmissionPage, UI::SubmissionDiagramPage].each do |page_class|
+      expect(page_class.ancestors).to include(described_class)
+      expect(page_class.reactions.keys).to include(*WorkQueue.events)
+    end
+  end
+
+  it "re-renders the scan queue's bar, as changed, on one of its events" do
+    react(UI::ExpensesPage, started('scans'))
+
+    expect(patched.map(&:class)).to eq([UI::Components::QueueBar])
+    expect(patched.first.call).to include('queue-bar--done') # an idle queue, just changed
+  end
+
+  it "leaves the bar be for another queue's" do
+    react(UI::ExpensesPage, started('other'))
+
+    expect(patched).to be_empty
+  end
+end

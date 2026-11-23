@@ -104,7 +104,8 @@ RSpec.describe 'A submission' do
 
     get "/submissions/#{expense_id}/diagram"
     body = last_response.body
-    expect(body).to include('class="statechart', 'Preparing the file…', 'id="history"', "/updates/expenses.#{expense_id}")
+    expect(body).to include('class="statechart', 'Preparing the file…', 'id="history"')
+    expect(stream_channels(body)).to eq(["expenses.#{expense_id}", 'system.>'])
     expect(body).not_to include('file-dialog', '>Discard</button>')
     expect(body).to include(%(href="/submissions/#{expense_id}/diagram/at/1"))
   end
@@ -229,7 +230,7 @@ RSpec.describe 'A submission' do
     body = last_response.body
     expect(last_response.status).to eq(200)
     expect(body).to include('Step 4 of', 'Back to live', 'Preparing the file…', 'submission-page__frozen')
-    expect(body).not_to include("/updates/expenses.#{expense_id}")
+    expect(stream_channels(body)).to eq(%w[system.>]) # the scan queue's bar, not the expense
     expect(body).not_to include('Save expense')
   end
 

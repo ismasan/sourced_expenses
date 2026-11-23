@@ -127,6 +127,7 @@ Requires ImageMagick (`brew install imagemagick`). `bin/dev` reloads on change i
 | `SCAN_TIMEOUT` | `10m` | Scan gives up after this |
 | `MAX_SCANS` | `3` | Expenses scanning at once (a scan makes up to four model calls, in turn) |
 | `EXCHANGE_RATES_URL` | Frankfurter | Alternative Frankfurter instance |
+| `SIDEREAL_SECRET` | `storage/secret.txt`, which the first boot creates | The master secret Sidereal derives the session cookie's key and the live-updates URL signer's from. Set it (64 bytes or more, `bin/sid secret` makes one) when `storage/` doesn't survive deploys or the app runs on several machines: the same in every process and across deploys. Changing it logs everyone out |
 | `PORT`, `HOST`, `COUNT` | | Server port, host, worker processes |
 
 ## Docker
@@ -177,7 +178,7 @@ bin/sid expenses list --state reviewing --category-status suggested --json |
 | `cli/` | The app's `bin/sid expenses …` commands |
 | `config/components/` | Components (`db`, clients…) declared with `Sidereal.config` |
 | `db/migrations/` | Sequel migrations, including Sourced's tables |
-| `storage/` | SQLite database and uploads (not committed) |
+| `storage/` | SQLite database, uploads and `secret.txt`, the app's secret unless `SIDEREAL_SECRET` is set (not committed) |
 | `.agents/skills/` | Skills for AI coding agents (`.claude/skills` links here) |
 
 Classes in `system/` and `web/` are autoloaded by Zeitwerk.

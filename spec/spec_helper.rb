@@ -11,6 +11,8 @@ at_exit { FileUtils.remove_entry(TEST_DB_DIR) }
 Sidereal.config.config!('db.filepath') { File.join(TEST_DB_DIR, 'test.db') }
 Sidereal.config.config!('file_store.root') { File.join(TEST_DB_DIR, 'uploads') }
 Sidereal.config.config!('thumbnails.root') { File.join(TEST_DB_DIR, 'thumbnails') }
+# A fixed master secret, so specs don't create storage/secret.txt.
+Sidereal.config.config!('sidereal.secret_key_base') { 's' * 64 }
 
 # The model, faked: no spec reaches OpenAI, even with OPENAI_API_KEY in .env.
 # Answers are set per schema; anything else raises. Categories are
@@ -133,8 +135,18 @@ end
 # it.
 #
 # See https://rubydoc.info/gems/rspec-core/RSpec/Core/Configuration
+# The channels a rendered page's live updates stream subscribes to, from the
+# token the layout signed into its URL; nil for a page with no stream.
+module StreamHelpers
+  def stream_channels(body)
+    token = body[%r{/_updates/([^'"]+)'}, 1] or return
+    Sidereal.signer.verify(token, purpose: Sidereal::Page::STREAM_PURPOSE)['channels']
+  end
+end
+
 RSpec.configure do |config|
   config.include MachineHelpers
+  config.include StreamHelpers
   config.before { FAKE_LLM.reset! }
   config.before { FAKE_RATES.reset! }
 

@@ -18,7 +18,7 @@ module UI
   # The upload form redirects here straight away, so the page often renders
   # before the machine has decided UploadDocument: it shows "Uploading…" and
   # reloads as the expense's events arrive on its channel.
-  class SubmissionPage < Sidereal::Page
+  class SubmissionPage < Page
     path '/submissions/:expense_id'
     # Anything else in the path is a 400.
     query_schema expense_id: Types::ExpenseID
@@ -58,8 +58,9 @@ module UI
 
     def live? = @history.live?
 
-    # A past step listens to nothing, and has no page_key for an update to reload.
-    def channel_name = live? ? "expenses.#{@expense_id}" : nil
+    # Its expense's channel, and the system ones. A past step listens only to
+    # those, and has no page_key for an update to reload.
+    def channel_names = live? ? ["expenses.#{channel_segment(@expense_id)}", *SYSTEM_CHANNELS] : SYSTEM_CHANNELS
     def page_signals = live? ? super : {}
 
     def view_template

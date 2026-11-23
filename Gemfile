@@ -2,8 +2,8 @@
 
 source 'https://rubygems.org'
 
-gem 'sidereal', github: 'ismasan/sidereal'
-# gem 'sidereal', path: '../../gems/sidereal'
+# gem 'sidereal', github: 'ismasan/sidereal'
+gem 'sidereal', path: '../../gems/sidereal'
 # gem 'sourced', github: 'ismasan/sourced'
 gem 'sourced', path: '../../gems/sourced'
 # The Sourced dashboard, mounted at /sourced in config.ru.

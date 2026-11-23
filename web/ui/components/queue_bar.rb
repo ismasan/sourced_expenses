@@ -6,9 +6,8 @@ module UI
     # page, one segment per document: the queue's capacity first, a segment
     # per slot, striped while a document is in it and empty while free; then,
     # past a gap, a segment per document waiting its turn. Hidden while the
-    # queue is idle. The layout renders it, and keeps it live with a stream of
-    # its own (App's /queues/scans/updates), since a page hears only its own
-    # channel.
+    # queue is idle. The layout renders it, and UI::Page keeps it live over
+    # the page's stream (the queue's events are on system.<queue name>).
     #
     # Rendered because the queue changed (+changed+, the stream's patches on
     # its events), an idle queue has just finished: the bar shows it's all

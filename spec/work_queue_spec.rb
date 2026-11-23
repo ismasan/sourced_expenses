@@ -385,7 +385,7 @@ module Expenses
         expect(WorkQueue.status('scans', store: Sourced::Store.new(db))).to have_attributes(queued: 1, in_flight: 2)
       end
 
-      it "publishes its events once they're committed, on the queue's channel" do
+      it "publishes its events once they're committed, on the queue's system channel" do
         published = []
         allow(Sidereal::Integrations::Sourced).to receive(:publish_messages) { |msgs| published.concat(msgs) }
         upload(ids[0])
@@ -393,7 +393,7 @@ module Expenses
 
         events = published.select { WorkQueue.sidereal_events.include?(it.class) }
         expect(events.map(&:class)).to eq([WorkQueue::Enqueued, WorkQueue::Started])
-        expect(events.map { Sidereal.channels.for(it) }.uniq).to eq(['expenses.queues.scans'])
+        expect(events.map { Sidereal.channels.for(it) }.uniq).to eq(['system.scans'])
       end
     end
 

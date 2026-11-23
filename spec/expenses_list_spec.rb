@@ -74,12 +74,12 @@ RSpec.describe 'The expense lists' do
     expect(filenames(needs_you)).to eq(%w[icon.png ready.pdf review.pdf])
   end
 
-  it "shows the scan queue's bar along the bottom of every page while it's busy, with a stream of its own" do
+  it "shows the scan queue's bar along the bottom of every page while it's busy, live over the page's stream" do
     bar = %r{<section id="queue-scans" class="queue-bar"([^>]*)>}
     ['/', '/expenses'].each do |path|
       get path
       expect(last_response.body[bar, 1]).to include('hidden'), path
-      expect(last_response.body).to include(%(data-init="@get('/queues/scans/updates')"))
+      expect(stream_channels(last_response.body)).to eq(%w[expenses.> system.>])
     end
 
     q = WorkQueue

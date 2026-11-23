@@ -9,49 +9,22 @@ class App < Sidereal::App
 
   E = Expenses::Expense
 
-  # A session per browser, so the commands it sends carry its session's
-  # channel, and the notices they cause (a retry, a failure) show only on
-  # its pages, not on every page following the expense. SESSION_SECRET in
-  # production, the same in every process (64 bytes or more); elsewhere a
-  # fixed one, so every process still reads the others' cookies.
-  DEV_SESSION_SECRET = 'sourced-expenses-development-session-secret-not-for-production-use'
-  session secret: ENV.fetch('SESSION_SECRET') {
-    raise KeyError, 'SESSION_SECRET is required in production' if Sidereal.environment == 'production'
-
-    DEV_SESSION_SECRET
-  }
+  # A session per browser, so the commands it sends carry its session, and
+  # the notices they cause (a retry, a failure) show only on its pages, not
+  # on every page following the expense. The cookie's key is derived from
+  # Sidereal's master secret (SIDEREAL_SECRET, or else storage/secret.txt),
+  # read on each request, once the components are built.
+  session secret: -> { Sidereal.secrets.derive('session') }
 
   # One channel per expense, so a submission's page only hears about its
-  # own, and one per work queue (its events). The home page listens
-  # to all of them (expenses.>).
+  # own, and one per work queue (its events), under system., which every
+  # page listens to (UI::Page::SYSTEM_CHANNELS) for the scan queue's bar.
   channel_name do |msg|
     queue_name = msg.payload.respond_to?(:queue_name) && msg.payload.queue_name
     expense_id = msg.payload.respond_to?(:expense_id) && msg.payload.expense_id
-    if queue_name then App.channel_for_queue(queue_name)
+    if queue_name then "system.#{queue_name}"
     elsif expense_id then "expenses.#{expense_id}"
     else 'system'
-    end
-  end
-
-  # A work queue's channel: under expenses., so the pages listening to every
-  # expense (expenses.>) hear it too.
-  def self.channel_for_queue(name) = "expenses.queues.#{name}"
-
-  private def channel_for_queue(name) = self.class.channel_for_queue(name)
-
-  # The scan queue's bar on every page (UI::Components::QueueBar), live: a
-  # page hears only its own channel, so the bar has a stream of its own,
-  # re-rendered on each of the queue's events, as changed: so the queue
-  # going idle shows as done, and the bar leaves.
-  get '/queues/scans/updates' do
-    channel = pubsub.subscribe(channel_for_queue(Expenses::Expense::ScanQueue.name))
-    datastar.on_client_disconnect { channel.stop }
-            .on_server_disconnect { channel.stop }
-            .on_error { channel.stop }
-
-    datastar.stream do |sse|
-      sse.patch_elements UI::Components::QueueBar.scans
-      channel.start { |_evt, _channel| sse.patch_elements UI::Components::QueueBar.scans(changed: true) }
     end
   end
 

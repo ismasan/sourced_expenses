@@ -1,21 +1,4 @@
 GIT
-  remote: https://github.com/ismasan/sidereal.git
-  revision: 87761c4536193be9dcbbb5a3a4a457243ed1edd7
-  specs:
-    sidereal (0.1.0)
-      async
-      brotli
-      datastar (~> 1.0.6)
-      phlex
-      plumb (~> 0.4, >= 0.4.1)
-      rack (~> 3)
-      rack-session
-      samovar
-      sourced-component (~> 0.1, >= 0.1.4)
-      sourced-message (>= 0.4.0)
-      tsort
-
-GIT
   remote: https://github.com/ismasan/sourced-ui.git
   revision: c045b92cef20ee17d3e0c9fbcfa843dd158a627c
   specs:
@@ -26,13 +9,30 @@ GIT
       sourced
 
 PATH
+  remote: ../../gems/sidereal
+  specs:
+    sidereal (0.1.0)
+      async
+      base64
+      brotli
+      datastar (~> 1.0.6)
+      phlex
+      plumb (~> 0.4, >= 0.4.1)
+      rack (~> 3)
+      rack-session
+      samovar
+      sourced-component (~> 0.1, >= 0.1.5)
+      sourced-message (>= 0.4.0)
+      tsort
+
+PATH
   remote: ../../gems/sourced
   specs:
     sourced (0.0.1)
       async
       plumb (>= 0.4.1)
       sequel
-      sourced-component (~> 0.1, >= 0.1.1)
+      sourced-component (~> 0.1, >= 0.1.5)
       sourced-message (>= 0.5.4)
       sqlite3 (>= 2.10.2)
 
@@ -218,7 +218,7 @@ GEM
     schematist (1.1.0)
     sequel (5.110.0)
       bigdecimal
-    sourced-component (0.1.4)
+    sourced-component (0.1.5)
       plumb (~> 0.4)
       sourced-message
       tsort (~> 0.2)
@@ -348,7 +348,7 @@ CHECKSUMS
   sequel (5.110.0) sha256=c316335b352adb4109bb02ade237b1a6dbd493493def34542ce05893f62138ae
   sidereal (0.1.0)
   sourced (0.0.1)
-  sourced-component (0.1.4) sha256=1826560689f2f4fe705c675205a1fd150c19576fb5d4bdd6fc379b0bf80bf2d7
+  sourced-component (0.1.5)
   sourced-message (0.5.4) sha256=f373425b72ce30a05955e0b70e08797a25989e1dfb8d2511bad07e10f590f5a0
   sourced-ui (0.1.0)
   sqlite3 (2.10.2-aarch64-linux-gnu) sha256=e9aea2c2b3476fc875dd8a89313a9a2862818519c0186bfb5b56d6f57bb08d98

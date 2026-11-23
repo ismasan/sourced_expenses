@@ -6,7 +6,7 @@ module UI
   # upload is followed here until it's ready to review. Every upload is on
   # the expense list (ExpensesPage). How many are scanning and waiting to is
   # the scan queue's bar, along the bottom of every page (QueueBar).
-  class WelcomePage < Sidereal::Page
+  class WelcomePage < Page
     path '/'
 
     # Only the list follows the backend: the upload form would otherwise
@@ -23,7 +23,7 @@ module UI
     end
 
     # Every expense's channel: the list follows them all.
-    def channel_name = 'expenses.>'
+    def channel_names = ['expenses.>', *SYSTEM_CHANNELS]
 
     # The latest of the uploads waiting for a person, and how many there are.
     def self.needs_you

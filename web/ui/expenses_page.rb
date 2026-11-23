@@ -21,7 +21,7 @@ module UI
   # YYYY-MM-DD is a 400. A blank date or search is none. Any range works, though the
   # chart only makes whole months and years. The layout puts the params in the params
   # signal, so a live re-render keeps them.
-  class ExpensesPage < Sidereal::Page
+  class ExpensesPage < Page
     path '/expenses'
 
     PER_PAGE = 25
@@ -42,7 +42,7 @@ module UI
 
     on Expenses::Submissions::Projected, Expenses::Ledger::Projected
 
-    def channel_name = 'expenses.>'
+    def channel_names = ['expenses.>', *SYSTEM_CHANNELS]
 
     # The list's URL for +states+, +categories+, +category_statuses+,
     # +vat_statuses+, +search+, the dates +from+ and +to+, and +page+.
