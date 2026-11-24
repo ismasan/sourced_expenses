@@ -89,6 +89,15 @@ RSpec.describe UI::Page do
     expect(patched.first.call).to include('queue-bar--done') # an idle queue, just changed
   end
 
+  it 'patches the bar as it is when the stream connects, then streams the page as Sidereal does' do
+    allow(Sidereal::Page).to receive(:stream)
+
+    UI::ExpensesPage.stream(:channel, sse, {}, :ctx, live: true)
+
+    expect(patched.map(&:class)).to eq([UI::Components::QueueBar])
+    expect(Sidereal::Page).to have_received(:stream).with(:channel, sse, {}, :ctx, live: true)
+  end
+
   it "leaves the bar be for another queue's" do
     react(UI::ExpensesPage, started('other'))
 

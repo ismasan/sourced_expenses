@@ -62,7 +62,7 @@ RSpec.describe 'Uploading a document' do
     get '/'
 
     expect(last_response.body).to include('type="file"', 'name="command[payload][file]"', 'multiple',
-                                          'data-on:submit__prevent="(async () =>', 'id="upload-report"')
+                                          'data-on:submit__prevent="(async () =&gt;', 'id="upload-report"')
     expect(last_response.body).not_to include("data-on:submit=\"@post")
   end
 

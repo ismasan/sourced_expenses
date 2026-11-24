@@ -24,7 +24,7 @@ module UI
 
     # The bar too, as it is now, when the stream (re)connects: the page
     # renders again, but the bar is the layout's.
-    def self.stream(channel, sse, params, ctx)
+    def self.stream(channel, sse, params, ctx, **)
       sse.patch_elements Components::QueueBar.scans
       super
     end
