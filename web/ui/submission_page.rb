@@ -19,6 +19,8 @@ module UI
   # before the machine has decided UploadDocument: it shows "Uploading…" and
   # reloads as the expense's events arrive on its channel.
   class SubmissionPage < Page
+    stylesheet 'ui/submission_page.css', path: 'submission_page.css'
+
     path '/submissions/:expense_id'
     # Anything else in the path is a 400.
     query_schema expense_id: Types::ExpenseID

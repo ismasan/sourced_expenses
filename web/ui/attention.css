@@ -1,0 +1,16 @@
+/* ---- Attention: anything waiting for a person, or pending their say ----
+
+   One look, in three sizes. Reach for these, or the variables, rather
+   than the colour. Linked last (UI::Attention), so they win over a component's own
+   look at the same specificity:
+     .button--primary     the action to take (with the buttons)
+     .attention           a fill: a badge, a highlight, a word
+     .callout--attention  a block saying what's wanted, ruled in ink on the left */
+
+.attention { background: var(--attention); color: var(--attention-ink); }
+.callout--attention {
+  padding: 0.75rem 1rem;
+  background: var(--attention);
+  color: var(--attention-ink);
+  border-left: 6px solid var(--attention-edge);
+}

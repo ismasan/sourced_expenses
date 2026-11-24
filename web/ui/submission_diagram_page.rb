@@ -5,6 +5,8 @@ module UI
   # expense is in lit and the moves it can make next highlighted. Live, or
   # at a step of its history, like the Submission tab.
   class SubmissionDiagramPage < SubmissionPage
+    stylesheet 'ui/submission_diagram_page.css', path: 'submission_diagram_page.css'
+
     path '/submissions/:expense_id/diagram'
 
     def tab = :diagram

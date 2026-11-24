@@ -5,7 +5,9 @@ module UI
     # Filed expenses in the reporting currency (Expenses::Ledger::Total): the
     # total, and what it covers. This month's, or a range's. By its id, a
     # page can re-render just this when the ledger commits.
-    class LedgerTotal < Phlex::HTML
+    class LedgerTotal < Sidereal::Components::BaseComponent
+      stylesheet 'ui/components/ledger_total.css', path: 'ledger_total.css'
+
       # This month's, from the ledger.
       def self.current
         new(Expenses::Ledger.month(Sidereal.config['db'], Sidereal.config['reporting_currency']))

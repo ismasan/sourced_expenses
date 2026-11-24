@@ -9,6 +9,8 @@ module UI
     # the step on screen. Commands, transitions (which move a machine) and
     # data events (which only change its domain state) are marked apart.
     class HistoryFeed < Sidereal::Components::BaseComponent
+      stylesheet 'ui/components/history_feed.css', path: 'history_feed.css'
+
       # @param messages [Array<Sourced::Message>]
       # @param current_step [Integer] the step on screen; the last one while live
       # @param live [Boolean]

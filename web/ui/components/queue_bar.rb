@@ -16,7 +16,9 @@ module UI
     # just hidden. Patches morph the bar, so new work mid-fade brings it back.
     #
     #   render QueueBar.scans
-    class QueueBar < Phlex::HTML
+    class QueueBar < Sidereal::Components::BaseComponent
+      stylesheet 'ui/components/queue_bar.css', path: 'queue_bar.css'
+
       # More segments than this, and the waiting ones past it show as "+N".
       MAX_SEGMENTS = 48
 

@@ -17,6 +17,8 @@ module UI
     # files go into the form's file input and the form is submitted, as
     # choosing files and clicking Upload does.
     class UploadForm < Sidereal::Components::BaseComponent
+      stylesheet 'ui/components/upload_form.css', path: 'upload_form.css'
+
       # _uploading is how many files the upload is sending, _sent how many
       # of them are in: an upload is on while _uploading is above 0.
       SIGNALS = { _drags: 0, _uploading: 0, _sent: 0 }.freeze

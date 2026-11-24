@@ -22,6 +22,8 @@ module UI
   # chart only makes whole months and years. The layout puts the params in the params
   # signal, so a live re-render keeps them.
   class ExpensesPage < Page
+    stylesheet 'ui/expenses_page.css', path: 'expenses_page.css'
+
     path '/expenses'
 
     PER_PAGE = 25

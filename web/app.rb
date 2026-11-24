@@ -51,10 +51,28 @@ class App < Sidereal::App
   handle E::SaveExpense, E::Rescan, E::EnterManually, E::DiscardDocument, E::VoidExpense,
          E::ConfirmVatTreatment, E::ChooseCategory
 
+  # The components the pages render, for their stylesheets. The layout's
+  # come first, then these and the pages', in the order of these lines:
+  # the order of the cascade. Attention's go last, to win over the rest.
+  component UI::Components::TopNav
+  component UI::Components::Search
+  component UI::Components::SearchPreview
+  component UI::Components::StatusBadge
+  component UI::Components::UploadForm
+  component UI::Components::UploadReport
+  component UI::Components::QueueBar
+  component UI::Components::BeingRead
+  component UI::Components::SubmissionList
+  component UI::Components::HistoryFeed
+  component UI::Components::LedgerTotal
+  component UI::Components::MonthChart
+
   page UI::WelcomePage
   page UI::ExpensesPage
   page UI::SubmissionPage
   page UI::SubmissionDiagramPage
+
+  component UI::Attention
 
   # Time travel: a submission's page as it was after +step+ messages of its
   # history. Static, so nothing live replaces it. The history feed links here.

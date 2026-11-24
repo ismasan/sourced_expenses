@@ -6,7 +6,9 @@ module UI
     # the step it's on, above the list of those waiting for a person
     # (NeedsYou), which they move to once read. Re-rendered by its id
     # whenever the read model commits; with none, an empty element to patch.
-    class BeingRead < Phlex::HTML
+    class BeingRead < Sidereal::Components::BaseComponent
+      stylesheet 'ui/components/being_read.css', path: 'being_read.css'
+
       ID = 'being-read'
 
       # The latest of them, and how many there are.

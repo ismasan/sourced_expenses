@@ -7,6 +7,8 @@ module UI
   # the expense list (ExpensesPage). How many are scanning and waiting to is
   # the scan queue's bar, along the bottom of every page (QueueBar).
   class WelcomePage < Page
+    stylesheet 'ui/welcome_page.css', path: 'welcome_page.css'
+
     path '/'
 
     # Only the list follows the backend: the upload form would otherwise

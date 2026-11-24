@@ -1,0 +1,14 @@
+/* Each file of the last upload, a line each (UI::Components::UploadReport):
+   nothing until one starts. */
+.upload-report { list-style: none; margin: 1rem 0 0; padding: 0; }
+.upload-report:empty { display: none; }
+.upload-report__item {
+  margin: 0;
+  padding: 0.35rem 0 0.35rem 0.75rem;
+  border-left: 4px solid var(--working);
+  color: var(--ink-2);
+}
+.upload-report__item + .upload-report__item { margin-top: 0.25rem; }
+.upload-report__item strong { color: var(--ink); }
+.upload-report__item--already { border-left-color: var(--closed); }
+.upload-report__item--skipped { border-left-color: var(--problem); }

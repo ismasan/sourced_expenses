@@ -1,11 +1,15 @@
 # frozen_string_literal: true
 
 module UI
-  # Page layout: Sidereal's BasicLayout styles, plus this app's own stylesheet
-  # in web/public/css/app.css. Every page has the scan queue's bar along its
-  # bottom while the queue is busy (Components::QueueBar, kept live by
-  # UI::Page).
-  class Layout < Sidereal::Components::BasicLayout
+  # Page layout, styled only by the app's stylesheets, which head links. This
+  # one's (layout.css) are the shared rules: the reset, the colours and other
+  # variables, links, buttons and fields. Each component and page brings its
+  # own, in the order App installs them. Every page has the scan queue's bar
+  # along its bottom while the queue is busy (Components::QueueBar, kept live
+  # by UI::Page).
+  class Layout < Sidereal::Components::Layout
+    stylesheet 'ui/layout.css', path: 'layout.css'
+
     FONTS = 'https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..900;1,400..900&display=swap'
 
     def view_template
@@ -19,8 +23,6 @@ module UI
           link(rel: 'preconnect', href: 'https://fonts.googleapis.com')
           link(rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: true)
           link(rel: 'stylesheet', href: FONTS)
-          style { raw safe(STYLES) }
-          link(rel: 'stylesheet', href: '/css/app.css?29')
         end
 
         body do

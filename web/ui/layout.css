@@ -1,0 +1,181 @@
+/* Black ink on white paper. The app's own base styles: the reset, type,
+   links, buttons and fields, with nothing of Sidereal's BasicLayout styles
+   (UI::Layout leaves them out). Every component's and page's stylesheet
+   comes after this one.
+
+   Colour means one thing here: whose move it is. Everything else is black,
+   white and grey.
+     working  blue, moving   the scan has it, nothing to do but wait
+     yours    yellow         waiting for a person (and every primary button):
+                             the attention colour, see attention.css
+     problem  red            the scan stopped or rejected it
+     done     green          filed
+     closed   grey           discarded or voided */
+
+:root {
+  --paper: #ffffff;
+  --ink: #000000;
+  --ink-2: #4a4a4a;   /* secondary text: 8.9:1 on white */
+  --rule: #d6d6d6;
+  --wash: #f3f3f1;
+
+  --working: #1c2cf0;
+  --working-2: #4351ff;
+  /* Attention: anything waiting for a person, or pending their say. */
+  --attention: #ffe01a;
+  --attention-2: #f2cf00;          /* hovered, or a thinner mark that needs more weight */
+  --attention-ink: var(--ink);     /* text on it */
+  --attention-edge: var(--ink);    /* its border or accent */
+
+  --yours: var(--attention);       /* the stage that means it */
+  --yours-2: var(--attention-2);
+  --problem: #d3200c;
+  --done: #0a7a3c;
+  --closed: #8a8a8a;
+
+  /* Working's stripes: 16px apart at 45°, so they tile every 16√2px. */
+  --stripes: repeating-linear-gradient(-45deg, var(--working) 0 8px, var(--working-2) 8px 16px) 0 0 / 22.63px 22.63px;
+
+  --font: "Schibsted Grotesk", system-ui, sans-serif;
+  --radius: 4px;
+  --nav-h: 3.5rem;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { background: var(--paper); }
+
+body {
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  font-family: var(--font);
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+h1, h2, h3 { line-height: 1.25; }
+
+a { color: var(--ink); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.18em; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+
+.page {
+  max-width: 54rem;
+  margin: 0 auto;
+  padding: clamp(1.75rem, 5vh, 3.5rem) 1.25rem 6rem;
+}
+
+.page:has(.submission-page),
+.page:has(.expenses-page) { max-width: 66rem; }
+
+/* ---- Buttons and fields ---- */
+
+/* Every button, .button or not: the page's font, its content in a row. */
+button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.5rem 1rem;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--ink);
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.button,
+input[type="file"]::file-selector-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.55rem 1.1rem;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.button:hover,
+input[type="file"]::file-selector-button:hover { background: var(--ink); color: var(--paper); }
+.button:active { transform: translateY(1px); }
+.button--primary { background: var(--attention); color: var(--attention-ink); }
+.button--primary:hover { background: var(--attention-2); color: var(--attention-ink); }
+.button:disabled,
+fieldset:disabled .button { opacity: 0.4; cursor: not-allowed; background: var(--paper); color: var(--ink); }
+/* What's already chosen: filled black, with a tick. */
+.button--selected,
+.button--selected:hover,
+.button--selected:disabled { opacity: 1; color: var(--paper); background: var(--ink); }
+.button--selected:disabled { cursor: default; }
+.button--selected::before { content: "✓"; margin-right: 0.45em; }
+/* Proposed, not chosen yet: choosing it confirms it. */
+.button--suggested { border-style: dashed; }
+
+input[type="text"],
+input[type="number"],
+input[type="date"],
+textarea,
+select {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid #8c8c8c;
+  border-radius: var(--radius);
+  color-scheme: light;
+  transition: border-color 0.15s;
+}
+/* No native chrome (Safari's gradient): flat like the text fields, with
+   a chevron of our own. */
+select {
+  appearance: none;
+  padding-right: 2.5rem;
+  background: var(--paper) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23000' stroke-width='2'/%3E%3C/svg%3E") no-repeat right 0.85rem center / 12px 8px;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+/* Chrome's date field is 2px taller inside than a text one. */
+input[type="date"] { padding-block: calc(0.5rem - 1px); }
+input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; }
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink);
+}
+input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--ink); }
+label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  margin-bottom: 0.25em;
+  color: #444;
+}
+form > * + * { margin-top: 0.75rem; }
+.command-field { margin: 0; }
+.command-field.errors :is(input, textarea, select) { border-color: var(--problem); box-shadow: 0 0 0 1px var(--problem); }
+.command-field__errors { display: block; margin-top: 0.2em; color: var(--problem); font-size: 0.85rem; font-weight: 600; }
+.command-field__errors:empty { display: none; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

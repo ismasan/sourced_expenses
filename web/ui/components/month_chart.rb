@@ -23,7 +23,9 @@ module UI
     #
     # It scrolls sideways when the columns don't fit, starting at what's
     # chosen, or the year expanded.
-    class MonthChart < Phlex::HTML
+    class MonthChart < Sidereal::Components::BaseComponent
+      stylesheet 'ui/components/month_chart.css', path: 'month_chart.css'
+
       # Shows what's chosen, else the year expanded (its start, if wider
       # than the strip), once the chart is on the page.
       SCROLL = <<~JS.tr("\n", ' ').freeze

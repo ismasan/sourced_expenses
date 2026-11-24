@@ -174,7 +174,7 @@ bin/sid expenses list --state reviewing --category-status suggested --json |
 | Path | |
 | --- | --- |
 | `system/` | Messages, machines, reactors, read models (no web) |
-| `web/app.rb`, `web/ui/` | Web app, pages and components |
+| `web/app.rb`, `web/ui/` | Web app, pages and components. Each page or component has its stylesheet beside it (`top_nav.rb`, `top_nav.css`); `layout.css` has the shared rules. `web/app.rb` installs them, in the order of the cascade |
 | `cli/` | The app's `bin/sid expenses …` commands |
 | `config/components/` | Components (`db`, clients…) declared with `Sidereal.config` |
 | `db/migrations/` | Sequel migrations, including Sourced's tables |
