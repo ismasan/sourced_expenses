@@ -7,17 +7,54 @@ module UI
     # shows in the report under the form (UploadReport), and the home
     # page's lists show the new expenses as they're read.
     #
-    # Each file is its own Commands::UploadFile, sent one after another
-    # (UPLOAD): a file put into the form's file input alone, and posted as
-    # Datastar posts any command form. A file the scan can't take (the
-    # wrong type, too big) is skipped before it's sent, with a line saying
-    # why; the command checks again, should one get past.
+    # Each file is its own UploadFile, sent one after another (UPLOAD): a
+    # file put into the form's file input alone, and posted as Datastar
+    # posts any command form. A file the scan can't take (the wrong type,
+    # too big) is skipped before it's sent, with a line saying why; the
+    # command checks again, should one get past. The form handles the
+    # command itself, in the App that installs it.
     #
     # The drop is handled in the browser with Datastar alone: the dropped
     # files go into the form's file input and the form is submitted, as
     # choosing files and clicking Upload does.
     class UploadForm < Sidereal::Components::BaseComponent
       stylesheet 'ui/components/upload_form.css', path: 'upload_form.css'
+
+      # A file posted from the form. Web only: the handler below stores the
+      # file and dispatches Expenses::Expense::UploadDocument with its id.
+      # This command is never stored itself: its payload holds a Tempfile.
+      #
+      # +file+ is a Sidereal::Types::UploadedFile, the struct Rack parses a
+      # multipart part into (filename, type, tempfile...). The checks are
+      # Expenses::Upload's, made the command's, so an upload that fails one
+      # never reaches the handler: Sidereal streams the message back to the
+      # form's file field.
+      UploadFile = Sidereal::Message.define('web.upload_file') do
+        attribute :file, Sidereal::Types::UploadedFile
+          # Not .where(type: Types::String.options(...)): it works, but its
+          # error is Plumb's own ("must have attribute type === ..."), shown
+          # on the form.
+          .check(Expenses::Upload::WRONG_TYPE) { Expenses::Upload.accepted_type?(it.type) }
+          .check(Expenses::Upload::TOO_BIG) { Expenses::Upload.accepted_size?(it.tempfile.size) }
+      end
+
+      # One file, of the one or many the form sends one at a time. Runs in
+      # the request, in the App, while Rack's Tempfile still exists: store
+      # the file, then hand the backend its id. Only UploadDocument is
+      # dispatched. A file uploaded before is that expense already: nothing
+      # dispatched. The browser stays on the page: a line for the file is
+      # added to its report (UploadReport), and the home page's lists follow
+      # the new expense.
+      handle UploadFile do |cmd|
+        file = cmd.payload.file
+        document = Expenses::Upload.store(Sidereal.config['file_store'], filename: file.filename, content_type: file.type,
+                                          io: file.tempfile, filing_country: Sidereal.config['expenses.filing_country'])
+        expense_id = document.payload.expense_id
+        already = Expenses::Upload.uploaded?(expense_id)
+        dispatch document unless already
+        browser.patch_elements UploadReport::Item.new(file.filename, already ? :already : :uploaded, expense_id),
+                               selector: "##{UploadReport::ID}", mode: 'append'
+      end
 
       # _uploading is how many files the upload is sending, _sent how many
       # of them are in: an upload is on while _uploading is above 0.
@@ -109,9 +146,9 @@ module UI
                 data: DROP_EVENTS.merge('signals' => JSON.generate(SIGNALS), 'class:upload--dragging' => '$_drags > 0')) do
           # on: [] leaves the posting to UPLOAD, one file at a time, rather
           # than Sidereal's @post of the whole form on submit.
-          render Sidereal::Components::Command.new(Commands::UploadFile, on: [], enctype: 'multipart/form-data',
-                                                                         class: 'upload__form',
-                                                                         data: { 'on:submit__prevent' => UPLOAD }) do |f|
+          render Sidereal::Components::Command.new(UploadFile, on: [], enctype: 'multipart/form-data',
+                                                               class: 'upload__form',
+                                                               data: { 'on:submit__prevent' => UPLOAD }) do |f|
             p(class: 'upload__prompt') do
               span(data: { show: '!$_uploading' }) do
                 span(class: 'upload__drop') { 'Drop receipts or invoices anywhere on this page' }

@@ -3,7 +3,8 @@
 module Expenses
   # A document to scan, from a file: what's accepted, and the
   # UploadDocument that stores it and starts its scan. Shared by the upload
-  # form (App's Commands::UploadFile handler) and `bin/sid expenses upload`.
+  # form (UI::Components::UploadForm's UploadFile handler) and
+  # `bin/sid expenses upload`.
   #
   #   problem = Upload.problem(content_type:, size:)  # => nil, or why not
   #   command = Upload.store(file_store, filename:, content_type:, io:, filing_country:)

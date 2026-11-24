@@ -5,7 +5,7 @@
 class App < Sidereal::App
   layout UI::Layout
 
-  dep :file_store, :thumbnails, 'expenses.filing_country' => 'filing_country'
+  dep :file_store, :thumbnails
 
   E = Expenses::Expense
 
@@ -28,32 +28,15 @@ class App < Sidereal::App
     end
   end
 
-  # One file, of the one or many the upload form sends one at a time.
-  # Runs during the request, while Rack's Tempfile still exists: store the
-  # file, then hand the backend its id. Only UploadDocument is dispatched —
-  # the web command carries the Tempfile and is never stored. A file
-  # uploaded before is that expense already: nothing dispatched. The
-  # browser stays on the page: a line for the file is added to its report
-  # (UploadReport), and the home page's lists follow the new expense.
-  handle Commands::UploadFile do |cmd|
-    file = cmd.payload.file
-    document = Expenses::Upload.store(file_store, filename: file.filename, content_type: file.type, io: file.tempfile,
-                                                  filing_country:)
-    expense_id = document.payload.expense_id
-    already = Expenses::Upload.uploaded?(expense_id)
-    dispatch document unless already
-    browser.patch_elements UI::Components::UploadReport::Item.new(file.filename, already ? :already : :uploaded, expense_id),
-                           selector: "##{UI::Components::UploadReport::ID}", mode: 'append'
-  end
-
   # What a person does with a submission. The machine refuses any its
   # current state doesn't accept.
   handle E::SaveExpense, E::Rescan, E::EnterManually, E::DiscardDocument, E::VoidExpense,
          E::ConfirmVatTreatment, E::ChooseCategory
 
-  # The components the pages render, for their stylesheets. The layout's
-  # come first, then these and the pages', in the order of these lines:
-  # the order of the cascade. Attention's go last, to win over the rest.
+  # The components the pages render, for their stylesheets and the commands
+  # they handle (UploadForm's UploadFile). The layout's stylesheets come
+  # first, then these and the pages', in the order of these lines: the
+  # order of the cascade. Attention's go last, to win over the rest.
   component UI::Components::TopNav
   component UI::Components::Search
   component UI::Components::SearchPreview
