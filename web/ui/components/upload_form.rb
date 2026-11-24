@@ -45,19 +45,24 @@ module UI
         JS
       }.freeze
 
-      # The form's submit: the report emptied, a line for each file skipped
-      # (as the command would refuse it: Expenses::Upload's checks), then
-      # each of the rest alone in the input, posted, and waited for before
-      # the next, so they go one at a time. The form is cleared after.
+      # The upload, as window.uploadFiles(form, signals), which the form's
+      # submit calls (UPLOAD): the report emptied, a line for each file
+      # skipped (as the command would refuse it: Expenses::Upload's checks),
+      # then each of the rest alone in the input, posted, and waited for
+      # before the next, so they go one at a time. The form is cleared after.
       #
-      # Datastar runs an expression as a plain function, so the loop is an
-      # async one inside it; @post returns a promise that settles once its
-      # response has been handled.
-      UPLOAD = <<~JS.gsub(/\s*\n\s*/, ' ').strip
-        (async () => {
-          const input = el.querySelector('input[type=file]');
+      # A script asset is an ES module, and in production every script is
+      # bundled into one, so it declares nothing at the top level: only the
+      # global the form calls. Signals and @post exist only in Datastar's
+      # expressions, so the submit passes them in as +signals+: busy() is
+      # an upload on, start(n) starts one of n files, post() posts the form
+      # (a promise that settles once its response has been handled), sent()
+      # counts one in, and done() ends it.
+      js <<~JS
+        window.uploadFiles = async function (form, signals) {
+          const input = form.querySelector('input[type=file]');
           const files = [...input.files];
-          if (!files.length || $_uploading) return;
+          if (!files.length || signals.busy()) return;
           const report = document.getElementById('#{UploadReport::ID}');
           report.replaceChildren();
           const types = #{JSON.generate(Expenses::Upload::ACCEPTED_TYPES)};
@@ -72,21 +77,31 @@ module UI
             report.append(li);
             return false;
           });
-          $_sent = 0;
-          $_uploading = sending.length;
+          signals.start(sending.length);
           try {
             for (const f of sending) {
               const one = new DataTransfer();
               one.items.add(f);
               input.files = one.files;
-              await @post('/commands', { contentType: 'form' });
-              $_sent++;
+              await signals.post();
+              signals.sent();
             }
           } finally {
-            $_uploading = 0;
-            el.reset();
+            signals.done();
+            form.reset();
           }
-        })()
+        };
+      JS
+
+      # The form's submit: the upload, with the signals and @post it uses.
+      UPLOAD = <<~JS.gsub(/\s*\n\s*/, ' ').strip
+        uploadFiles(el, {
+          busy: () => $_uploading > 0,
+          start: n => { $_sent = 0; $_uploading = n },
+          post: () => @post('/commands', { contentType: 'form' }),
+          sent: () => $_sent++,
+          done: () => $_uploading = 0
+        })
       JS
 
       def view_template
