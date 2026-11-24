@@ -40,7 +40,7 @@ stateDiagram-v2
 
 `Expense::Scanning` (`system/expenses/expense/scanning.rb`) is the OCR pipeline. Each LLM step waits for the `Expenses::Scanner` worker's `Complete…` / `Fail…`; the `checking_*` states are guarded decisions.
 
-An upload or rescan waits in `queued` until the scan queue (a `WorkQueue` queue named `scans`) gives its scan a slot and appends `StartScan`, the command the expense enqueued it with, so at most `MAX_SCANS` expenses are in `scanning` at once, each making its model calls in turn. The scan's timeout starts with the scan, not the wait, and leaving `scanning` (or `queued`, discarded before its turn) frees the slot.
+An upload or rescan waits in `queued` until the scan queue (a `WorkQueue` queue named `scans`) gives its scan a slot and appends `StartScan`, the command the expense enqueued it with, so at most 3 expenses (the queue's capacity) are in `scanning` at once, each making its model calls in turn. The scan's timeout starts with the scan, not the wait, and leaving `scanning` (or `queued`, discarded before its turn) frees the slot.
 
 <!-- mermaid Expenses::Expense scanning -->
 ```mermaid
@@ -96,7 +96,7 @@ Each is its own consumer group, so slow work never blocks the machine.
 
 | Class | Does |
 | --- | --- |
-| `WorkQueue` | Capped work queues (`system/work_queue.rb`), one per `queue_name`, each with the capacity its latest `Enqueue` gave. A caller names its queue with `WorkQueue.define` and dispatches what it builds: `Expense::ScanQueue = WorkQueue.define('scans')`, enqueued with `ScanQueue.enqueue(StartScan, expense_id:).with_capacity(max_scans)` at `MAX_SCANS`, and each expense holds its slot through every step of its scan. It records `Enqueued`, `Started`, `Released` and `Dropped`, and appends each item's start message (an expense's `StartScan`) in the same commit as its `Started`. A plain reactor (a decider may only append to its own partition), which snapshots each queue's state every 100 history messages so a claim never reads its whole history. The bar along the bottom of every page shows the scan queue from the same snapshot and history (`ScanQueue.status`), following its events. |
+| `WorkQueue` | Capped work queues (`system/work_queue.rb`), one per `queue_name`, each with the capacity its latest `Enqueue` gave. A caller names its queue with `WorkQueue.define` and dispatches what it builds: `Expense::ScanQueue = WorkQueue.define('scans', capacity: 3)`, enqueued with `ScanQueue.enqueue(StartScan, expense_id:)` (`.with_capacity(n)` overrides the capacity), and each expense holds its slot through every step of its scan. It records `Enqueued`, `Started`, `Released` and `Dropped`, and appends each item's start message (an expense's `StartScan`) in the same commit as its `Started`. A plain reactor (a decider may only append to its own partition), which snapshots each queue's state every 100 history messages so a claim never reads its whole history. The bar along the bottom of every page shows the scan queue from the same snapshot and history (`ScanQueue.status`), following its events. |
 | `Expenses::Scanner` | Runs each scan step against the LLM (`Expenses::ScanSteps`, prompts in `Expenses::Prompts`). Shrinks images over 500 KB with ImageMagick. |
 | `Expenses::Categorizer` | Suggests a category from `Expenses::CATEGORIES` via a [RubyLLM judgment](https://rubyllm.com/judgments/). A person's `ChooseCategory` always wins. |
 | `Expenses::CurrencyConverter` | Converts filed totals to `REPORTING_CURRENCY` at the ECB rate for the expense's date ([Frankfurter](https://frankfurter.dev)). |
@@ -125,7 +125,6 @@ Requires ImageMagick (`brew install imagemagick`). `bin/dev` reloads on change i
 | `REPORTING_CURRENCY` | `GBP` | Currency totals are in |
 | `FILING_COUNTRY` | `GB` | Decides VAT treatment |
 | `SCAN_TIMEOUT` | `10m` | Scan gives up after this |
-| `MAX_SCANS` | `3` | Expenses scanning at once (a scan makes up to four model calls, in turn) |
 | `EXCHANGE_RATES_URL` | Frankfurter | Alternative Frankfurter instance |
 | `SIDEREAL_SECRET` | `storage/secret.txt`, which the first boot creates | The master secret Sidereal derives the session cookie's key and the live-updates URL signer's from. Set it (64 bytes or more, `bin/sid secret` makes one) when `storage/` doesn't survive deploys or the app runs on several machines: the same in every process and across deploys. Changing it logs everyone out |
 | `PORT`, `HOST`, `COUNT` | | Server port, host, worker processes |

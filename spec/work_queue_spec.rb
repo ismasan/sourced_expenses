@@ -12,7 +12,7 @@ module Expenses
     let(:ids) { Array.new(3) { SecureRandom.hex(16) } }
 
     before do
-      allow_any_instance_of(Expense).to receive(:max_scans).and_return(2)
+      stub_const('Expenses::Expense::ScanQueue', WorkQueue.define('scans', capacity: 2))
       router
     end
 

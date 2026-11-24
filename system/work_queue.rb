@@ -8,14 +8,14 @@ require 'json'
 # append when the item gets a slot (a command to start it, say), and releases
 # it once the work is done or abandoned.
 #
-# A caller names its queue with .config, which builds its commands, to
-# dispatch (a reaction's +dispatch+ takes anything answering +to_message+).
+# A caller defines its queue with .define, naming it and giving it a
+# capacity, which builds its commands, to dispatch (a reaction's +dispatch+ takes anything answering +to_message+).
 # What it declares it dispatches is the commands' classes:
 #
-#   ScanQueue = WorkQueue.define('scans')
+#   ScanQueue = WorkQueue.define('scans', capacity: 3)
 #
 #   entry WorkQueue::Enqueue do |_doc, entered|
-#     dispatch ScanQueue.enqueue(StartScan, expense_id: entered.payload.expense_id).with_capacity(3)
+#     dispatch ScanQueue.enqueue(StartScan, expense_id: entered.payload.expense_id)
 #   end
 #
 #   # ...and once the scan is over:
@@ -34,7 +34,7 @@ require 'json'
 # hold changes nothing.
 #
 # A queue's capacity is the one its latest Enqueue gave (recorded in
-# Enqueued): raising it starts waiting items at once, lowering it stops
+# Enqueued): its definition's, or another with #with_capacity; raising it starts waiting items at once, lowering it stops
 # nothing that's running, only what starts next. An Enqueue without one
 # keeps the queue's, and a queue no Enqueue has given one has
 # DEFAULT_CAPACITY.
@@ -116,13 +116,15 @@ class WorkQueue
     def idle? = queued.zero? && in_flight.zero?
   end
 
-  # One queue, as its callers see it (.config): builds its commands.
-  Queue = Data.define(:name) do
+  # One queue, as its callers see it (.define): builds its commands, each
+  # Enqueue with the queue's +capacity+ (none: the capacity it has, or
+  # DEFAULT_CAPACITY).
+  Queue = Data.define(:name, :capacity) do
     # Enqueue an item: the message to append when it gets a slot.
     # @param start_class [Class<Sourced::Message>]
     # @param payload [Hash] the start message's payload
     # @return [Enqueuing] answers +to_message+, and #with_capacity
-    def enqueue(start_class, **payload) = Enqueuing.new(queue_name: name, start_class:, payload:, capacity: nil)
+    def enqueue(start_class, **payload) = Enqueuing.new(queue_name: name, start_class:, payload:, capacity:)
 
     # Release the item that +start_class+ and +payload+ started.
     # @return [Release]
@@ -131,7 +133,7 @@ class WorkQueue
     end
 
     # @see WorkQueue.status
-    def status(**) = WorkQueue.status(name, **)
+    def status(capacity: self.capacity, **) = WorkQueue.status(name, capacity:, **)
   end
 
   # An Enqueue being built (Queue#enqueue).
@@ -150,8 +152,9 @@ class WorkQueue
   class << self
     # The queue +name+, for a caller to enqueue in and release from.
     # @param name [String]
+    # @param capacity [Integer, nil] the capacity its Enqueues give it
     # @return [Queue]
-    def define(name) = Queue.new(name:)
+    def define(name, capacity: nil) = Queue.new(name:, capacity:)
 
     # An item's id: its start message's type and its payload as canonical
     # JSON (keys sorted, at every depth). The payload is the message's, as

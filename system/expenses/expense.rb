@@ -29,12 +29,10 @@ module Expenses
     partition_by expense_id: Types::ExpenseID
     message_prefix 'expenses'
 
-    # How many expenses scan at once (MAX_SCANS, see
-    # config/components/scan_queue.rb): the capacity Queued enqueues with.
-    dep 'expenses.max_scans' => 'max_scans'
-
-    # The queue scans wait in (see Queued).
-    ScanQueue = WorkQueue.define('scans')
+    # The queue scans wait in (see Queued), 3 expenses scanning at once. Each
+    # scan makes up to four model calls, one after another, so this caps the
+    # model calls in flight for scanning.
+    ScanQueue = WorkQueue.define('scans', capacity: 3)
 
     # How long a scan may take, every LLM call and its retries included,
     # before it's given up on.
@@ -283,16 +281,13 @@ module Expenses
       end
     end
 
-    # Waiting for a slot to scan in: ScanQueue lets max_scans expenses scan at
-    # once, and appends StartScan when it's this one's turn. Discarded before
+    # Waiting for a slot to scan in: ScanQueue lets its capacity of expenses scan
+    # at once, and appends StartScan when it's this one's turn. Discarded before
     # its turn, it gives its place up. The slot is held through every step of
     # the scan, until it leaves Scanning.
     state Queued do
       entry WorkQueue::Enqueue do |_doc, entered|
-        dispatch ScanQueue.enqueue(
-          StartScan, 
-          expense_id: entered.payload.expense_id
-        ).with_capacity(max_scans)
+        dispatch ScanQueue.enqueue(StartScan, expense_id: entered.payload.expense_id)
       end
 
       exit WorkQueue::Release | nil do |_doc, left_by|

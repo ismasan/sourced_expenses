@@ -22,12 +22,10 @@ module UI
       # More segments than this, and the waiting ones past it show as "+N".
       MAX_SEGMENTS = 48
 
-      # The expenses' scan queue, with the capacity it's set to before its
-      # first scan.
+      # The expenses' scan queue.
       # @param changed [Boolean] rendered because the queue just changed
       def self.scans(changed: false)
-        status = Expenses::Expense::ScanQueue.status(capacity: Sidereal.config['expenses.max_scans'])
-        new(status, title: 'Scanning', noun: 'document', changed:)
+        new(Expenses::Expense::ScanQueue.status, title: 'Scanning', noun: 'document', changed:)
       end
 
       # @param status [WorkQueue::Status]
