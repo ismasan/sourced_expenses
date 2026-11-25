@@ -70,6 +70,10 @@ module UI
           ol(class: 'month-chart__years', data: { init: SCROLL }) do
             @years.each { it.year == @expanded ? render_expanded(it) : render_compact(it) }
           end
+          # SCROLL as the page loads too, before it's first drawn: a year
+          # expanded animates (month_chart.css) to where the strip is
+          # scrolled then, and Datastar's init would scroll it after.
+          script { raw safe("(el => { #{SCROLL} })(document.currentScript.previousElementSibling);") }
         end
       end
 
@@ -81,7 +85,8 @@ module UI
       def render_expanded(year)
         level = share(year.cents, @max_year)
         max_month = year.months.map(&:cents).max.to_i
-        li(class: 'month-chart__year', style: "--months: #{year.months.size}; --level: #{level}", data: { expanded: true }) do
+        li(class: 'month-chart__year', style: "--months: #{year.months.size}; --level: #{level}; #{transition_name(year)}",
+           data: { expanded: true }) do
           ol(class: 'month-chart__months') do
             year.months.each { render_month(it, share(it.cents, max_month)) }
           end
@@ -95,7 +100,7 @@ module UI
 
       # The whole year as one column, which expands it.
       def render_compact(year)
-        li(class: 'month-chart__year month-chart__year--compact') do
+        li(class: 'month-chart__year month-chart__year--compact', style: transition_name(year)) do
           a(class: 'month-chart__link month-chart__link--year', href: path(from: year.from, to: year.to),
             aria: { label: describe(year, year.year.to_s) }) do
             render_plot(year.cents, year.cents.positive? ? share(year.cents, @max_year) : 0)
@@ -133,6 +138,10 @@ module UI
       end
 
       # Whether the list's dates are exactly +period+'s.
+      # The year's column's name in a view transition, the same compact or
+      # expanded, so expanding a year animates its column (month_chart.css).
+      def transition_name(year) = "view-transition-name: month-chart-#{year.year}"
+
       def chosen?(period) = @from == period.from && @to == period.to
 
       # The list filtered to +period+; back to all dates if it's the one chosen.

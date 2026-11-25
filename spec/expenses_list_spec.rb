@@ -304,7 +304,11 @@ RSpec.describe 'The expense lists' do
                               'href="/expenses?from=2025-01-01&to=2025-12-31" aria-label="2025: 25.00 GBP, 1 expense"',
                               'style="--share: 0.4"', 'style="--share: 1.0"')
       # The year expanded stands at its own level on the years' scale: 5.00 of the biggest year's 25.00.
-      expect(body).to include('style="--months: 11; --level: 0.2"')
+      expect(body).to include('style="--months: 11; --level: 0.2; view-transition-name: month-chart-2026"')
+      # Each year's column named for the view transition that expanding one animates.
+      expect(body).to include('<li class="month-chart__year month-chart__year--compact" style="view-transition-name: month-chart-2024">',
+                              '<li class="month-chart__year month-chart__year--compact" style="view-transition-name: month-chart-2025">',
+                              '@view-transition { navigation: auto; }')
     end
 
     it 'expands the year of the month chosen, highlighted, its link going back to all dates, the dates kept for states' do

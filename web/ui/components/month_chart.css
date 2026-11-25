@@ -133,3 +133,34 @@
 .month-chart__band--chosen { color: var(--ink); font-weight: 800; background: var(--wash); border-top-color: var(--ink); }
 .month-chart__link:hover .month-chart__tip,
 .month-chart__link:focus-visible .month-chart__tip { display: block; }
+
+/* Expanding a year, a link to the list in its dates (a new page), is
+   animated where browsers have cross-document view transitions, which
+   ExpensesPage opts into. Each year's column has a name of its own
+   (month-chart-2024, MonthChart#transition_name), so it grows or shrinks
+   to its new width and slides to its new place. The strip is their group,
+   so they stay clipped to it, as it scrolls. Each column's old and new
+   pictures keep their size, pinned to its bottom left, so the months are
+   uncovered as the column widens, not stretched into it. */
+.month-chart__years { view-transition-name: month-chart-years; view-transition-group: contain; }
+.month-chart__year { view-transition-class: month-chart-year; }
+::view-transition-group(month-chart-years) { overflow: clip; }
+::view-transition-group(.month-chart-year) {
+  animation-duration: 0.4s;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+::view-transition-image-pair(.month-chart-year) { overflow: clip; }
+::view-transition-old(.month-chart-year),
+::view-transition-new(.month-chart-year) {
+  height: 100%;
+  object-fit: none;
+  object-position: left bottom;
+}
+/* The old picture fades into the new one in the first half of the move,
+   not all of it, so the two blur into each other as briefly as can be.
+   The same duration and easing both ways, so a year that's unchanged
+   (the same picture, old and new) stays solid throughout. */
+::view-transition-old(.month-chart-year) { animation: month-chart-fade-out 0.2s ease both; }
+::view-transition-new(.month-chart-year) { animation: month-chart-fade-in 0.2s ease both; }
+@keyframes month-chart-fade-out { to { opacity: 0; } }
+@keyframes month-chart-fade-in { from { opacity: 0; } }
