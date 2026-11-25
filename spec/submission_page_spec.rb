@@ -259,4 +259,18 @@ RSpec.describe 'A submission' do
     get "/files/#{'0' * 32}"
     expect(last_response.status).to eq(404)
   end
+
+  it 'streams the file from disk, a byte range of it when asked' do
+    path = Sidereal.config['file_store'].read(jpeg).path
+    _status, headers, body = App.call(Rack::MockRequest.env_for("/files/#{jpeg}"))
+    # Not read into memory: the server sends it from the file.
+    expect(body.to_path).to eq(path)
+    expect(headers['content-length']).to eq(File.size(path).to_s)
+    body.close if body.respond_to?(:close)
+
+    get "/files/#{jpeg}", {}, 'HTTP_RANGE' => 'bytes=0-1'
+    expect(last_response.status).to eq(206)
+    expect(last_response.headers['content-range']).to eq("bytes 0-1/#{File.size(path)}")
+    expect(last_response.body.b).to eq("\xFF\xD8".b)
+  end
 end

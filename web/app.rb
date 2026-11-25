@@ -114,16 +114,18 @@ class App < Sidereal::App
     halt 404, 'Not found'
   end
 
-  # Ids are the digest of the bytes, so a file never changes under its URL.
+  # The file at +path+, as Rack::Files serves it: streamed from disk, not
+  # read into memory (its body answers to_path, which Falcon sends from the
+  # file), with its content-type and -length, and a byte range when one is
+  # asked for (a PDF viewer's 206s), HEAD and If-Modified-Since too. Ids are
+  # the digest of the bytes, so a file never changes under its URL.
   private def send_file(path, filename: nil)
-    headers = {
-      'content-type' => Rack::Mime.mime_type(File.extname(path), 'application/octet-stream'),
-      'cache-control' => 'private, max-age=31536000, immutable',
-      'x-content-type-options' => 'nosniff'
-    }
+    status, headers, body = Rack::Files.new(File.dirname(path), {}, 'application/octet-stream').serving(request, path)
+    headers['cache-control'] = 'private, max-age=31536000, immutable'
+    headers['x-content-type-options'] = 'nosniff'
     headers['content-disposition'] = %(inline; filename="#{filename.gsub(/[^\w.\- ]/, '_')}") if filename
     # Set, not added: Router#headers appends, which would keep the default text/html.
     headers.each { |name, value| response.set_header(name, value) }
-    halt 200, File.binread(path)
+    halt status, body
   end
 end
