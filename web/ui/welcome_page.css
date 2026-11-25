@@ -1,0 +1,19 @@
+/* ---- Home: masthead, drop zone, the list ---- */
+
+/* The title and lead, with this month's total on the right. */
+.masthead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem 2rem;
+  flex-wrap: wrap;
+  margin-bottom: 2rem;
+}
+.masthead__title {
+  font-size: clamp(3rem, 11vw, 5.5rem);
+  font-weight: 900;
+  line-height: 0.9;
+  letter-spacing: -0.045em;
+  margin: 0 0 0.9rem;
+}
+.masthead__lead { max-width: 30em; font-size: 1.15rem; color: var(--ink-2); margin: 0; }

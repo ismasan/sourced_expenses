@@ -1,0 +1,33 @@
+/* ---- Status badges: the stage's colour ---- */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+}
+.badge--large { padding: 0.3rem 0.85rem; font-size: 1rem; }
+.badge--yours { background: var(--attention); color: var(--attention-ink); border-color: var(--attention-edge); }
+.badge--problem { background: var(--problem); color: #fff; }
+.badge--done { background: var(--done); color: #fff; }
+.badge--closed { color: var(--ink-2); border-color: var(--closed); }
+
+/* Working: stripes drifting along, the one thing that moves on its own,
+   so a scan in progress reads as busy at a glance. */
+.badge--working,
+.submission-page--working .track__stage--current::before {
+  color: #fff;
+  background: var(--stripes);
+  animation: working 1.1s linear infinite;
+}
+@keyframes working { to { background-position: 22.63px 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .badge--working,
+  .upload__progress,
+  .submission-page--working .track__stage--current::before { animation: none; }
+}

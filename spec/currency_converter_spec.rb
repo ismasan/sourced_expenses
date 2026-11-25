@@ -29,6 +29,7 @@ module Expenses
     let(:reviewing) do
       [cmd(E::UploadDocument, filename: 'lunch.pdf', content_type: 'application/pdf', file_ref: 'f1', filing_country: 'NL',
                               reference_date: date),
+       cmd(E::StartScan),
        cmd(E::Scanning::CompletePreparation, processed_file_ref: 'f1'),
        cmd(E::Scanning::CompleteExtraction, **extraction),
        cmd(E::Scanning::CompleteCleanup, description: 'Café Central - Lunch', tax_description: 'BTW 21%'),

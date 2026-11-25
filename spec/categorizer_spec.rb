@@ -31,7 +31,7 @@ module Expenses
 
     # Uploaded, scanned and ready to review.
     let(:reviewing) do
-      [upload,
+      [upload, cmd(Expense::StartScan),
        cmd(Expense::Scanning::CompletePreparation, processed_file_ref: 'f1'),
        cmd(Expense::Scanning::CompleteExtraction, **extraction),
        cmd(Expense::Scanning::CompleteCleanup, description: 'Uber - Trip', tax_description: nil)]

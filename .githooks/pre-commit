@@ -3,6 +3,17 @@
 # Enable once per clone: git config core.hooksPath .githooks
 git diff --cached --quiet -- system/ README.md && exit 0
 
+# Git apps (Fork, Tower...) don't load the shell's profile, so `ruby` is
+# the system's, too old for the app: put a version manager's shims first,
+# for the project's Ruby (.ruby-version).
+for shims in "$HOME/.rbenv/shims" "$HOME/.local/share/mise/shims" "$HOME/.asdf/shims"; do
+  if [ -d "$shims" ]; then
+    PATH="$shims:$PATH"
+    export PATH
+    break
+  fi
+done
+
 # With unstaged README.md edits, staging the file would sneak them into
 # this commit, so only check and let the user fix it.
 if ! git diff --quiet -- README.md; then

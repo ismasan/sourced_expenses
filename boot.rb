@@ -23,8 +23,6 @@ LOADER = Zeitwerk::Loader.new
 LOADER.inflector.inflect('ui' => 'UI', 'llm' => 'LLM')
 LOADER.push_dir(File.expand_path('system', __dir__))
 LOADER.push_dir(File.expand_path('web', __dir__))
-# Static files, served by config.ru. Not code.
-LOADER.ignore(File.expand_path('web/public', __dir__))
 LOADER.setup
 
 # Components from system/: a class there that includes

@@ -1,0 +1,65 @@
+/* ---- Statechart: Sourced::UI::Components::Statechart. Black lines on
+   white; the active state takes the page's stage colour. ---- */
+
+.machine-view { margin-bottom: 3rem; }
+.statechart {
+  display: block;
+  width: 100%;
+  max-width: calc(var(--sc-w, 100%) * 1.25);
+  margin-inline: auto;
+  height: auto;
+  font-family: var(--font);
+  font-size: 11px;
+}
+.statechart__region-box { fill: none; stroke: #9a9a9a; stroke-dasharray: 4 3; }
+.statechart__region-name { fill: var(--ink-2); font-size: 10px; font-weight: 600; }
+.statechart__region.is-inactive { opacity: 0.4; }
+.statechart__box { fill: var(--paper); stroke: var(--ink); stroke-width: 1.2; transition: fill 0.3s, stroke 0.3s; }
+.statechart__node--compound > .statechart__box { fill: none; stroke: #6b6b6b; stroke-dasharray: 6 3; }
+.statechart__final-ring { fill: none; stroke: var(--ink); }
+.statechart__label { fill: var(--ink); font-weight: 700; }
+.statechart__hint, .statechart__timer { fill: var(--ink-2); font-size: 10px; }
+.statechart__hint { font-style: italic; }
+.statechart__dot { fill: var(--ink); }
+.statechart__history { fill: var(--paper); stroke: var(--ink); stroke-width: 1.2; }
+
+.statechart__node.is-visited > .statechart__box { stroke-width: 2; }
+.statechart__node.is-active > .statechart__box { fill: var(--stage); stroke: var(--ink); stroke-width: 2; }
+.statechart__node.is-active > .statechart__label { fill: var(--stage-ink); }
+.statechart__node--compound.is-active > .statechart__box,
+.statechart__node--parallel.is-active > .statechart__box { fill: none; stroke: var(--ink); stroke-dasharray: none; stroke-width: 2; }
+.statechart__node--compound.is-active > .statechart__label,
+.statechart__node--parallel.is-active > .statechart__label { fill: var(--ink); }
+.statechart__node.is-active > .statechart__final-ring { stroke: var(--stage); stroke-width: 2; }
+
+.statechart__edge path { fill: none; stroke: #7a7a7a; stroke-width: 1.2; }
+.statechart__edge--done path { stroke-dasharray: 5 3; }
+.statechart__edge--data path,
+.statechart__edge--data_live path { stroke-dasharray: 2 3; }
+.statechart__edge.is-live path { stroke: var(--ink); stroke-width: 2; }
+.statechart__arrow { fill: #7a7a7a; }
+.statechart__arrow-live { fill: var(--ink); }
+.statechart__edge-label {
+  fill: var(--ink-2);
+  font-size: 10px;
+  paint-order: stroke;
+  stroke: var(--paper);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+.statechart__edge.is-live .statechart__edge-label { fill: var(--ink); font-weight: 800; }
+
+.legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 0.5rem 1.5rem;
+  margin: 1.5rem 0 0;
+  padding: 1rem 0 0;
+  list-style: none;
+  font-size: 0.85rem;
+  color: var(--ink-2);
+  border-top: 1px solid var(--rule);
+}
+.legend__item { display: flex; align-items: center; gap: 0.6rem; margin: 0; }
+.legend__swatch { flex: none; overflow: visible; }
+.legend__timer { font-size: 10px; font-family: var(--font); }

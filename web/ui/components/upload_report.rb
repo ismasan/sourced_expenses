@@ -8,7 +8,9 @@ module UI
     # uploaded, or uploaded before, linking to its expense); the form's
     # script one for each it skips without sending (the wrong type, too
     # big), with the same classes.
-    class UploadReport < Phlex::HTML
+    class UploadReport < Sidereal::Components::BaseComponent
+      stylesheet 'ui/components/upload_report.css', path: 'upload_report.css'
+
       ID = 'upload-report'
 
       # One file's line.

@@ -36,8 +36,9 @@ RSpec.describe 'A submission' do
     cmd(Expenses::Expense::UploadDocument, filename: 'lunch.jpg', content_type: 'image/jpeg', file_ref: jpeg, filing_country: 'NL',
                            reference_date: Date.new(2026, 8, 11))
   end
+  let(:start) { cmd(Expenses::Expense::StartScan) }
   let(:scanned) do
-    [upload, cmd(Expenses::Expense::Scanning::CompletePreparation, processed_file_ref: jpeg), cmd(Expenses::Expense::Scanning::CompleteExtraction, **extraction),
+    [upload, start, cmd(Expenses::Expense::Scanning::CompletePreparation, processed_file_ref: jpeg), cmd(Expenses::Expense::Scanning::CompleteExtraction, **extraction),
      cmd(Expenses::Expense::Scanning::CompleteCleanup, description: 'Café Central — Lunch', tax_description: 'BTW 21%')]
   end
 
@@ -89,7 +90,7 @@ RSpec.describe 'A submission' do
   end
 
   it 'shows the step, the thumbnail and the live statechart while scanning' do
-    body = at(upload)
+    body = at(upload, start)
 
     expect(body).to include('Preparing the file…', "/files/#{jpeg}/thumbnail", 'file-dialog', 'Discard')
     expect(body).not_to include('callout--attention')
@@ -97,13 +98,14 @@ RSpec.describe 'A submission' do
   end
 
   it 'has the statechart in a Diagram tab of its own' do
-    at(upload)
+    at(upload, start)
     expect(last_response.body).to include(%(href="/submissions/#{expense_id}/diagram"))
     expect(last_response.body).not_to include('class="statechart')
 
     get "/submissions/#{expense_id}/diagram"
     body = last_response.body
-    expect(body).to include('class="statechart', 'Preparing the file…', 'id="history"', "/updates/expenses.#{expense_id}")
+    expect(body).to include('class="statechart', 'Preparing the file…', 'id="history"')
+    expect(stream_channels(body)).to eq(["expenses.#{expense_id}", 'system.>'])
     expect(body).not_to include('file-dialog', '>Discard</button>')
     expect(body).to include(%(href="/submissions/#{expense_id}/diagram/at/1"))
   end
@@ -129,7 +131,7 @@ RSpec.describe 'A submission' do
   end
 
   it 'flags another country’s VAT for a closer look' do
-    expect(at(*scanned[0..1], cmd(Expenses::Expense::Scanning::CompleteExtraction, **extraction, supplier_country_code: 'DE'),
+    expect(at(*scanned[0..2], cmd(Expenses::Expense::Scanning::CompleteExtraction, **extraction, supplier_country_code: 'DE'),
               scanned.last)).to include('<strong>Foreign VAT</strong>', 'Another country’s VAT: check it closely.')
   end
 
@@ -169,6 +171,12 @@ RSpec.describe 'A submission' do
     expect(saved.payload).to have_attributes(expense_id:, net_price_cents: 2000, payment_reference: nil)
   end
 
+  it 'gives each browser a session' do
+    get "/submissions/#{expense_id}"
+
+    expect(last_request.env['rack.session']).to respond_to(:id)
+  end
+
   it 'shows a filed expense with its VAT treatment' do
     body = at(*reviewed, cmd(Expenses::Expense::SaveExpense, description: 'Lunch', net_price_cents: 2000, tax_amount_cents: 420,
                                              currency: 'EUR', incurred_on: Date.new(2026, 8, 9), supplier_country_code: 'NL'))
@@ -202,7 +210,7 @@ RSpec.describe 'A submission' do
     body = at(*scanned)
 
     expect(body).to include('id="history"', 'Live', 'document_uploaded', 'runtime.scanning', 'extraction_recorded',
-                            'description: Café Central - Lunch', 'initial → scanning')
+                            'description: Café Central - Lunch', 'initial → queued', 'queued → scanning')
     expect(body.index('text_cleaned')).to be < body.index('document_uploaded')
   end
 
@@ -216,11 +224,13 @@ RSpec.describe 'A submission' do
   it 'travels to a past step, frozen and not listening' do
     at(*scanned)
     get "/submissions/#{expense_id}/at/3"
+    expect(last_response.body).to include('Step 3 of', 'Waiting to be read…')
 
+    get "/submissions/#{expense_id}/at/4"
     body = last_response.body
     expect(last_response.status).to eq(200)
-    expect(body).to include('Step 3 of', 'Back to live', 'Preparing the file…', 'submission-page__frozen')
-    expect(body).not_to include("/updates/expenses.#{expense_id}")
+    expect(body).to include('Step 4 of', 'Back to live', 'Preparing the file…', 'submission-page__frozen')
+    expect(stream_channels(body)).to eq(%w[system.>]) # the scan queue's bar, not the expense
     expect(body).not_to include('Save expense')
   end
 
@@ -248,5 +258,19 @@ RSpec.describe 'A submission' do
 
     get "/files/#{'0' * 32}"
     expect(last_response.status).to eq(404)
+  end
+
+  it 'streams the file from disk, a byte range of it when asked' do
+    path = Sidereal.config['file_store'].read(jpeg).path
+    _status, headers, body = App.call(Rack::MockRequest.env_for("/files/#{jpeg}"))
+    # Not read into memory: the server sends it from the file.
+    expect(body.to_path).to eq(path)
+    expect(headers['content-length']).to eq(File.size(path).to_s)
+    body.close if body.respond_to?(:close)
+
+    get "/files/#{jpeg}", {}, 'HTTP_RANGE' => 'bytes=0-1'
+    expect(last_response.status).to eq(206)
+    expect(last_response.headers['content-range']).to eq("bytes 0-1/#{File.size(path)}")
+    expect(last_response.body.b).to eq("\xFF\xD8".b)
   end
 end

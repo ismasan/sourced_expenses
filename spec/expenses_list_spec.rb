@@ -74,6 +74,28 @@ RSpec.describe 'The expense lists' do
     expect(filenames(needs_you)).to eq(%w[icon.png ready.pdf review.pdf])
   end
 
+  it "shows the scan queue's bar along the bottom of every page while it's busy, live over the page's stream" do
+    bar = %r{<section id="queue-scans" class="queue-bar"([^>]*)>}
+    ['/', '/expenses'].each do |path|
+      get path
+      expect(last_response.body[bar, 1]).to include('hidden'), path
+      expect(stream_channels(last_response.body)).to eq(%w[expenses.> system.>])
+    end
+
+    q = WorkQueue
+    items = Array.new(9) { SecureRandom.hex(16) }
+    start = ->(id) { { type: Expenses::Expense::StartScan.type, payload: { expense_id: id } } }
+    queue = { queue_name: 'scans' }
+    Sourced.store.append(items.map { q::Enqueued.new(payload: { **queue, capacity: 3, item_id: it, start: start.(it) }) } +
+                         items.take(5).map { q::Started.new(payload: { **queue, item_id: it }) } +
+                         items.take(2).map { q::Released.new(payload: { **queue, item_id: it }) })
+    ['/', '/expenses'].each do |path|
+      get path
+      expect(last_response.body[bar, 1]).not_to include('hidden'), path
+      expect(last_response.body).to include('3 of 3 slots in use · 4 documents waiting')
+    end
+  end
+
   it 'leaves out the list of those being read with none' do
     submission('review.pdf', 'reviewing')
     get '/'
@@ -282,7 +304,11 @@ RSpec.describe 'The expense lists' do
                               'href="/expenses?from=2025-01-01&to=2025-12-31" aria-label="2025: 25.00 GBP, 1 expense"',
                               'style="--share: 0.4"', 'style="--share: 1.0"')
       # The year expanded stands at its own level on the years' scale: 5.00 of the biggest year's 25.00.
-      expect(body).to include('style="--months: 11; --level: 0.2"')
+      expect(body).to include('style="--months: 11; --level: 0.2; view-transition-name: month-chart-2026"')
+      # Each year's column named for the view transition that expanding one animates.
+      expect(body).to include('<li class="month-chart__year month-chart__year--compact" style="view-transition-name: month-chart-2024">',
+                              '<li class="month-chart__year month-chart__year--compact" style="view-transition-name: month-chart-2025">',
+                              '@view-transition { navigation: auto; }')
     end
 
     it 'expands the year of the month chosen, highlighted, its link going back to all dates, the dates kept for states' do

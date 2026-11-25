@@ -1,0 +1,66 @@
+.submissions__empty { font-size: 1.1rem; color: var(--ink-2); }
+.submissions__title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.6rem;
+}
+.submissions__count { font-size: 1rem; font-weight: 600; color: var(--ink-2); }
+.submissions__more { margin: 1rem 0 0; font-weight: 600; }
+.submissions__list { list-style: none; padding: 0; margin: 0; border-top: 2px solid var(--ink); }
+.submission { margin: 0; border-bottom: 1px solid var(--rule); }
+.submission__link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.3rem 1.5rem;
+  align-items: baseline;
+  padding: 0.85rem 0.9rem 0.85rem 1.1rem;
+  color: var(--ink);
+  text-decoration: none;
+  /* The stage's colour, down the row's edge. */
+  border-left: 6px solid var(--stage, var(--rule));
+}
+.submission__link:hover { background: var(--wash); }
+.submission__link:hover .submission__file { text-decoration: underline; }
+.submission__link:focus-visible { outline-offset: -3px; }
+/* Left: the status, then the file; under them, what was read or why it
+   stopped, from the same left edge as the badge. */
+.submission__head { grid-column: 1; grid-row: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.6rem; min-width: 0; }
+.submission__file { font-weight: 700; overflow-wrap: anywhere; }
+.submission__description,
+.submission__reason { grid-column: 1; grid-row: 2; font-size: 0.95rem; color: var(--ink-2); }
+/* The category after the description: chosen in ink, suggested dashed. */
+.submission__category {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+}
+.submission__category--suggested { color: var(--ink-2); border-style: dashed; border-color: var(--ink-2); }
+.submission__reason {
+  grid-column: 1 / -1;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* Right: the amount over its date, lined up row to row. */
+.submission__amount,
+.submission__date { grid-column: 2; text-align: right; white-space: nowrap; }
+.submission__amount { grid-row: 1; font-weight: 700; }
+.submission__date { grid-row: 2; font-size: 0.95rem; color: var(--ink-2); }
+/* In a list row: the file name's size, with room above and below. */
+.badge--small { padding: 0.25rem 0.55rem; font-size: inherit; line-height: 1.2; border-width: 1.5px; }
+.submission--working { --stage: var(--working); }
+.submission--yours { --stage: var(--yours); }
+.submission--problem { --stage: var(--problem); }
+.submission--done { --stage: var(--done); }
+.submission--closed { --stage: var(--rule); }
+.submission--closed .submission__file { color: var(--ink-2); font-weight: 600; }

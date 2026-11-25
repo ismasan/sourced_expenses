@@ -12,6 +12,10 @@
 #   bin/readme-diagrams          rewrite README.md
 #   bin/readme-diagrams --check  exit 1 if README.md is out of date
 
+# UTF-8 whatever the locale: git apps (Fork, Tower...) running the
+# pre-commit hook set none, and Ruby would read README.md as US-ASCII.
+Encoding.default_external = Encoding::UTF_8
+
 ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../Gemfile', __dir__)
 require 'bundler/setup'
 require_relative '../boot'

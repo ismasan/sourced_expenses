@@ -50,6 +50,7 @@ RSpec.describe 'Searching expenses' do
     let(:scanned) do
       [cmd(Expenses::Expense::UploadDocument, filename: 'receipt-0042.pdf', content_type: 'application/pdf', file_ref: 'f1',
                                               filing_country: 'NL', reference_date: date),
+       cmd(Expenses::Expense::StartScan),
        cmd(Expenses::Expense::Scanning::CompletePreparation, processed_file_ref: 'f1'),
        cmd(Expenses::Expense::Scanning::CompleteExtraction,
            document_type: 'receipt', description: 'Café Central - Lunch', total_amount: 24.2, net_amount: 20.0, tax_amount: 4.2,

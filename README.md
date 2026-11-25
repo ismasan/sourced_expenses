@@ -11,20 +11,22 @@ https://github.com/user-attachments/assets/cfff0917-b71f-42b0-8cf4-f792b5111e46
 <!-- mermaid Expenses::Expense -->
 ```mermaid
 stateDiagram-v2
-  [*] --> scanning : UploadDocument
+  [*] --> queued : UploadDocument
+  queued --> scanning : StartScan
+  queued --> discarded : DiscardDocument
   scanning --> scan_failed : after 10m / TimeOutScan
   scanning --> discarded : DiscardDocument
-  reviewing --> scanning : Rescan
+  reviewing --> queued : Rescan
   reviewing --> discarded : DiscardDocument
   reviewing --> reviewed : done
   reviewed --> filed : SaveExpense
-  reviewed --> scanning : Rescan
+  reviewed --> queued : Rescan
   reviewed --> discarded : DiscardDocument
   rejected --> reviewing : EnterManually (H)
-  rejected --> scanning : Rescan
+  rejected --> queued : Rescan
   rejected --> discarded : DiscardDocument
   scan_failed --> reviewing : EnterManually (H)
-  scan_failed --> scanning : Rescan
+  scan_failed --> queued : Rescan
   scan_failed --> discarded : DiscardDocument
   filed --> filed : SaveExpense
   filed --> voided : VoidExpense
@@ -37,6 +39,8 @@ stateDiagram-v2
 <!-- /mermaid -->
 
 `Expense::Scanning` (`system/expenses/expense/scanning.rb`) is the OCR pipeline. Each LLM step waits for the `Expenses::Scanner` worker's `Complete…` / `Fail…`; the `checking_*` states are guarded decisions.
+
+An upload or rescan waits in `queued` until the scan queue (a `WorkQueue` queue named `scans`) gives its scan a slot and appends `StartScan`, the command the expense enqueued it with, so at most 3 expenses (the queue's capacity) are in `scanning` at once, each making its model calls in turn. The scan's timeout starts with the scan, not the wait, and leaving `scanning` (or `queued`, discarded before its turn) frees the slot.
 
 <!-- mermaid Expenses::Expense scanning -->
 ```mermaid
@@ -92,6 +96,7 @@ Each is its own consumer group, so slow work never blocks the machine.
 
 | Class | Does |
 | --- | --- |
+| `WorkQueue` | Capped work queues (`system/work_queue.rb`), one per `queue_name`, each with the capacity its latest `Enqueue` gave. A caller names its queue with `WorkQueue.define` and dispatches what it builds: `Expense::ScanQueue = WorkQueue.define('scans', capacity: 3)`, enqueued with `ScanQueue.enqueue(StartScan, expense_id:)` (`.with_capacity(n)` overrides the capacity), and each expense holds its slot through every step of its scan. It records `Enqueued`, `Started`, `Released` and `Dropped`, and appends each item's start message (an expense's `StartScan`) in the same commit as its `Started`. A plain reactor (a decider may only append to its own partition), which snapshots each queue's state every 100 history messages so a claim never reads its whole history. The bar along the bottom of every page shows the scan queue from the same snapshot and history (`ScanQueue.status`), following its events. |
 | `Expenses::Scanner` | Runs each scan step against the LLM (`Expenses::ScanSteps`, prompts in `Expenses::Prompts`). Shrinks images over 500 KB with ImageMagick. |
 | `Expenses::Categorizer` | Suggests a category from `Expenses::CATEGORIES` via a [RubyLLM judgment](https://rubyllm.com/judgments/). A person's `ChooseCategory` always wins. |
 | `Expenses::CurrencyConverter` | Converts filed totals to `REPORTING_CURRENCY` at the ECB rate for the expense's date ([Frankfurter](https://frankfurter.dev)). |
@@ -121,6 +126,7 @@ Requires ImageMagick (`brew install imagemagick`). `bin/dev` reloads on change i
 | `FILING_COUNTRY` | `GB` | Decides VAT treatment |
 | `SCAN_TIMEOUT` | `10m` | Scan gives up after this |
 | `EXCHANGE_RATES_URL` | Frankfurter | Alternative Frankfurter instance |
+| `SIDEREAL_SECRET` | `storage/secret.txt`, which the first boot creates | The master secret Sidereal derives the session cookie's key and the live-updates URL signer's from. Set it (64 bytes or more, `bin/sid secret` makes one) when `storage/` doesn't survive deploys or the app runs on several machines: the same in every process and across deploys. Changing it logs everyone out |
 | `PORT`, `HOST`, `COUNT` | | Server port, host, worker processes |
 
 ## Docker
@@ -167,11 +173,11 @@ bin/sid expenses list --state reviewing --category-status suggested --json |
 | Path | |
 | --- | --- |
 | `system/` | Messages, machines, reactors, read models (no web) |
-| `web/app.rb`, `web/ui/` | Web app, pages and components |
+| `web/app.rb`, `web/ui/` | Web app, pages and components. Each page or component has its stylesheet beside it (`top_nav.rb`, `top_nav.css`); `layout.css` has the shared rules. `web/app.rb` installs them, in the order of the cascade |
 | `cli/` | The app's `bin/sid expenses …` commands |
 | `config/components/` | Components (`db`, clients…) declared with `Sidereal.config` |
 | `db/migrations/` | Sequel migrations, including Sourced's tables |
-| `storage/` | SQLite database and uploads (not committed) |
+| `storage/` | SQLite database, uploads and `secret.txt`, the app's secret unless `SIDEREAL_SECRET` is set (not committed) |
 | `.agents/skills/` | Skills for AI coding agents (`.claude/skills` links here) |
 
 Classes in `system/` and `web/` are autoloaded by Zeitwerk.

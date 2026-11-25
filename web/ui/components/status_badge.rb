@@ -3,7 +3,9 @@
 module UI
   module Components
     # A status, coloured by its stage (see UI::Status).
-    class StatusBadge < Phlex::HTML
+    class StatusBadge < Sidereal::Components::BaseComponent
+      stylesheet 'ui/components/status_badge.css', path: 'status_badge.css'
+
       # @param status [UI::Status::Info]
       def initialize(status, size: nil)
         @status = status

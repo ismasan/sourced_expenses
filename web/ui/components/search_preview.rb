@@ -5,7 +5,9 @@ module UI
     # The first few expenses matching what's typed in the search box
     # (Search), newest first, each a link to its page, and a link to the
     # list of them all. Patched into the box's pane by GET /search.
-    class SearchPreview < Phlex::HTML
+    class SearchPreview < Sidereal::Components::BaseComponent
+      stylesheet 'ui/components/search_preview.css', path: 'search_preview.css'
+
       LIMIT = 6
 
       # The first LIMIT matches for +query+, and how many there are.

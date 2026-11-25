@@ -5,33 +5,30 @@
 class App < Sidereal::App
   layout UI::Layout
 
-  dep :file_store, :thumbnails, 'expenses.filing_country' => 'filing_country'
+  dep :file_store, :thumbnails
 
   E = Expenses::Expense
 
-  # One channel per expense, so a submission's page only hears about its
-  # own. The home page listens to all of them (expenses.>).
-  channel_name do |msg|
-    expense_id = msg.payload.respond_to?(:expense_id) && msg.payload.expense_id
-    expense_id ? "expenses.#{expense_id}" : 'system'
-  end
+  # Ids are the digest of the bytes, so a file never changes under its URL.
+  IMMUTABLE = 'private, max-age=31536000, immutable'
 
-  # One file, of the one or many the upload form sends one at a time.
-  # Runs during the request, while Rack's Tempfile still exists: store the
-  # file, then hand the backend its id. Only UploadDocument is dispatched —
-  # the web command carries the Tempfile and is never stored. A file
-  # uploaded before is that expense already: nothing dispatched. The
-  # browser stays on the page: a line for the file is added to its report
-  # (UploadReport), and the home page's lists follow the new expense.
-  handle Commands::UploadFile do |cmd|
-    file = cmd.payload.file
-    document = Expenses::Upload.store(file_store, filename: file.filename, content_type: file.type, io: file.tempfile,
-                                                  filing_country:)
-    expense_id = document.payload.expense_id
-    already = Expenses::Upload.uploaded?(expense_id)
-    dispatch document unless already
-    browser.patch_elements UI::Components::UploadReport::Item.new(file.filename, already ? :already : :uploaded, expense_id),
-                           selector: "##{UI::Components::UploadReport::ID}", mode: 'append'
+  # A session per browser, so the commands it sends carry its session, and
+  # the notices they cause (a retry, a failure) show only on its pages, not
+  # on every page following the expense. The cookie's key is derived from
+  # Sidereal's master secret (SIDEREAL_SECRET, or else storage/secret.txt),
+  # read on each request, once the components are built.
+  session secret: -> { Sidereal.secrets.derive('session') }
+
+  # One channel per expense, so a submission's page only hears about its
+  # own, and one per work queue (its events), under system., which every
+  # page listens to (UI::Page::SYSTEM_CHANNELS) for the scan queue's bar.
+  channel_name do |msg|
+    queue_name = msg.payload.respond_to?(:queue_name) && msg.payload.queue_name
+    expense_id = msg.payload.respond_to?(:expense_id) && msg.payload.expense_id
+    if queue_name then "system.#{queue_name}"
+    elsif expense_id then "expenses.#{expense_id}"
+    else 'system'
+    end
   end
 
   # What a person does with a submission. The machine refuses any its
@@ -39,10 +36,29 @@ class App < Sidereal::App
   handle E::SaveExpense, E::Rescan, E::EnterManually, E::DiscardDocument, E::VoidExpense,
          E::ConfirmVatTreatment, E::ChooseCategory
 
+  # The components the pages render, for their stylesheets and the commands
+  # they handle (UploadForm's UploadFile). The layout's stylesheets come
+  # first, then these and the pages', in the order of these lines: the
+  # order of the cascade. Attention's go last, to win over the rest.
+  component UI::Components::TopNav
+  component UI::Components::Search
+  component UI::Components::SearchPreview
+  component UI::Components::StatusBadge
+  component UI::Components::UploadForm
+  component UI::Components::UploadReport
+  component UI::Components::QueueBar
+  component UI::Components::BeingRead
+  component UI::Components::SubmissionList
+  component UI::Components::HistoryFeed
+  component UI::Components::LedgerTotal
+  component UI::Components::MonthChart
+
   page UI::WelcomePage
   page UI::ExpensesPage
   page UI::SubmissionPage
   page UI::SubmissionDiagramPage
+
+  component UI::Attention
 
   # Time travel: a submission's page as it was after +step+ messages of its
   # history. Static, so nothing live replaces it. The history feed links here.
@@ -71,12 +87,12 @@ class App < Sidereal::App
   # An uploaded file as it was uploaded, for the submission page's modal.
   get '/files/:file_id' do |file_id:|
     file = stored(file_id)
-    send_file file.path, filename: file.filename
+    send_file file.path, filename: file.filename, cache_control: IMMUTABLE
   end
 
   # Its preview, for the submission page's thumbnail.
   get '/files/:file_id/thumbnail' do |file_id:|
-    send_file thumbnails.path_for(stored(file_id))
+    send_file thumbnails.path_for(stored(file_id)), cache_control: IMMUTABLE
   rescue Thumbnails::Error
     halt 404, 'No preview'
   end
@@ -99,18 +115,5 @@ class App < Sidereal::App
     file_store.read(file_id)
   rescue FileStore::NotFound
     halt 404, 'Not found'
-  end
-
-  # Ids are the digest of the bytes, so a file never changes under its URL.
-  private def send_file(path, filename: nil)
-    headers = {
-      'content-type' => Rack::Mime.mime_type(File.extname(path), 'application/octet-stream'),
-      'cache-control' => 'private, max-age=31536000, immutable',
-      'x-content-type-options' => 'nosniff'
-    }
-    headers['content-disposition'] = %(inline; filename="#{filename.gsub(/[^\w.\- ]/, '_')}") if filename
-    # Set, not added: Router#headers appends, which would keep the default text/html.
-    headers.each { |name, value| response.set_header(name, value) }
-    halt 200, File.binread(path)
   end
 end

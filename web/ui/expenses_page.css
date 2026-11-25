@@ -1,0 +1,90 @@
+/* ---- All expenses: filters in a sidebar, the list a page at a time ---- */
+
+.expenses-page__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem 2rem;
+  flex-wrap: wrap;
+  margin-bottom: 2rem;
+}
+.expenses-page__title {
+  font-size: clamp(2rem, 6vw, 3rem);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.035em;
+  margin: 0;
+}
+
+.expenses-page__body {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  gap: 2.5rem;
+  align-items: start;
+}
+@media (max-width: 48rem) { .expenses-page__body { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; } }
+/* The body is the filters' form: no gap between the sidebar and the list from BasicLayout's form spacing. */
+.expenses-page__body > * + * { margin-top: 0; }
+.filters { position: sticky; top: calc(var(--nav-h) + 1.25rem); }
+@media (max-width: 48rem) { .filters { position: static; } }
+.filters__group { margin: 0; padding: 0; border: 0; min-width: 0; }
+.filters__legend {
+  width: 100%;
+  margin-bottom: 0.4rem;
+  padding-bottom: 0.4rem;
+  font-size: 1rem;
+  font-weight: 800;
+  border-bottom: 2px solid var(--ink);
+}
+.filter {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0.45rem 0.5rem 0.45rem 0.6rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+  /* The state's stage colour, as on the list's rows. */
+  border-left: 4px solid var(--stage, var(--rule));
+}
+.filter + .filter { margin-top: 2px; }
+.filter:hover { background: var(--wash); }
+.filter:has(:checked) { font-weight: 700; background: var(--wash); }
+.filter:has(:focus-visible) { outline: 3px solid var(--ink); outline-offset: 1px; }
+.filter--working { --stage: var(--working); }
+.filter--yours { --stage: var(--yours); }
+.filter--problem { --stage: var(--problem); }
+.filter--done { --stage: var(--done); }
+.filter--closed { --stage: var(--closed); }
+.filter__count { font-size: 0.85rem; color: var(--ink-2); }
+/* Categories have no stage: a plain edge, black when ticked. */
+.filters__group + .filters__group { margin-top: 1.75rem; }
+.filter--category:has(:checked), .filter--status:has(:checked) { --stage: var(--ink); }
+.filters__clear { display: inline-block; margin-top: 0.75rem; font-size: 0.95rem; font-weight: 600; }
+.filters noscript { display: block; margin-top: 0.75rem; }
+
+.expenses-page__summary { margin: 0 0 0.6rem; font-weight: 600; color: var(--ink-2); }
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+.pager__where { color: var(--ink-2); font-size: 0.95rem; }
+.pager__link {
+  padding: 0.45rem 0.9rem;
+  font-weight: 700;
+  text-decoration: none;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+}
+.pager__link:hover { color: var(--paper); background: var(--ink); }
+.pager__link--prev::before { content: "‹ "; }
+.pager__link--next::after { content: " ›"; }
+.pager__link--disabled { opacity: 0.25; }
+.pager__link--disabled:hover { color: var(--ink); background: none; }

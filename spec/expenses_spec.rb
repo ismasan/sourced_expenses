@@ -33,9 +33,21 @@ module Expenses
         }
       end
 
-      let(:uploaded) do
-        history(cmd(UploadDocument, filename: 'lunch.jpg', content_type: 'image/jpeg', file_ref: 'uploads/lunch.jpg',
-                                    filing_country: 'NL', reference_date: today))
+      let(:upload) do
+        cmd(UploadDocument, filename: 'lunch.jpg', content_type: 'image/jpeg', file_ref: 'uploads/lunch.jpg',
+                            filing_country: 'NL', reference_date: today)
+      end
+      let(:queued) { history(upload) }
+      let(:uploaded) { history(cmd(StartScan), given: queued) }
+
+      # What the machine dispatches claiming the last state event in +history+
+      # (its entry and exit actions, and timers), as the runtime would.
+      def dispatched_entering(history)
+        *before, entered = history
+        messages = nil
+        before.reduce(with_reactor(Expense, expense_id:)) { |gwt, msg| gwt.given(msg) }
+              .when(entered).then { |result| messages = result.messages }
+        messages
       end
       let(:extracting) do
         history(cmd(Scanning::CompletePreparation, processed_file_ref: 'tmp/lunch-small.jpg', downsized: true), given: uploaded)
@@ -60,8 +72,58 @@ module Expenses
         expect(Expenses.machines.map(&:to_h)).to all(include(:states))
       end
 
+      describe 'the scan queue' do
+        let(:job) { WorkQueue.item_id(StartScan, expense_id:) }
+
+        it 'waits in queued on upload, enqueuing its scan with the capacity and the command its slot appends' do
+          expect(value(queued)).to eq(Queued)
+
+          enqueue = dispatched_entering(queued).grep(WorkQueue::Enqueue)
+          expect(enqueue.map { it.payload.to_h }).to eq(
+            [{ queue_name: 'scans', capacity: 3, item_id: job,
+               start: { type: StartScan.type, payload: { expense_id: } } }]
+          )
+        end
+
+        it 'moves on to scanning when its slot starts it, keeping the slot' do
+          expect(value(uploaded)).to eq(scanning(Scanning::Preparing))
+          expect(dispatched_entering(uploaded).grep(WorkQueue::Release)).to be_empty
+        end
+
+        it 'gives its place up when discarded before its turn' do
+          discarded = history(cmd(DiscardDocument), given: queued)
+
+          release = dispatched_entering(discarded).grep(WorkQueue::Release)
+          expect(release.map { it.payload.to_h }).to eq([{ queue_name: 'scans', item_id: job }])
+        end
+
+        it 'frees its slot leaving scanning, however it leaves' do
+          [cmd(DiscardDocument), cmd(TimeOutScan), cmd(Scanning::FailPreparation, reason: 'Corrupt file')].each do |leave|
+            left = history(leave, given: uploaded)
+            expect(dispatched_entering(left).grep(WorkQueue::Release).map { it.payload.item_id }).to eq([job]), leave.class.name
+          end
+          expect(dispatched_entering(scanned).grep(WorkQueue::Release).size).to eq(1)
+        end
+
+        it 'queues again on a rescan' do
+          rescanned = history(cmd(Rescan, reference_date: today), given: scanned)
+
+          expect(value(rescanned)).to eq(Queued)
+          expect(dispatched_entering(rescanned).grep(WorkQueue::Enqueue).size).to eq(1)
+        end
+
+        it 'ignores a StartScan that arrives once it has left the queue' do
+          discarded = history(cmd(DiscardDocument), given: queued)
+          read = Sourced::ReadResult.new(messages: discarded,
+                                         guard: Sourced::ConsistencyGuard.new(selector: Sourced::Selector::NONE, last_position: 0))
+          pairs = Expense.handle_batch({ expense_id: }, [cmd(StartScan)], history: read, replaying: false)
+
+          expect(pairs.flat_map { |actions, _| Array(actions) }).to all(be_a(Sourced::Actions::Ack))
+        end
+      end
+
       describe 'scanning' do
-        it 'starts preparing the file on upload, with the reference date for the scan' do
+        it 'starts preparing the file once it has a scanning slot, with the reference date for the scan' do
           doc = expense(uploaded).context
 
           expect(value(uploaded)).to eq(scanning(Scanning::Preparing))
@@ -205,7 +267,7 @@ module Expenses
         end
 
         it 'starts over on a rescan, forgetting the last scan' do
-          rescanned = history(cmd(Rescan, reference_date: Date.new(2026, 9, 1)), given: scanned)
+          rescanned = history(cmd(Rescan, reference_date: Date.new(2026, 9, 1)), cmd(StartScan), given: scanned)
           doc = expense(rescanned).context
 
           expect(value(rescanned)).to eq(scanning(Scanning::Preparing))
@@ -251,7 +313,7 @@ module Expenses
         end
 
         it 'forgets the last scan’s form on a rescan, so a failed one suggests nothing' do
-          by_hand = history(cmd(Rescan, reference_date: today), cmd(Scanning::FailPreparation, reason: 'Corrupt file'),
+          by_hand = history(cmd(Rescan, reference_date: today), cmd(StartScan), cmd(Scanning::FailPreparation, reason: 'Corrupt file'),
                             cmd(EnterManually), given: scanned)
 
           expect(expense(by_hand).context.draft).to eq({})
@@ -297,7 +359,7 @@ module Expenses
 
         describe 'scanned again' do
           def scan_again(given)
-            history(cmd(Rescan, reference_date: today),
+            history(cmd(Rescan, reference_date: today), cmd(StartScan),
                     cmd(Scanning::CompletePreparation, processed_file_ref: 'tmp/lunch-small.jpg'),
                     cmd(Scanning::CompleteExtraction, **extraction),
                     cmd(Scanning::CompleteCleanup, description: 'Café Central - Lunch', tax_description: 'BTW 21%'), given:)

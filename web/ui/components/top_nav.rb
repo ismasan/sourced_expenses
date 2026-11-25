@@ -7,6 +7,8 @@ module UI
     # screen the links fold into a menu the button opens; _menu is a local
     # signal, never sent to the server.
     class TopNav < Sidereal::Components::BaseComponent
+      stylesheet 'ui/components/top_nav.css', path: 'top_nav.css'
+
       LINKS = [
         ['All expenses', '/expenses'],
         ['Sourced dashboard', '/sourced']

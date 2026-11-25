@@ -21,7 +21,9 @@ module UI
   # YYYY-MM-DD is a 400. A blank date or search is none. Any range works, though the
   # chart only makes whole months and years. The layout puts the params in the params
   # signal, so a live re-render keeps them.
-  class ExpensesPage < Sidereal::Page
+  class ExpensesPage < Page
+    stylesheet 'ui/expenses_page.css', path: 'expenses_page.css'
+
     path '/expenses'
 
     PER_PAGE = 25
@@ -42,7 +44,7 @@ module UI
 
     on Expenses::Submissions::Projected, Expenses::Ledger::Projected
 
-    def channel_name = 'expenses.>'
+    def channel_names = ['expenses.>', *SYSTEM_CHANNELS]
 
     # The list's URL for +states+, +categories+, +category_statuses+,
     # +vat_statuses+, +search+, the dates +from+ and +to+, and +page+.
@@ -113,8 +115,22 @@ module UI
       @month_totals = month_totals
     end
 
+    # Going from the list to the list again (a year expanded, a filter, a
+    # page) is a view transition, where browsers have them: the chart's
+    # years animate to their new widths (month_chart.css), and the rest
+    # changes at once. Only here, not in a stylesheet: a transition takes
+    # both pages opting in, so links to and from other pages stay instant.
+    # Not for anyone who'd rather have less motion.
+    VIEW_TRANSITIONS = <<~CSS
+      @media (prefers-reduced-motion: no-preference) {
+        @view-transition { navigation: auto; }
+      }
+      ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+    CSS
+
     def view_template
       div(id: 'expenses-page', class: 'expenses-page') do
+        style { raw safe(VIEW_TRANSITIONS) }
         header(class: 'expenses-page__header') do
           h1(class: 'expenses-page__title') { 'All expenses' }
           render Components::LedgerTotal.new(@ledger_total, categories: @categories, search: @search)

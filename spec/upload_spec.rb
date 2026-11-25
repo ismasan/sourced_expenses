@@ -62,8 +62,19 @@ RSpec.describe 'Uploading a document' do
     get '/'
 
     expect(last_response.body).to include('type="file"', 'name="command[payload][file]"', 'multiple',
-                                          'data-on:submit__prevent="(async () =>', 'id="upload-report"')
+                                          'data-on:submit__prevent="uploadFiles(el, {', 'id="upload-report"')
     expect(last_response.body).not_to include("data-on:submit=\"@post")
+  end
+
+  it "links the upload's script, which declares only the function the form calls" do
+    get '/'
+    src = last_response.body[%r{<script type="module" src="(/_assets/ui/components/upload_form-1-\w+\.js)"}, 1]
+    expect(src).not_to be_nil
+
+    get src
+    expect(last_response.status).to eq(200)
+    # Nothing else at the top level: in production, every script shares one module.
+    expect(last_response.body.lines.grep(/\A\S/).map(&:strip)).to eq(['window.uploadFiles = async function (form, signals) {', '};'])
   end
 
   it 'refuses a file type it cannot scan' do

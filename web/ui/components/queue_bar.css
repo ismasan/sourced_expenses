@@ -1,0 +1,75 @@
+/* The scan queue's bar, along the bottom of every page while it's busy
+   (UI::Components::QueueBar): a segment per document. The queue's slots
+   first, striped while a document scans in one and empty while free; then,
+   past a rule, the documents waiting for a slot, pale: the scan has them,
+   but they aren't moving yet. */
+.queue-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 15;
+  padding: 0.6rem max(1.25rem, env(safe-area-inset-right, 0px)) calc(0.6rem + env(safe-area-inset-bottom, 0px))
+    max(1.25rem, env(safe-area-inset-left, 0px));
+  background: var(--paper);
+  border-top: 2px solid var(--ink);
+}
+.queue-bar[hidden] { display: none; }
+/* Beside the history column, not over it. */
+@media (min-width: 75rem) { body:has(.history) .queue-bar { right: 24rem; } }
+.queue-bar__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 1.25rem;
+  max-width: 51.5rem; /* the page's text: .page's 54rem, less its padding */
+  margin: 0 auto;
+}
+.queue-bar__summary { margin: 0; font-size: 0.95rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.queue-bar__title { color: var(--ink); font-weight: 800; }
+.queue-bar__track {
+  display: flex;
+  flex: 1 1 14rem;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+.queue-bar__slots,
+.queue-bar__waiting { display: flex; flex-basis: 0; gap: 3px; min-width: 0; }
+.queue-bar__waiting { padding-left: 0.6rem; border-left: 2px solid var(--ink); }
+.queue-bar__segment {
+  flex: 1 1 0;
+  min-width: 3px;
+  height: 1.1rem;
+  border: 2px solid var(--ink);
+  border-radius: 2px;
+}
+.queue-bar__segment--running {
+  border-color: var(--working);
+  background: var(--stripes);
+  animation: working 1.1s linear infinite;
+}
+.queue-bar__segment--waiting {
+  border-color: color-mix(in srgb, var(--working) 45%, var(--paper));
+  background: color-mix(in srgb, var(--working) 14%, var(--paper));
+}
+.queue-bar__more { font-size: 0.85rem; font-weight: 700; color: var(--ink-2); white-space: nowrap; }
+.queue-bar__segment { transition: background-color 0.3s ease, border-color 0.3s ease; }
+
+/* All done (the queue went idle as the bar watched): the slots turn green,
+   it stays a few seconds, then slides down and fades out, and stays gone.
+   New work removes the class, so the bar is back at once. */
+.queue-bar--done { animation: queue-bar-leave 0.6s ease-in 3s forwards; }
+.queue-bar__done { color: var(--done); font-weight: 700; }
+.queue-bar__segment--done { border-color: var(--done); background: var(--done); }
+@keyframes queue-bar-leave {
+  to { transform: translateY(100%); opacity: 0; visibility: hidden; }
+}
+@keyframes queue-bar-fade {
+  to { opacity: 0; visibility: hidden; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .queue-bar__segment--running { animation: none; }
+  .queue-bar__segment { transition: none; }
+  .queue-bar--done { animation-name: queue-bar-fade; }
+}

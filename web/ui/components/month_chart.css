@@ -1,0 +1,166 @@
+/* Filed per month (UI::Components::MonthChart), and the list's date filter:
+   a black bar a month on a hairline baseline, its total on top, and under
+   each year's months a band as wide as they are. Columns are a fixed
+   width, so many months scroll sideways rather than squeeze; few stretch
+   to fill, each year by its share of the months. Each column is a link to
+   its month and the whole column is the hit target; the exact figure shows
+   on hover or focus, in the room left above the plot (a scroller clips
+   what's outside it). The month or year chosen sits on a wash. */
+.month-chart { margin: 0 0 2rem; }
+.month-chart__head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.month-chart__title { margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--ink-2); }
+.month-chart__all { font-size: 0.95rem; font-weight: 600; }
+.month-chart__years {
+  position: relative; /* what the months' and bands' offsets are from */
+  display: flex;
+  margin: 0;
+  padding: 2.4rem 0 0.25rem;
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.month-chart__year { display: flex; flex-direction: column; flex: var(--months) 0 calc(var(--months) * 2.75rem); min-width: 0; }
+.month-chart__months { display: flex; margin: 0; padding: 0; list-style: none; }
+/* Not BasicLayout's space under every li: the bands would sit lower under months. */
+.month-chart li { margin: 0; }
+.month-chart__month { flex: 1 0 2.75rem; min-width: 0; }
+/* The year expanded has a thin line across it as high as its year bar
+   would be: drawn on each month's plot, it runs across the year unbroken.
+   Its months fit under the line with their figures, the biggest just
+   reaching it (--share is of the biggest month); in a year too small for
+   that, bars bottom out at 2px. */
+.month-chart__year[data-expanded] .month-chart__plot {
+  --top: calc(var(--level) * (100% - 1.2rem));
+  background: linear-gradient(to top, transparent var(--top), #bdbdbd var(--top), #bdbdbd calc(var(--top) + 1px), transparent calc(var(--top) + 1px));
+}
+.month-chart__year[data-expanded] .month-chart__bar { height: max(2px, calc(var(--share) * (var(--top) - 1.4rem))); }
+/* Another year, as one column: wide enough for its name, a grey bar on
+   the years' scale. */
+.month-chart__year--compact { flex: 1 0 3.5rem; }
+.month-chart__link--year .month-chart__bar { background: #9b9b9b; }
+.month-chart__link--year:hover .month-chart__bar,
+.month-chart__link--year:focus-visible .month-chart__bar { background: var(--ink-2); }
+.month-chart__link--year .month-chart__band { align-self: stretch; text-align: center; }
+.month-chart__link--year .month-chart__band-label { position: static; }
+.month-chart__link--year:hover .month-chart__band,
+.month-chart__link--year:focus-visible .month-chart__band { color: var(--ink); border-top-color: var(--ink); }
+.month-chart__link {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: var(--ink);
+  text-decoration: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.month-chart__plot {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  align-self: stretch;
+  height: 9rem;
+  border-bottom: 1px solid var(--rule);
+}
+.month-chart__value {
+  margin-bottom: 0.2rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+/* The tallest bar fills what the value above it leaves. */
+.month-chart__bar {
+  width: 24px;
+  height: calc(var(--share) * (100% - 1.2rem));
+  min-height: 2px;
+  background: var(--ink);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.month-chart__label {
+  display: block;
+  min-height: 1.6rem;
+  box-sizing: border-box;
+  padding: 0.35rem 0 0.25rem;
+  font-size: 0.8rem;
+  line-height: 1.25;
+  color: var(--ink-2);
+}
+.month-chart__link:hover .month-chart__bar,
+.month-chart__link:focus-visible .month-chart__bar { background: var(--ink-2); }
+.month-chart__link:hover .month-chart__label,
+.month-chart__link:focus-visible .month-chart__label { color: var(--ink); }
+.month-chart__link:focus-visible { outline-offset: -3px; }
+.month-chart__link--chosen { background: var(--wash); }
+.month-chart__link--chosen .month-chart__plot { border-bottom: 2px solid var(--ink); }
+.month-chart__link--chosen .month-chart__label { font-weight: 800; color: var(--ink); }
+.month-chart__tip {
+  position: absolute;
+  bottom: calc(100% + 0.3rem);
+  left: 50%;
+  z-index: 5;
+  display: none;
+  transform: translateX(-50%);
+  padding: 0.35rem 0.55rem;
+  font-size: 0.85rem;
+  line-height: 1.35;
+  white-space: nowrap;
+  color: var(--paper);
+  background: var(--ink);
+  border-radius: var(--radius);
+  pointer-events: none;
+}
+/* The end columns' tips stay inside the strip. */
+.month-chart__year:first-child :is(.month-chart__month:first-child, .month-chart__link--year) .month-chart__tip { left: 0; transform: none; }
+.month-chart__year:last-child :is(.month-chart__month:last-child, .month-chart__link--year) .month-chart__tip { left: auto; right: 0; transform: none; }
+/* A year's band: a rule across its months, 2px of paper between years,
+   its label kept at the strip's left edge while the year is in view. */
+.month-chart__band {
+  display: block;
+  margin: 0.15rem 1px 0;
+  padding: 0.3rem 0 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--ink-2);
+  text-decoration: none;
+  border-top: 2px solid var(--rule);
+}
+.month-chart__band-label { position: sticky; left: 0; display: inline-block; padding: 0 0.5rem; }
+.month-chart__band:hover,
+.month-chart__band:focus-visible { color: var(--ink); border-top-color: var(--ink); }
+.month-chart__band:focus-visible { outline-offset: -3px; }
+.month-chart__band--chosen { color: var(--ink); font-weight: 800; background: var(--wash); border-top-color: var(--ink); }
+.month-chart__link:hover .month-chart__tip,
+.month-chart__link:focus-visible .month-chart__tip { display: block; }
+
+/* Expanding a year, a link to the list in its dates (a new page), is
+   animated where browsers have cross-document view transitions, which
+   ExpensesPage opts into. Each year's column has a name of its own
+   (month-chart-2024, MonthChart#transition_name), so it grows or shrinks
+   to its new width and slides to its new place. The strip is their group,
+   so they stay clipped to it, as it scrolls. Each column's old and new
+   pictures keep their size, pinned to its bottom left, so the months are
+   uncovered as the column widens, not stretched into it. */
+.month-chart__years { view-transition-name: month-chart-years; view-transition-group: contain; }
+.month-chart__year { view-transition-class: month-chart-year; }
+::view-transition-group(month-chart-years) { overflow: clip; }
+::view-transition-group(.month-chart-year) {
+  animation-duration: 0.4s;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+::view-transition-image-pair(.month-chart-year) { overflow: clip; }
+::view-transition-old(.month-chart-year),
+::view-transition-new(.month-chart-year) {
+  height: 100%;
+  object-fit: none;
+  object-position: left bottom;
+}
+/* The old picture fades into the new one in the first half of the move,
+   not all of it, so the two blur into each other as briefly as can be.
+   The same duration and easing both ways, so a year that's unchanged
+   (the same picture, old and new) stays solid throughout. */
+::view-transition-old(.month-chart-year) { animation: month-chart-fade-out 0.2s ease both; }
+::view-transition-new(.month-chart-year) { animation: month-chart-fade-in 0.2s ease both; }
+@keyframes month-chart-fade-out { to { opacity: 0; } }
+@keyframes month-chart-fade-in { from { opacity: 0; } }

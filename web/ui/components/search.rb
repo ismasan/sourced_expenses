@@ -15,7 +15,9 @@ module UI
     # Outside the page's element, so a live re-render of the page never
     # clears what's typed. Its signal is local (_q): never sent to the
     # server, so the query goes in the URL.
-    class Search < Phlex::HTML
+    class Search < Sidereal::Components::BaseComponent
+      stylesheet 'ui/components/search.css', path: 'search.css'
+
       # How long typing pauses before the preview is fetched.
       DEBOUNCE = '200ms'
 

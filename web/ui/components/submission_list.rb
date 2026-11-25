@@ -5,7 +5,9 @@ module UI
     # Uploads and where each one is: its status, what the scan read, or why
     # it stopped. Rows are Expenses::Submissions::Row, in the order given.
     # Each row's edge and badge are in its stage's colour (see UI::Status).
-    class SubmissionList < Phlex::HTML
+    class SubmissionList < Sidereal::Components::BaseComponent
+      stylesheet 'ui/components/submission_list.css', path: 'submission_list.css'
+
       def initialize(rows)
         @rows = rows
       end

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 #
 # The app in one image: Falcon serving it on port 9292, its SQLite database
-# and uploads in /app/storage (mount a volume there to keep them).
+# uploads and secret (storage/secret.txt) in /app/storage (mount a volume there to keep them).
 #
 #   docker build -t sourced-expenses .
 #   docker run --rm -p 9292:9292 --env-file .env -v sourced-expenses:/app/storage sourced-expenses

@@ -1,0 +1,102 @@
+/* ---- History: below the page on smaller screens, a full-height column
+   on the right from 75rem. Neutral throughout: the colours are the stages'. ---- */
+
+@media (min-width: 75rem) { body:has(.history) { padding-right: 24rem; } }
+.history {
+  display: flex;
+  flex-direction: column;
+  margin: 2rem -1.25rem -6rem;
+  background: var(--wash);
+  border-top: 2px solid var(--ink);
+}
+@media (min-width: 75rem) {
+  .history {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 24rem;
+    height: 100vh;
+    margin: 0;
+    border-top: 0;
+    border-left: 1px solid var(--rule);
+  }
+}
+.history__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.1rem 0.35rem;
+}
+.history__title { font-size: 1.2rem; font-weight: 800; margin: 0; }
+.history__pager { display: flex; gap: 0.4rem; }
+.history__arrow {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  color: var(--ink);
+  text-decoration: none;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+}
+.history__arrow:hover { background: var(--ink); color: #fff; }
+.history__arrow--disabled { opacity: 0.25; }
+.history__status {
+  margin: 0;
+  padding: 0 1.1rem 0.85rem;
+  font-size: 0.85rem;
+  color: var(--ink-2);
+  border-bottom: 1px solid var(--rule);
+}
+.history__live { font-weight: 700; color: var(--ink); }
+.history__live::before {
+  content: "";
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.35rem;
+  vertical-align: 0.1em;
+  background: var(--ink);
+  border-radius: 50%;
+}
+.history__empty { padding: 1.1rem; color: var(--ink-2); font-size: 0.9rem; }
+.history__items {
+  flex: 1;
+  max-height: 70vh;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem 0.6rem 2rem;
+}
+@media (min-width: 75rem) { .history__items { max-height: none; } }
+.history__item { margin: 0; }
+.history__link {
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr) auto;
+  gap: 0.6rem;
+  align-items: start;
+  padding: 0.5rem;
+  color: var(--ink);
+  text-decoration: none;
+  border-radius: var(--radius);
+}
+.history__link:hover { background: var(--paper); }
+.history__link:focus-visible { outline-offset: -3px; }
+.history__item.is-current .history__link { color: #fff; background: var(--ink); }
+.history__item.is-current .history__kind,
+.history__item.is-current .history__payload,
+.history__item.is-current .history__step,
+.history__item.is-current .history__time { color: #d9d9d9; }
+.history__item.is-future { opacity: 0.4; }
+.history__step { font-size: 0.8rem; color: var(--ink-2); text-align: right; }
+.history__body { display: grid; min-width: 0; }
+.history__type { font-size: 0.9rem; font-weight: 700; overflow-wrap: anywhere; }
+/* What kind of message, as a word in front: commands are what someone or
+   something asked for; checkpoints move the machine; data only records. */
+.history__kind { display: block; font-size: 0.78rem; font-weight: 500; color: var(--ink-2); }
+.history__item--checkpoint .history__kind::before { content: "◆ "; }
+.history__item--command .history__kind::before { content: "▶ "; }
+.history__about { margin-right: 0.4rem; }
+.history__payload { font-size: 0.8rem; color: var(--ink-2); overflow-wrap: anywhere; }
+.history__time { font-size: 0.75rem; color: var(--ink-2); }

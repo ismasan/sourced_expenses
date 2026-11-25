@@ -21,7 +21,8 @@ module Expenses
 
     let(:uploaded) do
       decided(Expense, { expense_id: }, cmd(Expense::UploadDocument, filename: 'lunch.pdf', content_type: 'application/pdf',
-                                                                     file_ref: 'f1', filing_country: 'NL'))
+                                                                     file_ref: 'f1', filing_country: 'NL'),
+              cmd(Expense::StartScan))
     end
 
     it 'deletes every row when its group is reset, to build them again' do
@@ -96,7 +97,7 @@ module Expenses
       it 'takes a person’s treatment for good, through a rescan' do
         confirmed = after(cmd(Expense::Scanning::CompleteCleanup, description: 'Café - Lunch', tax_description: nil),
                           cmd(Expense::ConfirmVatTreatment, treatment: 'import'), given: read)
-        rescanned = after(cmd(Expense::Rescan), cmd(Expense::Scanning::CompletePreparation, processed_file_ref: 'f1'),
+        rescanned = after(cmd(Expense::Rescan), cmd(Expense::StartScan), cmd(Expense::Scanning::CompletePreparation, processed_file_ref: 'f1'),
                           cmd(Expense::Scanning::CompleteExtraction, **extraction), given: confirmed)
         project(uploaded, confirmed - uploaded, rescanned - confirmed)
 

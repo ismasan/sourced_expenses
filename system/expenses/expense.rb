@@ -5,16 +5,16 @@ require 'date'
 module Expenses
   # One uploaded receipt or invoice, from the upload to a filed expense.
   #
-  #   initial ─UploadDocument─▶ scanning ──on_final scanned─────────▶ reviewing ─done─▶ reviewed ─SaveExpense─▶ filed ⟲ SaveExpense
-  #                             (Scanning) ├on_final not_an_invoice─▶ rejected
-  #                                        ├on_final failed─────────▶ scan_failed
-  #                                        └after 10m: TimeOutScan──▶ scan_failed
+  #   initial ─UploadDocument─▶ queued ─StartScan─▶ scanning ──on_final scanned─────────▶ reviewing ─done─▶ reviewed ─SaveExpense─▶ filed ⟲ SaveExpense
+  #                                                (Scanning) ├on_final not_an_invoice─▶ rejected
+  #                                                           ├on_final failed─────────▶ scan_failed
+  #                                                           └after 10m: TimeOutScan──▶ scan_failed
   #
   #   reviewing:  category  ─ChooseCategory──────▶ category_confirmed
   #               vat       ─ConfirmVatTreatment─▶ vat_confirmed
   #
   #   rejected, scan_failed ─EnterManually─▶ reviewing
-  #   reviewing, reviewed, rejected, scan_failed ─Rescan─▶ scanning
+  #   reviewing, reviewed, rejected, scan_failed ─Rescan─▶ queued
   #   filed ─VoidExpense─▶ voided;  anything before filed ─DiscardDocument─▶ discarded
   #   reviewing, reviewed, filed ⟲ SuggestCategory | FailCategorization | ChooseCategory | ConfirmVatTreatment
   #
@@ -29,6 +29,11 @@ module Expenses
     partition_by expense_id: Types::ExpenseID
     message_prefix 'expenses'
 
+    # The queue scans wait in (see Queued), 3 expenses scanning at once. Each
+    # scan makes up to four model calls, one after another, so this caps the
+    # model calls in flight for scanning.
+    ScanQueue = WorkQueue.define('scans', capacity: 3)
+
     # How long a scan may take, every LLM call and its retries included,
     # before it's given up on.
     SCAN_TIMEOUT = ENV.fetch('SCAN_TIMEOUT', '10m')
@@ -38,6 +43,7 @@ module Expenses
 
     # ---- States ----
 
+    Queued = State(:queued)
     Reviewing = State(:reviewing)
     CategoryConfirmed = State(:category_confirmed)
     VatConfirmed = State(:vat_confirmed)
@@ -67,6 +73,10 @@ module Expenses
     Rescan = Command(:rescan) do
       attribute :reference_date, Types::Date.default { Date.today }
     end
+
+    # Appended by ScanQueue when the expense's scan gets a slot: what Queued
+    # enqueued it as. Never sent by a person.
+    StartScan = Command(:start_scan)
 
     # Dispatched by scanning's timer, never by a person.
     TimeOutScan = Command(:time_out_scan)
@@ -259,23 +269,48 @@ module Expenses
     end
 
     RESCAN = proc do
-      command Rescan => Scanning do |_doc, cmd|
+      command Rescan => Queued do |_doc, cmd|
         event ScanRequested, reference_date: cmd.payload.reference_date
       end
     end
 
     initial do
-      command UploadDocument => Scanning do |_doc, cmd|
+      command UploadDocument => Queued do |_doc, cmd|
         event DocumentUploaded, cmd.payload.to_h.slice(:filename, :content_type, :file_ref, :filing_country)
         event ScanRequested, reference_date: cmd.payload.reference_date
       end
     end
 
-    # The progress a person waiting sees is the step scanning is at.
+    # Waiting for a slot to scan in: ScanQueue lets its capacity of expenses scan
+    # at once, and appends StartScan when it's this one's turn. Discarded before
+    # its turn, it gives its place up. The slot is held through every step of
+    # the scan, until it leaves Scanning.
+    state Queued do
+      entry WorkQueue::Enqueue do |_doc, entered|
+        dispatch ScanQueue.enqueue(StartScan, expense_id: entered.payload.expense_id)
+      end
+
+      exit WorkQueue::Release | nil do |_doc, left_by|
+        next if left_by.payload.entered.include?('scanning')
+
+        dispatch ScanQueue.release(StartScan, expense_id: left_by.payload.expense_id)
+      end
+
+      command StartScan => Scanning
+      command DiscardDocument => Discarded
+    end
+
+    # The progress a person waiting sees is the step scanning is at. The
+    # timeout runs from when its slot started it, not from the wait. Leaving
+    # it, however, frees the slot.
     state Scanning do
       on_final Scanning::Scanned => Reviewing.history,
                Scanning::NotAnInvoice => Rejected,
                Scanning::Failed => ScanFailed
+
+      exit WorkQueue::Release do |_doc, left_by|
+        dispatch ScanQueue.release(StartScan, expense_id: left_by.payload.expense_id)
+      end
 
       after(SCAN_TIMEOUT => TimeOutScan)
 
