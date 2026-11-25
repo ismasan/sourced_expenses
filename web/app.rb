@@ -9,6 +9,9 @@ class App < Sidereal::App
 
   E = Expenses::Expense
 
+  # Ids are the digest of the bytes, so a file never changes under its URL.
+  IMMUTABLE = 'private, max-age=31536000, immutable'
+
   # A session per browser, so the commands it sends carry its session, and
   # the notices they cause (a retry, a failure) show only on its pages, not
   # on every page following the expense. The cookie's key is derived from
@@ -84,12 +87,12 @@ class App < Sidereal::App
   # An uploaded file as it was uploaded, for the submission page's modal.
   get '/files/:file_id' do |file_id:|
     file = stored(file_id)
-    send_file file.path, filename: file.filename
+    send_file file.path, filename: file.filename, cache_control: IMMUTABLE
   end
 
   # Its preview, for the submission page's thumbnail.
   get '/files/:file_id/thumbnail' do |file_id:|
-    send_file thumbnails.path_for(stored(file_id))
+    send_file thumbnails.path_for(stored(file_id)), cache_control: IMMUTABLE
   rescue Thumbnails::Error
     halt 404, 'No preview'
   end
@@ -112,20 +115,5 @@ class App < Sidereal::App
     file_store.read(file_id)
   rescue FileStore::NotFound
     halt 404, 'Not found'
-  end
-
-  # The file at +path+, as Rack::Files serves it: streamed from disk, not
-  # read into memory (its body answers to_path, which Falcon sends from the
-  # file), with its content-type and -length, and a byte range when one is
-  # asked for (a PDF viewer's 206s), HEAD and If-Modified-Since too. Ids are
-  # the digest of the bytes, so a file never changes under its URL.
-  private def send_file(path, filename: nil)
-    status, headers, body = Rack::Files.new(File.dirname(path), {}, 'application/octet-stream').serving(request, path)
-    headers['cache-control'] = 'private, max-age=31536000, immutable'
-    headers['x-content-type-options'] = 'nosniff'
-    headers['content-disposition'] = %(inline; filename="#{filename.gsub(/[^\w.\- ]/, '_')}") if filename
-    # Set, not added: Router#headers appends, which would keep the default text/html.
-    headers.each { |name, value| response.set_header(name, value) }
-    halt status, body
   end
 end

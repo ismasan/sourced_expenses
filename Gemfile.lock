@@ -1,6 +1,6 @@
 GIT
   remote: https://github.com/ismasan/sidereal.git
-  revision: 115fc890bcd75e0df2f8fcadfae7348c208bc0d8
+  revision: fe7d2d9fd2cb40804e87aeee20fb41ad76a2b46d
   specs:
     sidereal (0.1.0)
       async
