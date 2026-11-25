@@ -2,37 +2,52 @@
 
 module UI
   module Components
-    # The home page's list: the uploads waiting for a person, newest first.
-    # Re-rendered by its id whenever the read model commits.
+    # The home page's list of what's waiting for a person, newest first:
+    # expenses to review or file, then documents that couldn't be read,
+    # to fill in by hand, scan again or discard. Re-rendered by its id
+    # whenever either read model commits.
     class NeedsYou < Phlex::HTML
-      # @param rows [Array<Expenses::Submissions::Row>] the latest of them
-      # @param total [Integer] how many there are in all
-      def initialize(rows, total)
-        @rows = rows
-        @total = total
+      PER_PAGE = 50
+
+      def self.load(db = Sidereal.config['db'])
+        new(Expenses::ExpenseList.page(db, states: Expenses::ExpenseList::NEEDS_YOU, per_page: PER_PAGE),
+            Expenses::DocumentList.page(db, states: Expenses::DocumentList::NEEDS_YOU, per_page: PER_PAGE))
+      end
+
+      # @param expenses [Array(Array<Expenses::ExpenseList::Row>, Integer)] the latest, and how many in all
+      # @param documents [Array(Array<Expenses::DocumentList::Row>, Integer)] the latest, and how many in all
+      def initialize(expenses = [[], 0], documents = [[], 0])
+        @expenses, @expenses_total = expenses
+        @documents, @documents_total = documents
       end
 
       def view_template
         section(id: 'needs-you', class: 'submissions', aria: { labelledby: 'needs-you-title' }) do
           h2(id: 'needs-you-title', class: 'submissions__title') do
             plain 'Needs you'
-            span(class: 'submissions__count') { @total.to_s }
+            span(class: 'submissions__count') { (@expenses_total + @documents_total).to_s }
           end
 
-          if @rows.empty?
+          if @expenses.empty? && @documents.empty?
             p(class: 'submissions__empty') do
-              plain 'Nothing needs you right now. Drop receipts above, or '
+              plain 'Nothing needs you right now. Drop receipts above, '
+              a(href: NewExpensePage.path) { 'add an expense by hand' }
+              plain ', or '
               a(href: '/expenses') { 'see all expenses' }
               plain '.'
             end
             next
           end
 
-          render SubmissionList.new(@rows)
-          if @total > @rows.size
+          render ExpenseRows.new(@expenses) if @expenses.any?
+          if @expenses_total > @expenses.size
             p(class: 'submissions__more') do
-              a(href: ExpensesPage.path_for(states: Expenses::Submissions::NEEDS_YOU)) { "See all #{@total}" }
+              a(href: ExpensesPage.path_for(states: Expenses::ExpenseList::NEEDS_YOU)) { "See all #{@expenses_total}" }
             end
+          end
+          if @documents.any?
+            h3(class: 'submissions__subtitle') { 'Couldn’t be read' }
+            render DocumentRows.new(@documents)
           end
         end
       end

@@ -4,13 +4,13 @@ require 'date'
 require 'tmpdir'
 
 module Expenses
-  # What each of Expense::Scanning's waiting states asks for: the work
-  # Expenses::Scanner does when an expense enters one. Each step takes the
-  # expense's Document and returns the payload of the step's Complete…
+  # What each of Document::Scanning's waiting states asks for: the work
+  # Expenses::Scanner does when a document enters one. Each step takes the
+  # document's DocumentState and returns the payload of the step's Complete…
   # command, or raises Error with a reason fit to show a person.
   #
   # The decisions between the steps aren't here: they're the chart's, over
-  # Document.
+  # DocumentState.
   class ScanSteps
     Error = Class.new(StandardError)
 
@@ -45,7 +45,7 @@ module Expenses
           .gsub('%{today}', today),
         file: processed_path(doc)
       )
-      answer.slice(*Expense::Scanning::EXTRACTION.keys)
+      answer.slice(*Document::Scanning::EXTRACTION.keys)
     end
 
     # verifying: told what looked wrong, is this a receipt at all?
@@ -65,7 +65,7 @@ module Expenses
     end
 
     # rechecking_date: the date alone, with the first reading offered up as
-    # suspect. Whether its answer replaces the first is Document's call.
+    # suspect. Whether its answer replaces the first is DocumentState's call.
     def recheck_date(doc)
       previous = doc.extracted_date
       instructions = Prompts::DATE_RECHECK_PROMPT

@@ -17,10 +17,17 @@ module Types
   # blank string or nil is nil; anything else fails to resolve.
   ISODate = Plumb::Codec::Forms >> Date.nullable
 
-  # An expense's id: the MD5 digest of its document's bytes, as the file
+  # An uploaded document's id: the MD5 digest of its bytes, as the file
   # store keys it (32 lowercase hex characters). The same file is the same
-  # expense, so uploading it again changes nothing.
-  ExpenseID = String[/\A[0-9a-f]{32}\z/]
+  # document, so uploading it again changes nothing.
+  DocumentID = String[/\A[0-9a-f]{32}\z/]
+
+  # An expense's id, whatever made it: letters, digits, _ and -, up to 64,
+  # so it's safe in a URL and a channel name. Its source picks it, and the
+  # same id is the same expense, so making it again changes nothing: one
+  # drafted from a document has the document's id, one entered by hand the
+  # UUID its form was rendered with.
+  ExpenseID = String[/\A[A-Za-z0-9][A-Za-z0-9_-]{0,63}\z/]
 
   # +value+ as a Date, or nil if it isn't an ISO 8601 date.
   def self.iso_date(value)

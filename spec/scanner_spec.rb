@@ -6,12 +6,13 @@ module Expenses
   RSpec.describe Scanner do
     include Sourced::Testing::RSpec
 
-    S = Expense::Scanning
+    D = Document unless defined?(D)
+    S = Document::Scanning unless defined?(S)
     P = Prompts
 
     let(:store) { Sidereal.config['sourced.store'] }
     let(:file_store) { Sidereal.config['file_store'] }
-    let(:expense_id) { SecureRandom.hex(16) }
+    let(:document_id) { SecureRandom.hex(16) }
     let(:today) { Date.new(2026, 8, 11) }
     let(:pdf) { file_store.put('lunch.pdf', "%PDF-1.4 #{SecureRandom.hex}") }
 
@@ -24,25 +25,25 @@ module Expenses
       }
     end
 
-    def cmd(klass, **payload) = klass.new(payload: { expense_id:, **payload })
+    def cmd(klass, **payload) = klass.new(payload: { document_id:, **payload })
 
-    # The expense's history, in the store as the scanner loads it, and the
+    # The document's history, in the store as the scanner loads it, and the
     # state event the scanner is handed: the last one.
     def at(*commands)
-      history = decided(Expense, { expense_id: }, *commands)
+      history = decided(D, { document_id: }, *commands)
       store.append(history)
       history.reverse.find { it.is_a?(Sourced::Machine::State) }
     end
 
     # Uploaded, and given a scanning slot.
     def upload(file_ref = pdf, content_type: 'application/pdf')
-      [cmd(Expense::UploadDocument, filename: 'lunch.pdf', content_type:, file_ref:, filing_country: 'NL', reference_date: today),
-       cmd(Expense::StartScan)]
+      [cmd(D::UploadDocument, filename: 'lunch.pdf', content_type:, file_ref:, filing_country: 'NL', reference_date: today),
+       cmd(D::StartScan)]
     end
 
     # What the scanner appends for +event+: one message, or none.
     def dispatched(event)
-      reacted(Scanner, event, expense_id:).tap { expect(it.size).to be <= 1 }
+      reacted(Scanner, event, document_id:).tap { expect(it.size).to be <= 1 }
     end
 
     it 'prepares a PDF as it is, on entering scanning' do
@@ -117,17 +118,17 @@ module Expenses
       expect(FAKE_LLM.calls[0][:file]).to be_nil
     end
 
-    describe 'a state the expense has since left' do
+    describe 'a state the document has since left' do
       # The history after +commands+, and then +later+, in the store.
       def left(commands, *later)
-        before = decided(Expense, { expense_id: }, *commands)
+        before = decided(D, { document_id: }, *commands)
         store.append(before)
-        store.append(decided(Expense, { expense_id: }, *later, given: before) - before)
+        store.append(decided(D, { document_id: }, *later, given: before) - before)
         before.reverse.find { it.is_a?(Sourced::Machine::State) }
       end
 
       it 'does nothing once discarded' do
-        expect(dispatched(left(upload, cmd(Expense::DiscardDocument)))).to be_empty
+        expect(dispatched(left(upload, cmd(D::DiscardDocument)))).to be_empty
       end
 
       it 'does nothing once the step is done' do
@@ -135,7 +136,7 @@ module Expenses
       end
 
       it 'does nothing once timed out' do
-        expect(dispatched(left(upload, cmd(Expense::TimeOutScan)))).to be_empty
+        expect(dispatched(left(upload, cmd(D::TimeOutScan)))).to be_empty
       end
     end
   end

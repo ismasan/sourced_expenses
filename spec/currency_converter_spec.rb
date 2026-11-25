@@ -12,12 +12,6 @@ module Expenses
     let(:expense_id) { SecureRandom.hex(16) }
     let(:date) { Date.new(2025, 10, 24) }
 
-    let(:extraction) do
-      { document_type: 'invoice', description: 'Café Central - Lunch', total_amount: 24.2, net_amount: 20.0,
-        tax_amount: 4.2, tax_description: 'BTW 21%', currency: 'EUR', date_as_printed: '24 Oct 2025', date: '2025-10-24',
-        vendor_name: 'Café Central', confidence: 'high', supplier_country_code: 'NL', reverse_charge: false }
-    end
-
     def cmd(klass, **payload) = klass.new(payload: { expense_id:, **payload })
 
     def save(**form)
@@ -25,14 +19,10 @@ module Expenses
                           incurred_on: date, supplier_country_code: 'NL', **form)
     end
 
-    # Uploaded, scanned and reviewed: ready to file.
+    # Drafted and reviewed: ready to file.
     let(:reviewing) do
-      [cmd(E::UploadDocument, filename: 'lunch.pdf', content_type: 'application/pdf', file_ref: 'f1', filing_country: 'NL',
-                              reference_date: date),
-       cmd(E::StartScan),
-       cmd(E::Scanning::CompletePreparation, processed_file_ref: 'f1'),
-       cmd(E::Scanning::CompleteExtraction, **extraction),
-       cmd(E::Scanning::CompleteCleanup, description: 'Café Central - Lunch', tax_description: 'BTW 21%'),
+      [cmd(E::EnterExpense, filing_country: 'NL', description: 'Café Central - Lunch', net_price_cents: 2000, tax_amount_cents: 420,
+                            tax_description: 'BTW 21%', currency: 'EUR', incurred_on: date, supplier_country_code: 'NL'),
        cmd(E::ConfirmVatTreatment, treatment: 'domestic'),
        cmd(E::ChooseCategory, category: 'accommodation_and_meals')]
     end

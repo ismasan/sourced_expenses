@@ -25,7 +25,7 @@ module UI
       # The expenses' scan queue.
       # @param changed [Boolean] rendered because the queue just changed
       def self.scans(changed: false)
-        new(Expenses::Expense::ScanQueue.status, title: 'Scanning', noun: 'document', changed:)
+        new(Expenses::Document::ScanQueue.status, title: 'Scanning', noun: 'document', changed:)
       end
 
       # @param status [WorkQueue::Status]

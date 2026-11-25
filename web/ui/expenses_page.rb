@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
 module UI
-  # Every upload, newest first, a page at a time, with filters: by state
+  # Every expense, newest first, a page at a time, with filters: by state
   # (UI::StateFilter), category, and whose category and VAT treatment it
   # is (UI::ReviewFilter) in a sidebar, by the expense's date, and
-  # by what it says (q, Expenses::Submissions.search: the top bar's search
+  # by what it says (q, Expenses::ExpenseList.search: the top bar's search
   # box, UI::Components::Search, sends it here). Live: it re-renders
   # whenever the read model commits.
   #
@@ -42,7 +42,7 @@ module UI
       page: Types::Integer[1..].default(1)
     )
 
-    on Expenses::Submissions::Projected, Expenses::Ledger::Projected
+    on Expenses::ExpenseList::Projected, Expenses::Ledger::Projected
 
     def channel_names = ['expenses.>', *SYSTEM_CHANNELS]
 
@@ -65,20 +65,20 @@ module UI
       filters = { states: params[:state], categories: params[:category], category_statuses: params[:category_status],
                   vat_statuses: params[:vat_status], search: (search unless search.empty?), from: params[:from], to: params[:to] }
       page = params[:page]
-      rows, total = Expenses::Submissions.page(db, **filters, page:, per_page: PER_PAGE)
+      rows, total = Expenses::ExpenseList.page(db, **filters, page:, per_page: PER_PAGE)
       # Past the end (fewer rows since the link was made): the last page.
       if rows.empty? && page > 1
         page = [(total + PER_PAGE - 1) / PER_PAGE, 1].max
-        rows, total = Expenses::Submissions.page(db, **filters, page:, per_page: PER_PAGE)
+        rows, total = Expenses::ExpenseList.page(db, **filters, page:, per_page: PER_PAGE)
       end
       # Each group's counts are within the other group's choice.
-      new(rows:, total:, **filters, page:, counts: Expenses::Submissions.counts(db, **filters.except(:states)),
-          category_counts: Expenses::Submissions.category_counts(db, **filters.except(:categories)),
-          category_status_counts: Expenses::Submissions.status_counts(db, :category_statuses, **filters.except(:category_statuses)),
-          vat_status_counts: Expenses::Submissions.status_counts(db, :vat_statuses, **filters.except(:vat_statuses)),
+      new(rows:, total:, **filters, page:, counts: Expenses::ExpenseList.counts(db, **filters.except(:states)),
+          category_counts: Expenses::ExpenseList.category_counts(db, **filters.except(:categories)),
+          category_status_counts: Expenses::ExpenseList.status_counts(db, :category_statuses, **filters.except(:category_statuses)),
+          vat_status_counts: Expenses::ExpenseList.status_counts(db, :vat_statuses, **filters.except(:vat_statuses)),
           ledger_total: ledger_total(db, **filters),
           month_totals: Expenses::Ledger.months(db, Sidereal.config['reporting_currency'], categories: filters[:categories],
-                                                                                    matching: Expenses::Submissions.search(db, filters[:search])))
+                                                                                    matching: Expenses::ExpenseList.search(db, filters[:search])))
     end
 
     # The filed expenses in the dates, categories and search chosen, or
@@ -86,7 +86,7 @@ module UI
     # category and VAT treatment are a person's.
     def self.ledger_total(db, from:, to:, categories:, search:, **)
       currency = Sidereal.config['reporting_currency']
-      matching = Expenses::Submissions.search(db, search)
+      matching = Expenses::ExpenseList.search(db, search)
       if from || to
         Expenses::Ledger.total(db, currency, from:, to:, categories:, matching:)
       else
@@ -132,7 +132,10 @@ module UI
       div(id: 'expenses-page', class: 'expenses-page') do
         style { raw safe(VIEW_TRANSITIONS) }
         header(class: 'expenses-page__header') do
-          h1(class: 'expenses-page__title') { 'All expenses' }
+          div do
+            h1(class: 'expenses-page__title') { 'All expenses' }
+            a(href: NewExpensePage.path, class: 'button') { 'Add one by hand' }
+          end
           render Components::LedgerTotal.new(@ledger_total, categories: @categories, search: @search)
         end
         render Components::MonthChart.new(@month_totals, from: @from, to: @to, search: @search, **list_filters)
@@ -149,7 +152,7 @@ module UI
           input(type: 'hidden', name: 'to', value: @to.iso8601) if @to
           section(class: 'expenses-page__list', aria: { label: 'Expenses' }) do
             render_summary
-            render Components::SubmissionList.new(@rows) if @rows.any?
+            render Components::ExpenseRows.new(@rows) if @rows.any?
             render_pager
           end
         end
@@ -225,8 +228,14 @@ module UI
     def render_summary
       p(class: 'expenses-page__summary') do
         if @total.zero?
-          plain(filtered? ? 'No expenses match the filters. ' : 'Nothing uploaded yet. ')
-          a(href: filtered? ? self.class.path : '/') { filtered? ? 'Clear filters' : 'Upload a receipt' }
+          plain(filtered? ? 'No expenses match the filters. ' : 'No expenses yet. ')
+          if filtered?
+            a(href: self.class.path) { 'Clear filters' }
+          else
+            a(href: '/') { 'Upload a receipt' }
+            plain ' or '
+            a(href: NewExpensePage.path) { 'add one by hand' }
+          end
         else
           first = ((@page - 1) * PER_PAGE) + 1
           last = [first + @rows.size - 1, @total].min

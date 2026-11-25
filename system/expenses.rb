@@ -1,20 +1,22 @@
 # frozen_string_literal: true
 
-# Expense tracking from scanned receipts and invoices: a photo or PDF goes in,
-# several small LLM calls read it, a person reviews the prefilled form and
-# files the expense, and a plain rule (not the model) infers its VAT treatment.
-# The model suggests its category (Categorizer); a person has the last word.
+# Expense tracking, from scanned receipts and invoices or by hand: a photo or
+# PDF goes in, several small LLM calls read it and draft an expense, a person
+# reviews the prefilled form and files the expense, and a plain rule (not the
+# model) infers its VAT treatment. The model suggests its category
+# (Categorizer); a person has the last word. An expense needn't come from a
+# document: a person can draft one by hand, and other sources can too.
 # After https://gist.github.com/julik/405662cc3106fe73ae2e46073f483b62
 #
-#   Expense                 one per uploaded document
-#   ├ Expense::Scanning     (part: the OCR pipeline, one LLM call per state)
-#   └ Expense::Filed        (part: the filed expense's VAT treatment)
+#   Document                one per uploaded file: reads it, drafts its expense
+#   └ Document::Scanning    (part: the OCR pipeline, one LLM call per state)
+#   Expense                 one per expense, however drafted: review, file
 #
 # The machines are the spec: every LLM call is a state waiting for its
 # worker to report back (Complete…/Fail…), and every decision between calls
-# is code, in Document. Nothing here calls a model yet.
+# is code, in DocumentState and ExpenseState. Nothing here calls a model.
 module Expenses
-  # How an expense's VAT is accounted for. See Document.infer_vat_treatment.
+  # How an expense's VAT is accounted for. See ExpenseState.infer_vat_treatment.
   #
   #   domestic        the filing country's own VAT; reclaimable
   #   import          import VAT on goods; reclaimable. Only ever chosen by a person
@@ -61,5 +63,5 @@ module Expenses
   # A category's name for people.
   def self.category_label(key) = CATEGORIES.dig(key, 0) || key
 
-  def self.machines = [Expense]
+  def self.machines = [Document, Expense]
 end

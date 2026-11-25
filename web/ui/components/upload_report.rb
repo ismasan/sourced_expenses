@@ -5,7 +5,7 @@ module UI
     # How the files of the last upload went, one line each, under the
     # upload form: emptied as an upload starts, then a line appended for
     # each file. The UploadFile handler appends one for each it takes (Item:
-    # uploaded, or uploaded before, linking to its expense); the form's
+    # uploaded, or uploaded before, linking to its document); the form's
     # script one for each it skips without sending (the wrong type, too
     # big), with the same classes.
     class UploadReport < Sidereal::Components::BaseComponent
@@ -17,11 +17,11 @@ module UI
       class Item < Phlex::HTML
         # @param filename [String]
         # @param outcome [Symbol] :uploaded, or :already (uploaded before)
-        # @param expense_id [String] its expense
-        def initialize(filename, outcome, expense_id)
+        # @param document_id [String] its document
+        def initialize(filename, outcome, document_id)
           @filename = filename
           @outcome = outcome
-          @expense_id = expense_id
+          @document_id = document_id
         end
 
         def view_template
@@ -29,7 +29,7 @@ module UI
             strong { @filename }
             if @outcome == :already
               plain ' was uploaded before: '
-              a(href: "/submissions/#{@expense_id}") { 'see it' }
+              a(href: "/documents/#{@document_id}") { 'see it' }
             else
               plain ' uploaded, being read'
             end

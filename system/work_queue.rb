@@ -15,12 +15,12 @@ require 'json'
 #   ScanQueue = WorkQueue.define('scans', capacity: 3)
 #
 #   entry WorkQueue::Enqueue do |_doc, entered|
-#     dispatch ScanQueue.enqueue(StartScan, expense_id: entered.payload.expense_id)
+#     dispatch ScanQueue.enqueue(StartScan, document_id: entered.payload.document_id)
 #   end
 #
 #   # ...and once the scan is over:
 #   exit WorkQueue::Release do |_doc, left_by|
-#     dispatch ScanQueue.release(StartScan, expense_id: left_by.payload.expense_id)
+#     dispatch ScanQueue.release(StartScan, document_id: left_by.payload.document_id)
 #   end
 #
 # An item is its start message: its id is the message's type and its whole
@@ -162,7 +162,7 @@ class WorkQueue
     #
     # @param start_class [Class<Sourced::Message>]
     # @param payload [Hash]
-    # @return [String] ex. 'expenses.start_scan:{"expense_id":"3a1b…"}'
+    # @return [String] ex. 'documents.start_scan:{"document_id":"3a1b…"}'
     # @raise [ArgumentError] for a payload the message won't take: a bug in
     #   the caller, raised where it builds its Enqueue or Release
     def item_id(start_class, payload)

@@ -18,12 +18,6 @@ module Expenses
       end
     end
 
-    let(:extraction) do
-      { document_type: 'invoice', description: 'Café Central - Lunch', total_amount: 24.2, net_amount: 20.0,
-        tax_amount: 4.2, tax_description: 'BTW 21%', currency: 'EUR', date_as_printed: '24 Oct 2025', date: '2025-10-24',
-        vendor_name: 'Café Central', confidence: 'high', supplier_country_code: 'NL', reverse_charge: false }
-    end
-
     def cmd(klass, id = expense_id, **payload) = klass.new(payload: { expense_id: id, **payload })
 
     def save(id = expense_id, **form)
@@ -36,14 +30,11 @@ module Expenses
                                          reporting_cents:, rate: 0.8731, rate_date: date, **rest)
     end
 
-    # Uploaded, scanned and ready to review.
+    # Drafted and ready to review.
     def reviewing(id = expense_id)
-      [cmd(Expense::UploadDocument, id, filename: 'lunch.pdf', content_type: 'application/pdf', file_ref: 'f1',
-                                        filing_country: 'NL', reference_date: date),
-       cmd(Expense::StartScan, id),
-       cmd(Expense::Scanning::CompletePreparation, id, processed_file_ref: 'f1'),
-       cmd(Expense::Scanning::CompleteExtraction, id, **extraction),
-       cmd(Expense::Scanning::CompleteCleanup, id, description: 'Café Central - Lunch', tax_description: 'BTW 21%')]
+      [cmd(Expense::EnterExpense, id, filing_country: 'NL', description: 'Café Central - Lunch', net_price_cents: 2000,
+                                      tax_amount_cents: 420, tax_description: 'BTW 21%', currency: 'EUR', incurred_on: date,
+                                      supplier_country_code: 'NL', reverse_charge: false, vendor: 'Café Central')]
     end
 
     # Reviewed, and ready to file: the category chosen, the VAT confirmed.

@@ -1,14 +1,14 @@
-/* ---- A submission ---- */
+/* ---- A document or an expense (UI::RecordPage) ---- */
 
-.submission-page { --stage: var(--rule); --stage-ink: var(--ink); }
-.submission-page--working { --stage: var(--working); --stage-ink: #fff; }
-.submission-page--yours { --stage: var(--yours); --stage-ink: var(--ink); }
-.submission-page--problem { --stage: var(--problem); --stage-ink: #fff; }
-.submission-page--done { --stage: var(--done); --stage-ink: #fff; }
+.record-page { --stage: var(--rule); --stage-ink: var(--ink); }
+.record-page--working { --stage: var(--working); --stage-ink: #fff; }
+.record-page--yours { --stage: var(--yours); --stage-ink: var(--ink); }
+.record-page--problem { --stage: var(--problem); --stage-ink: #fff; }
+.record-page--done { --stage: var(--done); --stage-ink: #fff; }
 
-.submission-page__back { font-size: 0.95rem; font-weight: 600; margin-bottom: 1.5rem; }
-.submission-page__back a::before { content: "‹ "; }
-.submission-page__header {
+.record-page__back { font-size: 0.95rem; font-weight: 600; margin-bottom: 1.5rem; }
+.record-page__back a::before { content: "‹ "; }
+.record-page__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -16,7 +16,7 @@
   flex-wrap: wrap;
   margin-bottom: 1.5rem;
 }
-.submission-page__title {
+.record-page__title {
   font-size: clamp(1.75rem, 4.5vw, 2.75rem);
   font-weight: 900;
   line-height: 1.05;
@@ -46,7 +46,7 @@
 .track__stage--past::before { background: var(--ink); }
 .track__stage--current { color: var(--ink); font-weight: 800; }
 .track__stage--current::before { background: var(--stage); }
-.submission-page--yours .track__stage--current::before { box-shadow: inset 0 0 0 2px var(--ink); }
+.record-page--yours .track__stage--current::before { box-shadow: inset 0 0 0 2px var(--ink); }
 .track--closed .track__stage { color: var(--closed); }
 .track--closed .track__stage::before { background: var(--rule); }
 
@@ -68,18 +68,20 @@
 .tabs__tab--current, .tabs__tab--current:hover { color: var(--ink); font-weight: 800; border-bottom-color: var(--ink); }
 .tabs__tab:focus-visible { outline-offset: 0; }
 
-.submission-page__body {
+.record-page__body {
   display: grid;
   grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
   gap: 2.5rem;
   align-items: start;
   margin-bottom: 3rem;
 }
-@media (max-width: 44rem) { .submission-page__body { grid-template-columns: minmax(0, 1fr); } }
+/* Nothing to show beside the panel: an expense with no document. */
+.record-page__body--no-preview { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 44rem) { .record-page__body { grid-template-columns: minmax(0, 1fr); } }
 /* --panel-w: how wide its blocks go, the lead and the forms alike, so their right edges line up. */
-.submission-page__panel { --panel-w: 44rem; display: grid; gap: 1.25rem; min-width: 0; }
-.submission-page__panel > p { margin: 0; }
-.submission-page__frozen { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 1.25rem; }
+.record-page__panel { --panel-w: 44rem; display: grid; gap: 1.25rem; min-width: 0; }
+.record-page__panel > p { margin: 0; }
+.record-page__frozen { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 1.25rem; }
 
 /* What the panel is about, and whose move it is, marked in the stage's colour. */
 .panel-lead {

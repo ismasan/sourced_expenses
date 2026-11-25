@@ -10,9 +10,9 @@ module Expenses
   # Every other way out of a step appends an event DocumentProjector evolves
   # (the step's result, a StepFailed, a rescan's ScanRequested).
   #
-  # A subclass, so Discarded stays off DocumentProjector, which the Expense
+  # A subclass, so Discarded stays off DocumentProjector, which the Document
   # machine evolves with too.
   class ScannerProjector < DocumentProjector
-    evolve(Expense::Discarded) { |_doc, _evt| nil }
+    evolve(Document::Discarded) { |_doc, _evt| nil }
   end
 end

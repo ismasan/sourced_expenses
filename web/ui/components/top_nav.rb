@@ -11,6 +11,7 @@ module UI
 
       LINKS = [
         ['All expenses', '/expenses'],
+        ['New expense', '/expenses/new'],
         ['Sourced dashboard', '/sourced']
       ].freeze
 

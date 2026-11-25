@@ -3,239 +3,198 @@
 require 'date'
 
 module Expenses
-  # What an Expense machine knows about its document: the upload, the current
-  # scan's results, the form a person reviews, and the filed expense. The
-  # machine's position (which step of the scan it's at) is the machine's own.
+  # One uploaded receipt or invoice, from the upload to its expense's draft.
+  # Once read, it drafts an Expense with what it read, under its own id, and
+  # is attached to it; one it couldn't read, a person can draft by hand. The expense goes its own
+  # way from there: this machine only reads documents.
   #
-  # The decisions between LLM calls live here, as plain Ruby the chart's
-  # guards and handlers call: whether an extraction is plausible, whether its
-  # date needs a second look, how extracted floats become an expense, and
-  # which VAT treatment to suggest for it.
-  class Document
-    # A receipt normally reaches us within weeks of the purchase, so an
-    # all-numeric date that lands far from the reference date (or after it)
-    # is more often a misread digit or a swapped day and month than a
-    # genuinely old receipt. Spelled-out months ("11 Aug 2026") carry neither
-    # risk.
-    RECHECK_DATE_OLDER_THAN_DAYS = 60
-    NUMERIC_DATE = %r{\d{1,4}[./-]\d{1,2}[./-]\d{2,4}}
+  #   initial ─UploadDocument─▶ queued ─StartScan─▶ scanning ──on_final scanned─────────▶ scanned (drafts its expense)
+  #                                                (Scanning) ├on_final not_an_invoice─▶ rejected
+  #                                                           ├on_final failed─────────▶ scan_failed
+  #                                                           └after 10m: TimeOutScan──▶ scan_failed
+  #
+  #   rejected, scan_failed ─EnterManually─▶ entered_by_hand (drafts its expense, empty)
+  #   scanned, rejected, scan_failed, entered_by_hand ─Rescan─▶ queued
+  #   anything ─DiscardDocument─▶ discarded
+  #
+  # A rescan of a document whose expense is in review replaces the expense's
+  # draft once read; of one filed, it changes nothing filed (the Expense
+  # decides).
+  class Document < Sourced::Machine
+    partition_by document_id: Types::DocumentID
+    message_prefix 'documents'
 
-    attr_accessor :expense_id, :filename, :content_type, :file_ref, :filing_country,
-                  :reference_date, :processed_file_ref, :extraction, :verification,
-                  :date_recheck, :cleanup, :failure, :draft, :filed,
-                  :confirmed_vat_treatment, :converted,
-                  :conversion_failure, :category, :category_suggestion,
-                  :category_chosen, :categorization_failure
-    attr_reader :scans
+    # The queue scans wait in (see Queued), 3 documents scanning at once.
+    # Each scan makes up to four model calls, one after another, so this
+    # caps the model calls in flight for scanning.
+    ScanQueue = WorkQueue.define('scans', capacity: 3)
 
-    def initialize
-      @scans = 0
-      @draft = {}
+    # How long a scan may take, every LLM call and its retries included,
+    # before it's given up on.
+    SCAN_TIMEOUT = ENV.fetch('SCAN_TIMEOUT', '10m')
+
+    CountryCode = Types::String[/\A[A-Z]{2}\z/]
+
+    # ---- States ----
+
+    Queued = State(:queued)
+    Scanned = State(:scanned)
+    Rejected = State(:rejected)
+    ScanFailed = State(:scan_failed)
+    EnteredByHand = State(:entered_by_hand)
+    Discarded = State(:discarded)
+
+    # ---- Commands ----
+
+    # +file_ref+ is wherever the upload was stored; +filing_country+, the
+    # country of the company whose books this is in. +reference_date+ is
+    # "today" for the scan: the prompts resolve ambiguous dates towards it,
+    # and passing it in keeps decisions deterministic.
+    UploadDocument = Command(:upload_document) do
+      attribute :document_id, Types::DocumentID
+      attribute :filename, Types::String.present
+      attribute :content_type, Types::String.present
+      attribute :file_ref, Types::String.present
+      attribute :filing_country, CountryCode
+      attribute :reference_date, Types::Date.default { Date.today }
     end
 
-    # A new scan of the same file forgets the last one's results, the form
-    # it prefilled included. The form a person already saved (filed) stays.
-    def start_scan(reference_date)
-      @scans += 1
-      @draft = filed || {}
-      @reference_date = reference_date
-      @processed_file_ref = nil
-      @extraction = nil
-      @verification = nil
-      @date_recheck = nil
-      @cleanup = nil
-      @failure = nil
+    # Scan the same file again, from the start.
+    Rescan = Command(:rescan) do
+      attribute :reference_date, Types::Date.default { Date.today }
     end
 
-    # ---- Plausibility: is the extraction good enough to go on with? ----
+    # Appended by ScanQueue when the document's scan gets a slot: what
+    # Queued enqueued it as. Never sent by a person.
+    StartScan = Command(:start_scan)
 
-    # What looks wrong with the extraction. Any at all and a narrower call
-    # asks whether the document is a receipt in the first place; these are
-    # what it's told went wrong.
-    def extraction_errors
-      return ['No data extracted'] unless extraction
+    # Dispatched by scanning's timer, never by a person.
+    TimeOutScan = Command(:time_out_scan)
 
-      errors = []
-      total = extraction[:total_amount]
-      net = extraction[:net_amount]
+    # Draft its expense by hand: the scan failed, or rejected a document the
+    # person knows is a receipt.
+    EnterManually = Command(:enter_manually)
 
-      if total.nil?
-        errors << 'Missing total amount'
-      elsif !currency_amount?(total)
-        errors << "Invalid total amount format (#{total})"
-      end
-      errors << "Invalid net amount format (#{net})" if !net.nil? && !currency_amount?(net)
-      errors << 'Missing currency' if blank?(extraction[:currency])
-      if blank?(extraction[:date])
-        errors << 'Missing date'
-      elsif extracted_date.nil?
-        errors << "Invalid date format (#{extraction[:date]})"
-      end
-      errors << 'Missing description' if blank?(extraction[:description])
-      errors << 'Low confidence extraction' if extraction[:confidence] == 'low'
-      errors
+    DiscardDocument = Command(:discard_document)
+
+    # ---- Events ----
+
+    DocumentUploaded = Event(:document_uploaded) do
+      attribute :filename, String
+      attribute :content_type, String
+      attribute :file_ref, String
+      attribute :filing_country, String
     end
 
-    def implausible? = extraction_errors.any?
-
-    # ---- The date: worth a second, narrower look? ----
-
-    def extracted_date = parse_date(extraction&.dig(:date))
-
-    def date_suspect?
-      printed = extraction&.dig(:date_as_printed)
-      return false if blank?(printed) || !printed.match?(NUMERIC_DATE)
-
-      date = extracted_date
-      return false unless date
-
-      date > reference_date || date < reference_date - RECHECK_DATE_OLDER_THAN_DAYS
+    # Every scan starts with one, the first and each rescan.
+    ScanRequested = Event(:scan_requested) do
+      attribute :reference_date, Date
     end
 
-    # The recheck's date, if it should replace the first reading: never one
-    # after the reference date (we'd trade one bad reading for another), and
-    # only when it differs.
-    def date_correction(rechecked)
-      date = parse_date(rechecked)
-      return nil if date.nil? || date > reference_date || date == extracted_date
-
-      date
+    # A scan step that went wrong, after its retries. Fatal or not depends
+    # on the step: the chart decides where the scan goes next.
+    StepFailed = Event(:step_failed) do
+      attribute :step, String
+      attribute :reason, String
     end
 
-    # The re-read date (ISO 8601) replaces the first, and the datetime goes:
-    # it carried the old date, and only the date was re-read.
-    def correct_date(date)
-      extraction[:date] = date
-      extraction[:datetime] = nil
-    end
+    # ---- Domain state ----
 
-    # ---- From extracted floats to an expense ----
+    # The DocumentState, evolved from the events above and its part's (the
+    # Scanner reads it the same way).
+    evolve DocumentProjector
 
-    # The prefilled form: amounts in integer cents, a receipt showing only a
-    # total booked as net with zero tax. Cleaned-up text replaces what the
-    # extraction read, where the cleanup ran.
-    def attributes
-      return {} unless extraction
+    # ---- The statechart ----
 
-      total = extraction[:total_amount].to_f
-      net = extraction[:net_amount]&.to_f
-      tax = extraction[:tax_amount]&.to_f
-
-      if net.nil? && tax
-        net = total - tax
-      elsif net.nil?
-        net = total
-        tax = 0
-      end
-      tax ||= 0
-
-      vendor = extraction[:vendor_name]
-      description = cleanup&.dig(:description) || extraction[:description]
-      description = vendor ? "#{vendor} - Purchase" : 'Expense' if blank?(description)
-
-      {
-        description:,
-        net_price_cents: (net * 100).round,
-        tax_amount_cents: (tax * 100).round,
-        tax_description: cleanup ? cleanup[:tax_description] : extraction[:tax_description],
-        currency: extraction[:currency] || 'EUR',
-        incurred_on: extracted_date,
-        supplier_country_code: country_code(extraction[:supplier_country_code]),
-        reverse_charge: extraction[:reverse_charge] == true,
-        payment_reference: extraction[:payment_reference]
-      }
-    end
-
-    # ---- VAT treatment ----
-
-    # Never the model's call: it depends on whose books the expense is in,
-    # and a wrong answer in the taxpayer's favour creates a liability. Tried
-    # in order; unproven VAT comes out foreign_vat, so an unreviewed expense
-    # under-claims. +import+ is only ever a person's choice.
-    def self.infer_vat_treatment(reverse_charge:, tax_amount_cents:, supplier_country_code:, filing_country:)
-      return 'reverse_charge' if reverse_charge
-      return 'no_vat' if tax_amount_cents.zero?
-      return 'domestic' if supplier_country_code == filing_country
-
-      'foreign_vat'
-    end
-
-    # The rule's treatment for the form as it stands (the scan's, or what
-    # was filed), or nil with no figures to go on (filled in by hand).
-    def suggested_vat_treatment
-      return nil if draft[:tax_amount_cents].nil?
-
-      self.class.infer_vat_treatment(
-        reverse_charge: draft[:reverse_charge] == true, tax_amount_cents: draft[:tax_amount_cents],
-        supplier_country_code: draft[:supplier_country_code], filing_country:
-      )
-    end
-
-    # The rule's treatment for the form +extraction+ (a scan's) prefills,
-    # without a Document: for read models that keep only what they show.
-    def self.suggested_vat_treatment(extraction, filing_country:)
-      doc = new
-      doc.filing_country = filing_country
-      doc.extraction = extraction
-      doc.draft = doc.attributes
-      doc.suggested_vat_treatment
-    end
-
-    # The treatment in force: the person's, or else the rule's suggestion.
-    def vat_treatment = confirmed_vat_treatment || suggested_vat_treatment
-
-    def vat_treatment_confirmed? = !confirmed_vat_treatment.nil?
-
-    # Another country's VAT, as far as the rule can tell, or nothing to tell
-    # from: a person should look closely.
-    def vat_needs_review? = [nil, 'foreign_vat'].include?(suggested_vat_treatment)
-
-    # ---- The filed total in the reporting currency ----
-
-    # What's converted: the filed expense's total, VAT included.
-    def filed_total_cents = filed && (filed[:net_price_cents] + filed[:tax_amount_cents])
-
-    # Whether a conversion of +amount_cents+ in +currency+ on +incurred_on+
-    # is of the expense as filed now.
-    def converting?(currency:, amount_cents:, incurred_on:)
-      !filed.nil? && currency == filed[:currency] && amount_cents == filed_total_cents &&
-        incurred_on == filed[:incurred_on]
-    end
-
-    # Filing again forgets a conversion, or a failure, for what's no longer
-    # the filed total. One for the same total stays.
-    def forget_stale_conversion
-      self.converted = nil if converted && !converting?(**converted.slice(:currency, :amount_cents, :incurred_on))
-      if conversion_failure && !converting?(**conversion_failure.slice(:currency, :amount_cents, :incurred_on))
-        self.conversion_failure = nil
+    RESCAN = proc do
+      command Rescan => Queued do |_doc, cmd|
+        event ScanRequested, cmd.payload
       end
     end
 
-    # ---- The category ----
-
-    # +category+ is the one in force: the person's, or else the model's
-    # latest suggestion (+category_suggestion+: category, probability and
-    # the description it was for).
-    def category_chosen? = category_chosen == true
-
-    private
-
-    # At most two decimals, as money is. Integers and 10.5 or -10.99 pass.
-    def currency_amount?(value)
-      value.is_a?(Numeric) && (value - value.round(2)).abs < 0.0001
+    initial do
+      command UploadDocument => Queued do |_doc, cmd|
+        event DocumentUploaded, cmd.payload
+        event ScanRequested, cmd.payload
+      end
     end
 
-    def parse_date(value) = Types.iso_date(value)
+    # Waiting for a slot to scan in: ScanQueue lets its capacity of
+    # documents scan at once, and appends StartScan when it's this one's
+    # turn. Discarded before its turn, it gives its place up. The slot is
+    # held through every step of the scan, until it leaves Scanning.
+    state Queued do
+      entry WorkQueue::Enqueue do |_doc, entered|
+        dispatch ScanQueue.enqueue(StartScan, document_id: entered.payload.document_id)
+      end
 
-    # ISO 3166-1 alpha-2, or nothing. Two letters, at least: checking it's a
-    # real country needs a country list.
-    def country_code(code)
-      return nil if blank?(code)
+      exit WorkQueue::Release | nil do |_doc, left_by|
+        next if left_by.payload.entered.include?('scanning')
 
-      code = code.to_s.strip.upcase[0, 2]
-      code.match?(/\A[A-Z]{2}\z/) ? code : nil
+        dispatch ScanQueue.release(StartScan, document_id: left_by.payload.document_id)
+      end
+
+      command StartScan => Scanning
+      command DiscardDocument => Discarded
     end
 
-    def blank?(value) = value.nil? || value.to_s.strip.empty?
+    # The progress a person waiting sees is the step scanning is at. The
+    # timeout runs from when its slot started it, not from the wait. Leaving
+    # it, however, frees the slot.
+    state Scanning do
+      on_final Scanning::Scanned => Scanned,
+               Scanning::NotAnInvoice => Rejected,
+               Scanning::Failed => ScanFailed
+
+      exit WorkQueue::Release do |_doc, left_by|
+        dispatch ScanQueue.release(StartScan, document_id: left_by.payload.document_id)
+      end
+
+      after(SCAN_TIMEOUT => TimeOutScan)
+
+      command TimeOutScan => ScanFailed do
+        event StepFailed, step: 'scanning', reason: "The scan took longer than #{SCAN_TIMEOUT}"
+      end
+
+      command DiscardDocument => Discarded
+    end
+
+    # Read: its expense is drafted with what was read, under the document's
+    # id, the first time or again after a rescan.
+    state Scanned do
+      entry Expense::DraftExpenseFromDocument do |doc, _entered|
+        dispatch Expense::DraftExpenseFromDocument, doc.prefill
+      end
+
+      instance_exec(&RESCAN)
+      command DiscardDocument => Discarded
+    end
+
+    # Not a receipt, says the verification call, with its explanation
+    # (doc.verification) to show the person.
+    state Rejected do
+      command EnterManually => EnteredByHand
+      instance_exec(&RESCAN)
+      command DiscardDocument => Discarded
+    end
+
+    # A step failed (doc.failure), or the scan timed out.
+    state ScanFailed do
+      command EnterManually => EnteredByHand
+      instance_exec(&RESCAN)
+      command DiscardDocument => Discarded
+    end
+
+    # Unread, its expense drafted empty for a person to fill in.
+    state EnteredByHand do
+      entry Expense::DraftExpenseFromDocument do |doc, _entered|
+        dispatch Expense::DraftExpenseFromDocument, doc.prefill(read: false)
+      end
+
+      instance_exec(&RESCAN)
+      command DiscardDocument => Discarded
+    end
+
+    final Discarded
   end
 end

@@ -3,59 +3,55 @@
 require 'json'
 
 module Expenses
-  # The read model behind the home page's list: one row per uploaded
-  # document, in the `submissions` table, rewritten whenever its expense
-  # moves. Where the machine is (its paths) comes from the state events'
-  # entered and exited paths, so the list never loads a machine.
+  # The read model behind the expense lists: one row per expense, however
+  # it was drafted, in the `expenses` table, rewritten whenever it moves.
+  # Where the machine is (its paths) comes from the state events' entered
+  # and exited paths, so the list never loads a machine. Documents still
+  # being read, or that couldn't be, are DocumentList's.
   #
-  # Each row is in the `submissions_search` full-text index too (an FTS5
-  # table, trigram tokenizer): its description, vendor, filename and
-  # category, for #search.
+  # Each row is in the `expenses_search` full-text index too (an FTS5
+  # table, trigram tokenizer): its description, vendor and category, for
+  # #search.
   #
   # A discarded expense leaves both: it's gone from the lists and search.
   #
-  # Sidereal publishes Submissions::Projected after every committed batch,
-  # which is what the page reacts to.
-  class Submissions < Sourced::Projector::StateStored
+  # Sidereal publishes ExpenseList::Projected after every committed batch,
+  # which is what the pages react to.
+  class ExpenseList < Sourced::Projector::StateStored
     partition_by expense_id: Types::ExpenseID
 
     dep :db
 
-    Row = ::Data.define(:expense_id, :filename, :machine, :failure, :rejection, :description,
-                        :total_cents, :currency, :incurred_on, :category, :category_chosen,
-                        :vat_treatment, :vat_confirmed, :filing_country, :uploaded_at, :updated_at) do
+    Row = ::Data.define(:expense_id, :document_id, :machine, :description, :vendor, :total_cents, :currency,
+                        :incurred_on, :category, :category_chosen, :vat_treatment, :vat_confirmed,
+                        :filing_country, :created_at, :updated_at) do
       def in?(path) = machine.include?(path)
     end
 
-    COLUMNS = %i[filename content_type file_ref machine failure rejection description vendor
-                 total_cents currency incurred_on category category_chosen filing_country vat_treatment
-                 vat_confirmed uploaded_at updated_at].freeze
+    COLUMNS = %i[document_id machine description vendor total_cents currency incurred_on category
+                 category_chosen filing_country vat_treatment vat_confirmed created_at updated_at].freeze
 
     # The machine's paths are a JSON array: whether +path+ is one of them.
     def self.in_path(path)
-      Sequel.lit('EXISTS (SELECT 1 FROM json_each(submissions.machine) WHERE value = ?)', path)
+      Sequel.lit('EXISTS (SELECT 1 FROM json_each(expenses.machine) WHERE value = ?)', path)
     end
 
     # Where an expense is, for filtering: one key per state a person tells
     # apart, each a condition on the machine's paths. The top-level states
     # exclude each other, so every row is in exactly one. (Discarded ones
-    # have no row. No paths yet: the upload is still being stored, which
-    # counts as scanning, and so does waiting for a scanning slot.)
+    # have no row.)
     STATES = {
-      'scanning' => Sequel.|(in_path('scanning'), in_path('queued'), { machine: '[]' }),
       'reviewing' => in_path('reviewing'),
       'reviewed' => in_path('reviewed'),
-      'rejected' => in_path('rejected'),
-      'scan_failed' => in_path('scan_failed'),
       'filed' => in_path('filed'),
       'voided' => in_path('voided')
     }.freeze
 
     # The states waiting for a person.
-    NEEDS_YOU = %w[reviewing reviewed rejected scan_failed].freeze
+    NEEDS_YOU = %w[reviewing reviewed].freeze
 
     # Whose category it is: the model's suggestion, a person's choice, or
-    # none yet (still scanning, the model failed, or filled in by hand).
+    # none yet (still suggesting, the model failed, or nothing to go on).
     CATEGORY_STATUSES = {
       'suggested' => Sequel.&(Sequel.~(category: nil), { category_chosen: false }),
       'chosen' => { category_chosen: true },
@@ -63,7 +59,7 @@ module Expenses
     }.freeze
 
     # Whose VAT treatment it is: the rule's suggestion, a person's, or none
-    # yet (still scanning, or nothing read to suggest one from).
+    # yet (nothing in the draft to suggest one from).
     VAT_STATUSES = {
       'suggested' => Sequel.&(Sequel.~(vat_treatment: nil), { vat_confirmed: false }),
       'confirmed' => { vat_confirmed: true },
@@ -77,10 +73,10 @@ module Expenses
     # any), filed in any of +filing_countries+ (ISO 3166-1 alpha-2 codes;
     # any, for none), dated +from+ to +to+ (either may be nil, for no
     # bound), matching +search+ (see .search; nil or blank for any). A
-    # range leaves out rows with no date yet: still scanning, or never read.
+    # range leaves out rows with no date yet: none in the draft.
     def self.in_states(db, states = [], categories: [], category_statuses: [], vat_statuses: [], filing_countries: [],
                        from: nil, to: nil, search: nil)
-      ds = any_of(db[:submissions], STATES, states)
+      ds = any_of(db[:expenses], STATES, states)
       ds = any_of(ds, CATEGORY_STATUSES, category_statuses)
       ds = any_of(ds, VAT_STATUSES, vat_statuses)
       ds = ds.where(category: categories) if categories.any?
@@ -102,7 +98,7 @@ module Expenses
     # The ids of the rows matching +text+, as a dataset to filter by
     # (`where(expense_id: ...)`, here or in another table), or nil for a
     # blank +text+: no filter. Every word in it must be somewhere in the
-    # description, vendor, filename or category, as any part of a word,
+    # description, vendor or category, as any part of a word,
     # whatever its case. Words of 3 characters or more are matched in the
     # index, ignoring accents too ("cafe" finds "Café"); shorter ones, which
     # the trigram index can't, as plain substrings.
@@ -114,9 +110,10 @@ module Expenses
       return if words.empty?
 
       long, short = words.partition { it.length >= 3 }
-      ds = db[:submissions_search].select(:expense_id)
-      ds = ds.where(Sequel.lit('submissions_search MATCH ?', long.map { %("#{it.gsub('"', '""')}") }.join(' '))) if long.any?
-      short.each { ds = ds.where(Sequel.like(:body, "%#{ds.escape_like(it)}%", case_insensitive: false)) }
+      ds = db[:expenses_search].select(:expense_id)
+      ds = ds.where(Sequel.lit('expenses_search MATCH ?', long.map { %("#{it.gsub('"', '""')}") }.join(' '))) if long.any?
+      # Lowercased both sides: Sequel turns SQLite's case_sensitive_like on.
+      short.each { ds = ds.where(Sequel.like(Sequel.function(:lower, :body), "%#{ds.escape_like(it.downcase)}%")) }
       ds
     end
 
@@ -124,7 +121,7 @@ module Expenses
     # @return [Array(Array<Row>, Integer)] the page's rows, and how many there are in all
     def self.page(db, states: [], page: 1, per_page: 25, **filters)
       ds = in_states(db, states, **filters)
-      rows = ds.reverse(:uploaded_at).limit(per_page, (page - 1) * per_page).map { row(it) }
+      rows = ds.reverse(:created_at).limit(per_page, (page - 1) * per_page).map { row(it) }
       [rows, ds.count]
     end
 
@@ -153,26 +150,26 @@ module Expenses
                                        .to_h { [it[:category], it[:count]] }
     end
 
-    # The latest uploads first.
+    # The latest first.
     def self.recent(db, limit: 50)
-      db[:submissions].reverse(:uploaded_at).limit(limit).map { row(it) }
+      db[:expenses].reverse(:created_at).limit(limit).map { row(it) }
     end
 
     def self.row(row) = Row.new(**row.slice(*Row.members), machine: JSON.parse(row[:machine]))
 
     # The group's offsets were rewound (`bin/sid sourced groups reset
-    # expenses.submissions`): every row goes, and it builds them again from
+    # expenses.expense_list`): every row goes, and it builds them again from
     # the start of the store once started.
     def self.on_reset
       db = Sidereal.config['db']
-      db[:submissions].delete
-      db[:submissions_search].delete
+      db[:expenses].delete
+      db[:expenses_search].delete
     end
 
     context { { machine: [], category_chosen: false, vat_confirmed: false } }
 
     load_context do |partition|
-      row = db[:submissions].where(expense_id: partition[:expense_id]).first
+      row = db[:expenses].where(expense_id: partition[:expense_id]).first
       row&.merge(machine: JSON.parse(row[:machine]))
     end
 
@@ -181,55 +178,27 @@ module Expenses
         row[:expense_id] = evt.payload.expense_id
         row[:machine] = (row[:machine] - evt.payload.exited) | evt.payload.entered
         row[:updated_at] = evt.created_at
-        # A scan that didn't finish prefills no form, so suggests no VAT
-        # treatment: as the machine's Document#suggested_vat_treatment.
-        if !row[:vat_confirmed] && (evt.payload.entered & %w[rejected scan_failed]).any?
-          row[:vat_treatment] = nil
-        end
       end
     end
 
-    evolve Expense::DocumentUploaded do |row, evt|
-      row.merge!(evt.payload.to_h.slice(:expense_id, :filename, :content_type, :file_ref, :filing_country))
-      row[:uploaded_at] = evt.created_at
-    end
-
-    # A rescan starts from nothing, but for a person's VAT treatment.
-    evolve Expense::ScanRequested do |row, _evt|
-      row.merge!(failure: nil, rejection: nil, description: nil, vendor: nil, total_cents: nil, currency: nil,
-                 incurred_on: nil)
-      row[:vat_treatment] = nil unless row[:vat_confirmed]
-    end
-
-    evolve Expense::StepFailed do |row, evt|
-      row[:failure] = evt.payload.reason
-    end
-
-    evolve Expense::Scanning::DocumentVerified do |row, evt|
-      row[:rejection] = evt.payload.explanation unless evt.payload.is_invoice_or_receipt
-    end
-
-    evolve Expense::Scanning::ExtractionRecorded do |row, evt|
-      total = evt.payload.total_amount
+    # Its figures, drafted, redrafted (its document read again) or entered: what they say, and the VAT treatment the rule suggests from
+    # them, unless a person has confirmed one.
+    FIGURES = proc do |row, evt|
+      p = evt.payload.to_h
+      row[:created_at] ||= evt.created_at
       row.merge!(
-        description: evt.payload.description,
-        vendor: evt.payload.vendor_name,
-        total_cents: total && (total * 100).round,
-        currency: evt.payload.currency,
-        incurred_on: Types.iso_date(evt.payload.date)
+        expense_id: p[:expense_id], filing_country: p[:filing_country], description: p[:description],
+        vendor: p[:vendor], currency: p[:currency], incurred_on: p[:incurred_on],
+        total_cents: p[:net_price_cents] && (p[:net_price_cents] + p[:tax_amount_cents].to_i)
       )
-      unless row[:vat_confirmed]
-        row[:vat_treatment] = Document.suggested_vat_treatment(evt.payload.to_h.except(:expense_id),
-                                                               filing_country: row[:filing_country])
-      end
+      row[:vat_treatment] = ExpenseState.suggested_vat_treatment(p, filing_country: p[:filing_country]) unless row[:vat_confirmed]
     end
+    evolve Expense::ExpenseDrafted, &FIGURES
+    evolve Expense::ExpenseRedrafted, &FIGURES
+    evolve Expense::ExpenseEntered, &FIGURES
 
-    evolve Expense::Scanning::DateRechecked do |row, evt|
-      row[:incurred_on] = Types.iso_date(evt.payload.corrected_date) if evt.payload.corrected_date
-    end
-
-    evolve Expense::Scanning::TextCleaned do |row, evt|
-      row[:description] = evt.payload.description
+    evolve Expense::DocumentAttached do |row, evt|
+      row[:document_id] = evt.payload.document_id
     end
 
     evolve Expense::ExpenseFiled do |row, evt|
@@ -257,24 +226,24 @@ module Expenses
     end
 
     sync do |context:, **|
-      next unless context[:filename]
+      next unless context[:created_at]
 
       expense_id = context[:expense_id]
       # FTS5 tables have no upsert: the old entry goes, the new one in.
-      index = db[:submissions_search]
+      index = db[:expenses_search]
       index.where(expense_id:).delete
       # Discarded: the row goes too, and nothing comes back (it's final).
-      next db[:submissions].where(expense_id:).delete if context[:machine].include?('discarded')
+      next db[:expenses].where(expense_id:).delete if context[:machine].include?('discarded')
 
       row = context.slice(*COLUMNS).merge(machine: JSON.generate(context[:machine]))
-      db[:submissions].insert_conflict(target: :expense_id, update: row).insert(row.merge(expense_id:))
-      index.insert(expense_id:, body: Submissions.search_body(context))
+      db[:expenses].insert_conflict(target: :expense_id, update: row).insert(row.merge(expense_id:))
+      index.insert(expense_id:, body: ExpenseList.search_body(context))
     end
 
     # What a row is found by, a line each.
     def self.search_body(row)
       category = row[:category] && Expenses.category_label(row[:category])
-      [row[:description], row[:vendor], row[:filename], category].compact.join("\n")
+      [row[:description], row[:vendor], category].compact.join("\n")
     end
   end
 end

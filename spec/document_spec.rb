@@ -2,25 +2,20 @@
 
 require 'sourced/testing/rspec'
 
-# Inside Expense, so its commands, states and parts read by their own names.
+# Inside Document, so its commands, states and parts read by their own names.
 module Expenses
-  class Expense
-    RSpec.describe Expense do
+  class Document
+    RSpec.describe Document do
       include Sourced::Testing::RSpec
 
-      let(:expense_id) { '3a1b2c4d5e6f4a7b8c9d0e1f2a3b4c5d' }
+      let(:document_id) { '3a1b2c4d5e6f4a7b8c9d0e1f2a3b4c5d' }
       let(:today) { Date.new(2026, 8, 11) }
 
-      def cmd(klass, **payload) = klass.new(payload: { expense_id:, **payload })
-      def history(*commands, given: []) = decided(Expense, { expense_id: }, *commands, given:)
-      def expense(history) = Expense.new(expense_id:).tap { it.evolve(history) }
-      def value(history) = expense(history).machine.value
+      def cmd(klass, **payload) = klass.new(payload: { document_id:, **payload })
+      def history(*commands, given: []) = decided(Document, { document_id: }, *commands, given:)
+      def document(history) = Document.new(document_id:).tap { it.evolve(history) }
+      def value(history) = document(history).machine.value
       def scanning(state) = { Scanning::State => state }
-      def reviewing(category: :initial, vat: :initial) = { Reviewing => { category:, vat: } }
-
-      def choose(given, category = 'general') = history(cmd(ChooseCategory, category:), given:)
-      def confirm(given, treatment = 'domestic') = history(cmd(ConfirmVatTreatment, treatment:), given:)
-      def reviewed(given) = confirm(choose(given))
 
       # A clean extraction: plausible, with a spelled-out recent date.
       def extraction(**overrides)
@@ -45,10 +40,11 @@ module Expenses
       def dispatched_entering(history)
         *before, entered = history
         messages = nil
-        before.reduce(with_reactor(Expense, expense_id:)) { |gwt, msg| gwt.given(msg) }
+        before.reduce(with_reactor(Document, document_id:)) { |gwt, msg| gwt.given(msg) }
               .when(entered).then { |result| messages = result.messages }
         messages
       end
+
       let(:extracting) do
         history(cmd(Scanning::CompletePreparation, processed_file_ref: 'tmp/lunch-small.jpg', downsized: true), given: uploaded)
       end
@@ -60,20 +56,14 @@ module Expenses
                 given: extracted(**overrides))
       end
 
-      def form(**overrides)
-        { description: 'Café Central - Lunch', net_price_cents: 2000, tax_amount_cents: 420, tax_description: 'BTW 21%',
-          currency: 'EUR', incurred_on: Date.new(2026, 8, 9), supplier_country_code: 'NL', reverse_charge: false,
-          payment_reference: 'R-1234', **overrides }
-      end
-
-      def file(given, **overrides) = history(cmd(SaveExpense, **form(**overrides)), given:)
+      def drafts(history) = dispatched_entering(history).grep(Expense::DraftExpenseFromDocument)
 
       it 'is a valid chart' do
         expect(Expenses.machines.map(&:to_h)).to all(include(:states))
       end
 
       describe 'the scan queue' do
-        let(:job) { WorkQueue.item_id(StartScan, expense_id:) }
+        let(:job) { WorkQueue.item_id(StartScan, document_id:) }
 
         it 'waits in queued on upload, enqueuing its scan with the capacity and the command its slot appends' do
           expect(value(queued)).to eq(Queued)
@@ -81,7 +71,7 @@ module Expenses
           enqueue = dispatched_entering(queued).grep(WorkQueue::Enqueue)
           expect(enqueue.map { it.payload.to_h }).to eq(
             [{ queue_name: 'scans', capacity: 3, item_id: job,
-               start: { type: StartScan.type, payload: { expense_id: } } }]
+               start: { type: StartScan.type, payload: { document_id: } } }]
           )
         end
 
@@ -116,15 +106,14 @@ module Expenses
           discarded = history(cmd(DiscardDocument), given: queued)
           read = Sourced::ReadResult.new(messages: discarded,
                                          guard: Sourced::ConsistencyGuard.new(selector: Sourced::Selector::NONE, last_position: 0))
-          pairs = Expense.handle_batch({ expense_id: }, [cmd(StartScan)], history: read, replaying: false)
-
+          pairs = Document.handle_batch({ document_id: }, [cmd(StartScan)], history: read, replaying: false)
           expect(pairs.flat_map { |actions, _| Array(actions) }).to all(be_a(Sourced::Actions::Ack))
         end
       end
 
       describe 'scanning' do
         it 'starts preparing the file once it has a scanning slot, with the reference date for the scan' do
-          doc = expense(uploaded).context
+          doc = document(uploaded).context
 
           expect(value(uploaded)).to eq(scanning(Scanning::Preparing))
           expect(doc.reference_date).to eq(today)
@@ -135,31 +124,12 @@ module Expenses
           expect(value(extracted)).to eq(scanning(Scanning::Cleaning))
         end
 
-        it 'prefills the form from the scan, in cents, with the cleaned text' do
-          expect(value(scanned)).to eq(reviewing)
-          expect(expense(scanned).context.draft).to include(
-            net_price_cents: 2000, tax_amount_cents: 420, currency: 'EUR',
-            incurred_on: Date.new(2026, 8, 9), supplier_country_code: 'NL'
-          )
-        end
-
-        it 'books a total-only receipt as net with zero tax' do
-          doc = expense(scanned(net_amount: nil, tax_amount: nil, total_amount: 12.5)).context
-          expect(doc.draft).to include(net_price_cents: 1250, tax_amount_cents: 0)
-        end
-
-        it 'keeps the original text when the cleanup fails' do
-          done = history(cmd(Scanning::FailCleanup, reason: 'timeout'), given: extracted(description: 'CafÃ© - Lunch'))
-
-          expect(value(done)).to eq(reviewing)
-          expect(expense(done).context.draft[:description]).to eq('CafÃ© - Lunch')
-        end
-
         it 'fails the scan when the extraction call fails' do
           failed = history(cmd(Scanning::FailExtraction, reason: 'API timeout'), given: extracting)
 
           expect(value(failed)).to eq(ScanFailed)
-          expect(expense(failed).context.failure).to eq(step: 'extracting', reason: 'API timeout')
+          expect(document(failed).context.failure).to eq(step: 'extracting', reason: 'API timeout')
+          expect(drafts(failed)).to be_empty
         end
 
         describe 'an implausible extraction' do
@@ -167,21 +137,21 @@ module Expenses
 
           it 'asks whether the document is a receipt, telling what went wrong' do
             expect(value(doubtful)).to eq(scanning(Scanning::Verifying))
-            expect(expense(doubtful).context.extraction_errors).to eq(['Missing total amount', 'Low confidence extraction'])
+            expect(document(doubtful).context.extraction_errors).to eq(['Missing total amount', 'Low confidence extraction'])
           end
 
           it 'takes an extraction missing keys, as nil, and doubts it' do
             sparse = history(cmd(Scanning::CompleteExtraction, total_amount: 10, confidence: 'high'), given: extracting)
 
             expect(value(sparse)).to eq(scanning(Scanning::Verifying))
-            expect(expense(sparse).context.extraction_errors).to eq(['Missing currency', 'Missing date', 'Missing description'])
+            expect(document(sparse).context.extraction_errors).to eq(['Missing currency', 'Missing date', 'Missing description'])
           end
 
           it 'flags a date that is not ISO 8601' do
             odd = extracted(date: '9 Aug 2026')
 
             expect(value(odd)).to eq(scanning(Scanning::Verifying))
-            expect(expense(odd).context.extraction_errors).to eq(['Invalid date format (9 Aug 2026)'])
+            expect(document(odd).context.extraction_errors).to eq(['Invalid date format (9 Aug 2026)'])
           end
 
           it 'flags amounts with more than two decimals' do
@@ -194,12 +164,13 @@ module Expenses
             expect(value(verified)).to eq(scanning(Scanning::Cleaning))
           end
 
-          it 'rejects it with the explanation when it is not' do
+          it 'rejects it with the explanation when it is not, drafting no expense' do
             rejected = history(cmd(Scanning::CompleteVerification, is_invoice_or_receipt: false, explanation: 'A photo of a cat'),
                                given: doubtful)
 
             expect(value(rejected)).to eq(Rejected)
-            expect(expense(rejected).context.verification).to eq(is_invoice_or_receipt: false, explanation: 'A photo of a cat')
+            expect(document(rejected).context.verification).to eq(is_invoice_or_receipt: false, explanation: 'A photo of a cat')
+            expect(drafts(rejected)).to be_empty
           end
         end
 
@@ -225,21 +196,21 @@ module Expenses
           end
 
           it 'takes a better reading, and drops the datetime that carried the old one' do
-            doc = expense(recheck('2026-08-03')).context
+            doc = document(recheck('2026-08-03')).context
 
             expect(doc.extraction).to include(date: '2026-08-03', datetime: nil)
             expect(doc.date_recheck).to include(corrected_date: '2026-08-03', previous_date: '2026-03-11')
           end
 
           it 'keeps the first reading over one that is not ISO 8601' do
-            doc = expense(recheck('3 Aug 2026')).context
+            doc = document(recheck('3 Aug 2026')).context
 
             expect(doc.extraction[:date]).to eq('2026-03-11')
             expect(doc.date_recheck).to include(corrected_date: nil)
           end
 
           it 'keeps the first reading over one in the future' do
-            doc = expense(recheck('2026-11-03')).context
+            doc = document(recheck('2026-11-03')).context
 
             expect(doc.extraction[:date]).to eq('2026-03-11')
             expect(doc.date_recheck).to include(corrected_date: nil)
@@ -249,154 +220,119 @@ module Expenses
             failed = history(cmd(Scanning::FailDateRecheck, reason: 'API error'), given: old_numeric)
 
             expect(value(failed)).to eq(scanning(Scanning::Cleaning))
-            expect(expense(failed).context.extraction[:date]).to eq('2026-03-11')
+            expect(document(failed).context.extraction[:date]).to eq('2026-03-11')
           end
         end
 
         it 'gives up on a scan that takes too long' do
           *before, entered = uploaded
           timer = nil
-          before.reduce(with_reactor(Expense, expense_id:)) { |gwt, msg| gwt.given(msg) }
+          before.reduce(with_reactor(Document, document_id:)) { |gwt, msg| gwt.given(msg) }
                 .when(entered).then { |result| timer = result.messages.find { TimeOutScan === it } }
 
           expect(timer.created_at).to be_within(1).of(entered.created_at + 600)
 
           timed_out = history(timer, given: uploaded)
           expect(value(timed_out)).to eq(ScanFailed)
-          expect(expense(timed_out).handles_command?(cmd(Scanning::CompletePreparation, processed_file_ref: 'x'))).to be(false)
+          expect(document(timed_out).handles_command?(cmd(Scanning::CompletePreparation, processed_file_ref: 'x'))).to be(false)
         end
 
         it 'starts over on a rescan, forgetting the last scan' do
           rescanned = history(cmd(Rescan, reference_date: Date.new(2026, 9, 1)), cmd(StartScan), given: scanned)
-          doc = expense(rescanned).context
+          doc = document(rescanned).context
 
           expect(value(rescanned)).to eq(scanning(Scanning::Preparing))
           expect(doc.extraction).to be_nil
           expect(doc.reference_date).to eq(Date.new(2026, 9, 1))
           expect(doc.scans).to eq(2)
         end
-
-        it 'lets a person fill in the form when the scan failed' do
-          failed = history(cmd(Scanning::FailPreparation, reason: 'Corrupt file'), given: uploaded)
-          expect(value(history(cmd(EnterManually), given: failed))).to eq(reviewing)
-        end
       end
 
-      describe 'reviewing' do
-        def vat(history) = expense(history).context.suggested_vat_treatment
-
-        it 'suggests domestic VAT from a supplier in the filing country' do
-          expect(vat(scanned)).to eq('domestic')
-          expect(expense(scanned).context.vat_needs_review?).to be(false)
+      describe 'drafting its expense' do
+        def draft(history)
+          found = drafts(history)
+          expect(found.size).to eq(1)
+          found.first.payload.to_h
         end
 
-        it 'suggests reverse charge first' do
-          expect(vat(scanned(reverse_charge: true, tax_amount: 0.0, supplier_country_code: 'IE'))).to eq('reverse_charge')
+        it 'drafts its expense once read, under its own id, in cents, with the cleaned text' do
+          expect(value(scanned)).to eq(Scanned)
+          expect(draft(scanned)).to eq(
+            expense_id: document_id, document_id:, filing_country: 'NL', vendor: 'Café Central',
+            description: 'Café Central - Lunch', net_price_cents: 2000, tax_amount_cents: 420, tax_description: 'BTW 21%',
+            currency: 'EUR', incurred_on: Date.new(2026, 8, 9), supplier_country_code: 'NL', reverse_charge: false,
+            payment_reference: 'R-1234'
+          )
         end
 
-        it 'suggests no VAT when none was booked' do
-          expect(vat(scanned(tax_amount: 0.0, supplier_country_code: 'US'))).to eq('no_vat')
+        it 'books a total-only receipt as net with zero tax' do
+          expect(draft(scanned(net_amount: nil, tax_amount: nil, total_amount: 12.5)))
+            .to include(net_price_cents: 1250, tax_amount_cents: 0)
         end
 
-        it 'flags foreign VAT, and VAT from an unknown supplier country, for a closer look' do
-          [scanned(supplier_country_code: 'DE'), scanned(supplier_country_code: nil)].each do |foreign|
-            expect(vat(foreign)).to eq('foreign_vat')
-            expect(expense(foreign).context.vat_needs_review?).to be(true)
+        # A draft's currency is three letters: whatever else the model read
+        # must still make a valid DraftExpenseFromDocument, or the draft never lands.
+        it 'drafts a valid expense whatever currency the model read' do
+          { 'eur' => 'EUR', ' gbp ' => 'GBP', '€' => nil, 'Euro' => nil }.each do |read, drafted|
+            found = draft(scanned(currency: read))
+            expect(found[:currency]).to eq(drafted), read.inspect
+            expect(Expense::DraftExpenseFromDocument.new(payload: found)).to be_valid, read.inspect
           end
         end
 
-        it 'suggests nothing for a form filled in by hand' do
+        it 'keeps the original text when the cleanup fails' do
+          done = history(cmd(Scanning::FailCleanup, reason: 'timeout'), given: extracted(description: 'CafÃ© - Lunch'))
+
+          expect(value(done)).to eq(Scanned)
+          expect(draft(done)[:description]).to eq('CafÃ© - Lunch')
+        end
+
+        it 'drafts it again, as read the second time, after a rescan' do
+          again = history(cmd(Rescan, reference_date: today), cmd(StartScan),
+                          cmd(Scanning::CompletePreparation, processed_file_ref: 'tmp/lunch-small.jpg'),
+                          cmd(Scanning::CompleteExtraction, **extraction(total_amount: 30.0, net_amount: 25.0, tax_amount: 5.0)),
+                          cmd(Scanning::CompleteCleanup, description: 'Café Central - Dinner', tax_description: 'BTW 21%'),
+                          given: scanned)
+
+          expect(value(again)).to eq(Scanned)
+          expect(draft(again)).to include(description: 'Café Central - Dinner', net_price_cents: 2500, tax_amount_cents: 500)
+        end
+
+        it 'lets a person draft it by hand, empty, when the scan failed' do
+          failed = history(cmd(Scanning::FailPreparation, reason: 'Corrupt file'), given: uploaded)
+          by_hand = history(cmd(EnterManually), given: failed)
+
+          expect(value(by_hand)).to eq(EnteredByHand)
+          expect(draft(by_hand).compact).to eq(expense_id: document_id, document_id:, filing_country: 'NL')
+        end
+
+        it 'lets a person draft it by hand when it was rejected' do
+          rejected = history(cmd(Scanning::CompleteVerification, is_invoice_or_receipt: false, explanation: 'A cat'),
+                             given: extracted(total_amount: nil))
+          by_hand = history(cmd(EnterManually), given: rejected)
+
+          expect(value(by_hand)).to eq(EnteredByHand)
+          expect(drafts(by_hand).size).to eq(1)
+        end
+
+        it 'can be scanned again, or discarded, once drafted by hand' do
           by_hand = history(cmd(Scanning::FailPreparation, reason: 'Corrupt file'), cmd(EnterManually), given: uploaded)
 
-          expect(vat(by_hand)).to be_nil
-          expect(expense(by_hand).context.vat_needs_review?).to be(true)
+          expect(value(history(cmd(Rescan, reference_date: today), given: by_hand))).to eq(Queued)
+          expect(value(history(cmd(DiscardDocument), given: by_hand))).to eq(Discarded)
         end
 
-        it 'forgets the last scan’s form on a rescan, so a failed one suggests nothing' do
-          by_hand = history(cmd(Rescan, reference_date: today), cmd(StartScan), cmd(Scanning::FailPreparation, reason: 'Corrupt file'),
-                            cmd(EnterManually), given: scanned)
-
-          expect(expense(by_hand).context.draft).to eq({})
-          expect(vat(by_hand)).to be_nil
-        end
-
-        it 'files nothing until the category is chosen and the VAT treatment confirmed, in either order' do
-          can_file = ->(history) { expense(history).handles_command?(cmd(SaveExpense, **form)) }
-          expect(can_file.(scanned)).to be(false)
-
-          vat_first = confirm(scanned, 'import')
-          expect(value(vat_first)).to eq(reviewing(vat: VatConfirmed))
-          expect(can_file.(vat_first)).to be(false)
-          expect(value(choose(vat_first))).to eq(Reviewed)
-
-          category_first = choose(scanned, 'travel')
-          expect(value(category_first)).to eq(reviewing(category: CategoryConfirmed))
-          expect(can_file.(category_first)).to be(false)
-
-          done = confirm(category_first)
-          expect(value(done)).to eq(Reviewed)
-          expect(can_file.(done)).to be(true)
-          expect(expense(done).context).to have_attributes(category: 'travel', vat_treatment: 'domestic',
-                                                           vat_treatment_confirmed?: true)
-        end
-
-        it 'takes a change to a step already done while the other waits' do
-          rechosen = choose(choose(scanned, 'travel'), 'general')
-
-          expect(value(rechosen)).to eq(reviewing(category: CategoryConfirmed))
-          expect(expense(rechosen).context.category).to eq('general')
-          expect(expense(confirm(confirm(scanned), 'import')).context.vat_treatment).to eq('import')
-        end
-
-        it 'takes a change of mind once reviewed, and ignores repeats' do
-          changed = history(cmd(ConfirmVatTreatment, treatment: 'import'), cmd(ChooseCategory, category: 'travel'),
-                            given: reviewed(scanned))
-
-          expect(value(changed)).to eq(Reviewed)
-          expect(expense(changed).context).to have_attributes(vat_treatment: 'import', category: 'travel')
-          expect(history(cmd(ConfirmVatTreatment, treatment: 'import'), given: changed)).to eq(changed)
-        end
-
-        describe 'scanned again' do
-          def scan_again(given)
-            history(cmd(Rescan, reference_date: today), cmd(StartScan),
-                    cmd(Scanning::CompletePreparation, processed_file_ref: 'tmp/lunch-small.jpg'),
-                    cmd(Scanning::CompleteExtraction, **extraction),
-                    cmd(Scanning::CompleteCleanup, description: 'Café Central - Lunch', tax_description: 'BTW 21%'), given:)
-          end
-
-          it 'keeps a step done before the rescan' do
-            expect(value(scan_again(confirm(scanned, 'import')))).to eq(reviewing(vat: VatConfirmed))
-          end
-
-          it 'comes back reviewed once both were done' do
-            expect(value(scan_again(reviewed(scanned)))).to eq(Reviewed)
-          end
+        it 'takes no EnterManually once read' do
+          expect(document(scanned).handles_command?(cmd(EnterManually))).to be(false)
         end
       end
 
-      describe 'filing' do
-        it 'files the reviewed form' do
-          done = file(reviewed(scanned))
+      describe 'discarding' do
+        it 'can be discarded once read, and then takes nothing more' do
+          discarded = history(cmd(DiscardDocument), given: scanned)
 
-          expect(value(done)).to eq(Filed)
-          expect(expense(done).context.filed).to include(net_price_cents: 2000, supplier_country_code: 'NL')
-        end
-
-        it 'keeps the confirmed VAT treatment when corrected in place, staying filed' do
-          corrected = file(file(confirm(choose(scanned), 'import')), supplier_country_code: 'DE')
-
-          expect(value(corrected)).to eq(Filed)
-          expect(expense(corrected).context).to have_attributes(vat_treatment: 'import', suggested_vat_treatment: 'foreign_vat')
-          expect(expense(corrected).handles_command?(cmd(DiscardDocument))).to be(false)
-        end
-
-        it 'takes a change of category or VAT treatment once filed' do
-          changed = history(cmd(ConfirmVatTreatment, treatment: 'no_vat'), cmd(ChooseCategory, category: 'travel'),
-                            given: file(reviewed(scanned)))
-
-          expect(value(changed)).to eq(Filed)
-          expect(expense(changed).context).to have_attributes(vat_treatment: 'no_vat', category: 'travel')
+          expect(value(discarded)).to eq(Discarded)
+          expect(document(discarded).handles_command?(cmd(Rescan, reference_date: today))).to be(false)
         end
       end
     end

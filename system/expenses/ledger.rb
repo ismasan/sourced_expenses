@@ -15,7 +15,7 @@ module Expenses
   # Each row has the expense's category too (the suggestion, until a person
   # chooses), and totals can be of some categories only, and of some
   # expenses only (+matching+: a dataset of their ids, as
-  # Submissions.search makes).
+  # ExpenseList.search makes).
   #
   #   Ledger.month(db, 'GBP')                      # this month
   #   Ledger.month(db, 'GBP', Date.new(2025, 10))  # October 2025

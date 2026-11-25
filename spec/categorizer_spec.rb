@@ -11,12 +11,6 @@ module Expenses
     let(:expense_id) { SecureRandom.hex(16) }
     let(:date) { Date.new(2025, 10, 24) }
 
-    let(:extraction) do
-      { document_type: 'receipt', description: 'Uber - Trip', total_amount: 18.5, net_amount: nil, tax_amount: nil,
-        tax_description: nil, currency: 'GBP', date_as_printed: '24 Oct 2025', date: '2025-10-24', vendor_name: 'Uber',
-        confidence: 'high', supplier_country_code: 'GB', reverse_charge: false }
-    end
-
     def cmd(klass, **payload) = klass.new(payload: { expense_id:, **payload })
 
     def save(**form)
@@ -24,18 +18,15 @@ module Expenses
                           incurred_on: date, supplier_country_code: 'GB', **form)
     end
 
-    let(:upload) do
-      cmd(Expense::UploadDocument, filename: 'uber.pdf', content_type: 'application/pdf', file_ref: 'f1', filing_country: 'GB',
-                             reference_date: date)
+    # A draft, as a document read prefills it.
+    def draft(**fields)
+      cmd(Expense::DraftExpenseFromDocument, filing_country: 'GB', document_id: expense_id, vendor: 'Uber', description: 'Uber - Trip',
+                                 net_price_cents: 1850, tax_amount_cents: 0, currency: 'GBP', incurred_on: date,
+                                 supplier_country_code: 'GB', reverse_charge: false, **fields)
     end
 
-    # Uploaded, scanned and ready to review.
-    let(:reviewing) do
-      [upload, cmd(Expense::StartScan),
-       cmd(Expense::Scanning::CompletePreparation, processed_file_ref: 'f1'),
-       cmd(Expense::Scanning::CompleteExtraction, **extraction),
-       cmd(Expense::Scanning::CompleteCleanup, description: 'Uber - Trip', tax_description: nil)]
-    end
+    # Drafted and ready to review.
+    let(:reviewing) { [draft] }
 
     # The history after +commands+, in the store as the categorizer loads it.
     def history(*commands, given: [])
@@ -54,22 +45,48 @@ module Expenses
     # The suggestion for +event+, recorded on the expense.
     def suggest(event, given:) = history(cmd(Expense::SuggestCategory, **payload(dispatched(event).first)), given:)
 
-    it 'suggests a category once the scan is done, from what it read' do
+    it 'suggests a category once drafted, from the draft' do
       FAKE_LLM.category = { category: 'travel', probability: 0.93 }
       scanned = history(*reviewing)
 
-      expect(dispatched(last(Expense::Scanning::Scanned, scanned)).map { [it.class, payload(it)] }).to eq([
+      expect(dispatched(last(Expense::ExpenseDrafted, scanned)).map { [it.class, payload(it)] }).to eq([
         [Expense::SuggestCategory, { category: 'travel', probability: 0.93, description: 'Uber - Trip' }]
       ])
-      expect(FAKE_LLM.categorized).to eq([{ filename: 'uber.pdf', description: 'Uber - Trip', vendor: 'Uber', tax_description: nil,
+      expect(FAKE_LLM.categorized).to eq([{ description: 'Uber - Trip', vendor: 'Uber', tax_description: nil,
                                             supplier_country: 'GB', total: '18.50 GBP' }])
+    end
+
+    it 'suggests for an expense entered by hand, with no document' do
+      entered = history(cmd(Expense::EnterExpense, filing_country: 'GB', description: 'Train to Leeds', net_price_cents: 4200,
+                                                   currency: 'GBP', incurred_on: date))
+
+      expect(dispatched(last(Expense::ExpenseEntered, entered)).map(&:class)).to eq([Expense::SuggestCategory])
+      expect(FAKE_LLM.categorized).to eq([{ description: 'Train to Leeds', vendor: nil, tax_description: nil,
+                                            supplier_country: nil, total: '42.00 GBP' }])
+    end
+
+    it 'suggests nothing for a draft with no description' do
+      drafted = history(cmd(Expense::DraftExpenseFromDocument, filing_country: 'GB', document_id: expense_id))
+
+      expect(dispatched(last(Expense::ExpenseDrafted, drafted))).to be_empty
+      expect(FAKE_LLM.categorized).to be_empty
+    end
+
+    it 'suggests again for a new draft with a new description (its document read again)' do
+      scanned = history(*reviewing)
+      suggested = suggest(last(Expense::ExpenseDrafted, scanned), given: scanned)
+      FAKE_LLM.reset!
+      redrafted = history(draft(description: 'Uber Eats - Dinner'), given: suggested)
+
+      expect(dispatched(last(Expense::ExpenseDrafted, scanned))).to be_empty
+      expect(dispatched(last(Expense::ExpenseRedrafted, redrafted)).map { payload(it)[:description] }).to eq(['Uber Eats - Dinner'])
     end
 
     it 'reports a model that fails' do
       FAKE_LLM.category = LLM::Error.new('OpenAI is rate limiting requests')
       scanned = history(*reviewing)
 
-      expect(dispatched(last(Expense::Scanning::Scanned, scanned)).map { [it.class, payload(it)] }).to eq([
+      expect(dispatched(last(Expense::ExpenseDrafted, scanned)).map { [it.class, payload(it)] }).to eq([
         [Expense::FailCategorization, { description: 'Uber - Trip', reason: 'OpenAI is rate limiting requests' }]
       ])
     end
@@ -78,7 +95,7 @@ module Expenses
       scanned = history(*reviewing)
       history(cmd(Expense::ChooseCategory, category: 'motor_expenses'), given: scanned)
 
-      expect(dispatched(last(Expense::Scanning::Scanned, scanned))).to be_empty
+      expect(dispatched(last(Expense::ExpenseDrafted, scanned))).to be_empty
       expect(FAKE_LLM.categorized).to be_empty
     end
 
@@ -87,14 +104,14 @@ module Expenses
       it 'suggests for one still in review' do
         scanned = history(*reviewing)
 
-        expect(dispatched(last(Expense::Scanning::Scanned, scanned)).map(&:class)).to eq([Expense::SuggestCategory])
+        expect(dispatched(last(Expense::ExpenseDrafted, scanned)).map(&:class)).to eq([Expense::SuggestCategory])
       end
 
       it 'tries again one whose categorization failed' do
         scanned = history(*reviewing)
         history(cmd(Expense::FailCategorization, description: 'Uber - Trip', reason: 'Down'), given: scanned)
 
-        expect(dispatched(last(Expense::Scanning::Scanned, scanned)).map(&:class)).to eq([Expense::SuggestCategory])
+        expect(dispatched(last(Expense::ExpenseDrafted, scanned)).map(&:class)).to eq([Expense::SuggestCategory])
       end
 
       it 'skips a filed expense' do
@@ -102,24 +119,24 @@ module Expenses
         history(cmd(Expense::ConfirmVatTreatment, treatment: 'domestic'), cmd(Expense::ChooseCategory, category: 'travel'),
                 save, given: scanned)
 
-        expect(dispatched(last(Expense::Scanning::Scanned, scanned))).to be_empty
+        expect(dispatched(last(Expense::ExpenseDrafted, scanned))).to be_empty
         expect(FAKE_LLM.categorized).to be_empty
       end
 
       it 'skips a discarded expense' do
         scanned = history(*reviewing)
-        history(cmd(Expense::DiscardDocument), given: scanned)
+        history(cmd(Expense::DiscardExpense), given: scanned)
 
-        expect(dispatched(last(Expense::Scanning::Scanned, scanned))).to be_empty
+        expect(dispatched(last(Expense::ExpenseDrafted, scanned))).to be_empty
         expect(FAKE_LLM.categorized).to be_empty
       end
 
       it 'skips one it has a suggestion for already (a reset group)' do
         scanned = history(*reviewing)
-        suggest(last(Expense::Scanning::Scanned, scanned), given: scanned)
+        suggest(last(Expense::ExpenseDrafted, scanned), given: scanned)
         FAKE_LLM.reset!
 
-        expect(dispatched(last(Expense::Scanning::Scanned, scanned))).to be_empty
+        expect(dispatched(last(Expense::ExpenseDrafted, scanned))).to be_empty
         expect(FAKE_LLM.categorized).to be_empty
       end
     end
@@ -155,8 +172,8 @@ module Expenses
         suggested = history(cmd(Expense::SuggestCategory, category: 'travel', probability: 0.9, description: 'Uber - Trip'), given: scanned)
         chosen = history(cmd(Expense::ChooseCategory, category: 'motor_expenses'),
                          cmd(Expense::SuggestCategory, category: 'general', probability: 0.4, description: 'Other'), given: suggested)
-        project = ->(messages) { messages.reduce(with_reactor(Submissions, expense_id:)) { |r, m| r.given(m) }.then! { nil } }
-        row = -> { Submissions.recent(db, limit: 1000).find { it.expense_id == expense_id } }
+        project = ->(messages) { messages.reduce(with_reactor(ExpenseList, expense_id:)) { |r, m| r.given(m) }.then! { nil } }
+        row = -> { ExpenseList.recent(db, limit: 1000).find { it.expense_id == expense_id } }
 
         project.(suggested)
         expect(row.()).to have_attributes(category: 'travel', category_chosen: false)

@@ -12,12 +12,12 @@ module UI
 
       # The first LIMIT matches for +query+, and how many there are.
       def self.for(query)
-        rows, total = Expenses::Submissions.page(Sidereal.config['db'], search: query, per_page: LIMIT)
+        rows, total = Expenses::ExpenseList.page(Sidereal.config['db'], search: query, per_page: LIMIT)
         new(query, rows, total)
       end
 
       # @param query [String]
-      # @param rows [Array<Expenses::Submissions::Row>]
+      # @param rows [Array<Expenses::ExpenseList::Row>]
       # @param total [Integer] how many match in all
       def initialize(query, rows, total)
         @query = query
@@ -47,8 +47,8 @@ module UI
       def row(sub, index)
         status = Status.for(sub.machine)
         li(class: "search-preview__item search-preview__item--#{status.stage}") do
-          a(id: "search-result-#{index}", class: 'search-preview__link', href: "/submissions/#{sub.expense_id}") do
-            span(class: 'search-preview__description') { sub.description || sub.filename }
+          a(id: "search-result-#{index}", class: 'search-preview__link', href: "/expenses/#{sub.expense_id}") do
+            span(class: 'search-preview__description') { sub.description || 'New expense' }
             span(class: 'search-preview__amount') { Money.format(sub.total_cents, sub.currency) } if sub.total_cents && sub.currency
             span(class: 'search-preview__meta') do
               plain [sub.incurred_on&.strftime('%-d %b %Y'), sub.category && Expenses.category_label(sub.category),

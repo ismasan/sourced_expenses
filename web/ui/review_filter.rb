@@ -2,7 +2,7 @@
 
 module UI
   # The expense list's filters by whose category and VAT treatment an
-  # expense has: Expenses::Submissions::CATEGORY_STATUSES and VAT_STATUSES
+  # expense has: Expenses::ExpenseList::CATEGORY_STATUSES and VAT_STATUSES
   # keys as a person reads them, in the order a review goes.
   module ReviewFilter
     Option = Data.define(:key, :label)

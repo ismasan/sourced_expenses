@@ -64,3 +64,5 @@
 .submission--done { --stage: var(--done); }
 .submission--closed { --stage: var(--rule); }
 .submission--closed .submission__file { color: var(--ink-2); font-weight: 600; }
+/* Documents that couldn't be read, under the expenses that need you. */
+.submissions__subtitle { font-size: 1.05rem; font-weight: 700; margin: 1.75rem 0 0.5rem; }

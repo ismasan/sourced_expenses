@@ -5,7 +5,7 @@ module UI
     # Pick receipts and invoices and upload them, or drop them anywhere on
     # the page: one or many at once. The page stays put: each file's line
     # shows in the report under the form (UploadReport), and the home
-    # page's lists show the new expenses as they're read.
+    # page's lists show the new documents as they're read.
     #
     # Each file is its own UploadFile, sent one after another (UPLOAD): a
     # file put into the form's file input alone, and posted as Datastar
@@ -21,7 +21,7 @@ module UI
       stylesheet 'ui/components/upload_form.css', path: 'upload_form.css'
 
       # A file posted from the form. Web only: the handler below stores the
-      # file and dispatches Expenses::Expense::UploadDocument with its id.
+      # file and dispatches Expenses::Document::UploadDocument with its id.
       # This command is never stored itself: its payload holds a Tempfile.
       #
       # +file+ is a Sidereal::Types::UploadedFile, the struct Rack parses a
@@ -41,18 +41,18 @@ module UI
       # One file, of the one or many the form sends one at a time. Runs in
       # the request, in the App, while Rack's Tempfile still exists: store
       # the file, then hand the backend its id. Only UploadDocument is
-      # dispatched. A file uploaded before is that expense already: nothing
+      # dispatched. A file uploaded before is that document already: nothing
       # dispatched. The browser stays on the page: a line for the file is
       # added to its report (UploadReport), and the home page's lists follow
-      # the new expense.
+      # the new document.
       handle UploadFile do |cmd|
         file = cmd.payload.file
         document = Expenses::Upload.store(Sidereal.config['file_store'], filename: file.filename, content_type: file.type,
                                           io: file.tempfile, filing_country: Sidereal.config['expenses.filing_country'])
-        expense_id = document.payload.expense_id
-        already = Expenses::Upload.uploaded?(expense_id)
+        document_id = document.payload.document_id
+        already = Expenses::Upload.uploaded?(document_id)
         dispatch document unless already
-        browser.patch_elements UploadReport::Item.new(file.filename, already ? :already : :uploaded, expense_id),
+        browser.patch_elements UploadReport::Item.new(file.filename, already ? :already : :uploaded, document_id),
                                selector: "##{UploadReport::ID}", mode: 'append'
       end
 

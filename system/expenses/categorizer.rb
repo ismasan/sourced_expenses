@@ -1,16 +1,16 @@
 # frozen_string_literal: true
 
 module Expenses
-  # Suggests each expense's category (CATEGORIES) once its scan is done, for
-  # the person reviewing it to confirm or change. It asks the model
-  # (LLM#categorize, a CategoryJudge judgment) about what the scan read,
-  # never the document itself, and reports back with
-  # Expense::SuggestCategory, or Expense::FailCategorization with a reason a
-  # person can read. Never once a person has chosen one, which every filed
-  # expense has: one filled in by hand gets no suggestion.
+  # Suggests each expense's category (CATEGORIES) once it's drafted or
+  # entered, for the person reviewing it to confirm or change. It asks the
+  # model (LLM#categorize, a CategoryJudge judgment) about its figures (what
+  # a scan read, or a person entered), never a document itself, and reports back
+  # with Expense::SuggestCategory, or Expense::FailCategorization with a
+  # reason a person can read. Never once a person has chosen one, which
+  # every filed expense has, nor for a draft with no description.
   #
   # A consumer group of its own, so a model call never holds up the
-  # machine. Started on an existing store, it catches up on every scanned
+  # machine. Started on an existing store, it catches up on every drafted
   # expense still in review. Failures aren't evolved, so a reset (`bin/sid sourced groups reset
   # expenses.categorizer`) tries those again, and any never categorized,
   # without asking again about any it has a suggestion for. What it can
@@ -22,28 +22,24 @@ module Expenses
     dep :llm
 
     E = Expense
-    S = Expense::Scanning
 
     # Not the whole Document: what the model is told about the expense,
     # the description it last suggested a category for, and whether a
     # person has chosen one.
     context { { expense: {}, suggested_for: nil, chosen: false } }
 
-    evolve E::DocumentUploaded do |state, evt|
-      state[:expense][:filename] = evt.payload.filename
+    # Its figures, drafted, redrafted or entered: what the model is told.
+    FIGURES = proc do |state, evt|
+      p = evt.payload.to_h
+      total = p[:net_price_cents] && (p[:net_price_cents] + p[:tax_amount_cents].to_i)
+      state[:expense] = {
+        description: p[:description], vendor: p[:vendor], tax_description: p[:tax_description],
+        supplier_country: p[:supplier_country_code], total: total && format('%.2f %s', total / 100.0, p[:currency])
+      }
     end
-
-    evolve S::ExtractionRecorded do |state, evt|
-      state[:expense].merge!(
-        description: evt.payload.description, vendor: evt.payload.vendor_name,
-        tax_description: evt.payload.tax_description, supplier_country: evt.payload.supplier_country_code,
-        total: evt.payload.total_amount && format('%.2f %s', evt.payload.total_amount, evt.payload.currency)
-      )
-    end
-
-    evolve S::TextCleaned do |state, evt|
-      state[:expense][:description] = evt.payload.description
-    end
+    evolve E::ExpenseDrafted, &FIGURES
+    evolve E::ExpenseRedrafted, &FIGURES
+    evolve E::ExpenseEntered, &FIGURES
 
     evolve E::CategorySuggested do |state, evt|
       state[:suggested_for] = evt.payload.description
@@ -57,15 +53,23 @@ module Expenses
     evolve(E::ExpenseFiled) { |_state, _evt| nil }
     evolve(E::ExpenseVoided) { |_state, _evt| nil }
     evolve(E::Discarded) { |_state, _evt| nil }
-    evolve(E::ScanRequested) { |_state, _evt| nil }
 
-    reaction S::Scanned => E::SuggestCategory | E::FailCategorization | nil do |state, scanned|
-      categorize(scanned, state)
+    reaction E::ExpenseDrafted => E::SuggestCategory | E::FailCategorization | nil do |state, drafted|
+      categorize(drafted, state)
+    end
+
+    # Its document read again: a new description to suggest for.
+    reaction E::ExpenseRedrafted => E::SuggestCategory | E::FailCategorization | nil do |state, redrafted|
+      categorize(redrafted, state)
+    end
+
+    reaction E::ExpenseEntered => E::SuggestCategory | E::FailCategorization | nil do |state, entered|
+      categorize(entered, state)
     end
 
     private
 
-    # Nothing if the expense has moved on since +trigger+ (filed, rescanned,
+    # Nothing if the expense has moved on since +trigger+ (filed, redrafted,
     # voided, discarded: an old event a new group is catching up on), if a
     # person has chosen a category, or if there's a suggestion for this
     # description already.

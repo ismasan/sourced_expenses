@@ -8,6 +8,7 @@ class App < Sidereal::App
   dep :file_store, :thumbnails
 
   E = Expenses::Expense
+  D = Expenses::Document
 
   # Ids are the digest of the bytes, so a file never changes under its URL.
   IMMUTABLE = 'private, max-age=31536000, immutable'
@@ -19,25 +20,31 @@ class App < Sidereal::App
   # read on each request, once the components are built.
   session secret: -> { Sidereal.secrets.derive('session') }
 
-  # One channel per expense, so a submission's page only hears about its
-  # own, and one per work queue (its events), under system., which every
-  # page listens to (UI::Page::SYSTEM_CHANNELS) for the scan queue's bar.
+  # One channel per expense and one per document, so each one's page only
+  # hears about its own (and an expense's page its document's), and one per
+  # work queue (its events), under system., which every page listens to
+  # (UI::Page::SYSTEM_CHANNELS) for the scan queue's bar. A message with an
+  # expense's id and its document's (DraftExpenseFromDocument,
+  # DocumentAttached) is the expense's.
   channel_name do |msg|
-    queue_name = msg.payload.respond_to?(:queue_name) && msg.payload.queue_name
-    expense_id = msg.payload.respond_to?(:expense_id) && msg.payload.expense_id
+    payload = msg.payload
+    queue_name = payload.respond_to?(:queue_name) && payload.queue_name
+    expense_id = payload.respond_to?(:expense_id) && payload.expense_id
+    document_id = payload.respond_to?(:document_id) && payload.document_id
     if queue_name then "system.#{queue_name}"
     elsif expense_id then "expenses.#{expense_id}"
+    elsif document_id then "documents.#{document_id}"
     else 'system'
     end
   end
 
-  # What a person does with a submission. The machine refuses any its
-  # current state doesn't accept.
-  handle E::SaveExpense, E::Rescan, E::EnterManually, E::DiscardDocument, E::VoidExpense,
-         E::ConfirmVatTreatment, E::ChooseCategory
+  # What a person does with a document or an expense. The machine refuses
+  # any its current state doesn't accept.
+  handle D::Rescan, D::EnterManually, D::DiscardDocument,
+         E::SaveExpense, E::DiscardExpense, E::VoidExpense, E::ConfirmVatTreatment, E::ChooseCategory
 
   # The components the pages render, for their stylesheets and the commands
-  # they handle (UploadForm's UploadFile). The layout's stylesheets come
+  # they handle (UploadForm's UploadFile, NewExpenseForm's NewExpense). The layout's stylesheets come
   # first, then these and the pages', in the order of these lines: the
   # order of the cascade. Attention's go last, to win over the rest.
   component UI::Components::TopNav
@@ -46,30 +53,41 @@ class App < Sidereal::App
   component UI::Components::StatusBadge
   component UI::Components::UploadForm
   component UI::Components::UploadReport
+  component UI::Components::NewExpenseForm
   component UI::Components::QueueBar
   component UI::Components::BeingRead
-  component UI::Components::SubmissionList
+  component UI::Components::ExpenseRows
   component UI::Components::HistoryFeed
   component UI::Components::LedgerTotal
   component UI::Components::MonthChart
 
   page UI::WelcomePage
   page UI::ExpensesPage
-  page UI::SubmissionPage
-  page UI::SubmissionDiagramPage
+  page UI::NewExpensePage
+  page UI::ExpensePage
+  page UI::ExpenseDiagramPage
+  page UI::DocumentPage
+  page UI::DocumentDiagramPage
 
   component UI::Attention
 
-  # Time travel: a submission's page as it was after +step+ messages of its
-  # history. Static, so nothing live replaces it. The history feed links here.
-  get '/submissions/:expense_id/at/:step' do |expense_id:, step:|
-    step = Integer(step, 10, exception: false)
-    render_in_place(step && UI::SubmissionPage.at(expense_id, step))
+  # Time travel: an expense's or a document's page as it was after +step+
+  # messages of its history. Static, so nothing live replaces it. The
+  # history feed links here.
+  get '/expenses/:expense_id/at/:step' do |expense_id:, step:|
+    render_in_place(at(UI::ExpensePage, expense_id, step))
   end
 
-  get '/submissions/:expense_id/diagram/at/:step' do |expense_id:, step:|
-    step = Integer(step, 10, exception: false)
-    render_in_place(step && UI::SubmissionDiagramPage.at(expense_id, step))
+  get '/expenses/:expense_id/diagram/at/:step' do |expense_id:, step:|
+    render_in_place(at(UI::ExpenseDiagramPage, expense_id, step))
+  end
+
+  get '/documents/:document_id/at/:step' do |document_id:, step:|
+    render_in_place(at(UI::DocumentPage, document_id, step))
+  end
+
+  get '/documents/:document_id/diagram/at/:step' do |document_id:, step:|
+    render_in_place(at(UI::DocumentDiagramPage, document_id, step))
   end
 
   # The search box's preview of what's typed (UI::Components::Search),
@@ -84,13 +102,13 @@ class App < Sidereal::App
     end
   end
 
-  # An uploaded file as it was uploaded, for the submission page's modal.
+  # An uploaded file as it was uploaded, for the document and expense pages' modal.
   get '/files/:file_id' do |file_id:|
     file = stored(file_id)
     send_file file.path, filename: file.filename, cache_control: IMMUTABLE
   end
 
-  # Its preview, for the submission page's thumbnail.
+  # Its preview, for their thumbnail.
   get '/files/:file_id/thumbnail' do |file_id:|
     send_file thumbnails.path_for(stored(file_id)), cache_control: IMMUTABLE
   rescue Thumbnails::Error
@@ -109,6 +127,11 @@ class App < Sidereal::App
       sse.patch_elements page
       sse.execute_script "history.pushState({}, '', #{path.to_json})"
     end
+  end
+
+  private def at(page, id, step)
+    step = Integer(step, 10, exception: false)
+    step && page.at(id, step)
   end
 
   private def stored(file_id)

@@ -3,87 +3,95 @@
 require 'date'
 
 module Expenses
-  # One uploaded receipt or invoice, from the upload to a filed expense.
+  # One expense, from its first figures to a filed expense. Its events say
+  # what the expense is: drafted (tentative figures, a scan's reading, for
+  # a person to check), redrafted (new tentative figures: its document read
+  # again), entered (a person's own figures), filed. Where it
+  # came from is a fact of its own: a document attached to it.
   #
-  #   initial ─UploadDocument─▶ queued ─StartScan─▶ scanning ──on_final scanned─────────▶ reviewing ─done─▶ reviewed ─SaveExpense─▶ filed ⟲ SaveExpense
-  #                                                (Scanning) ├on_final not_an_invoice─▶ rejected
-  #                                                           ├on_final failed─────────▶ scan_failed
-  #                                                           └after 10m: TimeOutScan──▶ scan_failed
+  # Each source starts it with its own command, under an id of its choosing:
+  # a scanned document drafts it (DraftExpenseFromDocument, with the
+  # document's id: ExpenseDrafted and DocumentAttached), a person enters it
+  # (EnterExpense, a UUID: ExpenseEntered).
+  #
+  #   initial ─DraftExpenseFromDocument | EnterExpense─▶ reviewing ─done─▶ reviewed ─SaveExpense─▶ filed ⟲ SaveExpense
   #
   #   reviewing:  category  ─ChooseCategory──────▶ category_confirmed
   #               vat       ─ConfirmVatTreatment─▶ vat_confirmed
   #
-  #   rejected, scan_failed ─EnterManually─▶ reviewing
-  #   reviewing, reviewed, rejected, scan_failed ─Rescan─▶ queued
-  #   filed ─VoidExpense─▶ voided;  anything before filed ─DiscardDocument─▶ discarded
+  #   filed ─VoidExpense─▶ voided;  reviewing, reviewed ─DiscardExpense─▶ discarded
+  #   reviewing, reviewed ⟲ DraftExpenseFromDocument (its attached document read again: a new draft)
   #   reviewing, reviewed, filed ⟲ SuggestCategory | FailCategorization | ChooseCategory | ConfirmVatTreatment
   #
   # The model never writes the expense and never decides its tax treatment:
-  # the scan prefills a form, and a person files it. Reviewing has two steps,
+  # a draft prefills a form, and a person files it. Reviewing has two steps,
   # in either order: choosing the category (the model's suggestion, from
   # Expenses::Categorizer, until a person chooses one) and confirming the VAT
-  # treatment (the rule's, Document#suggested_vat_treatment, until a person
-  # confirms one). Only once both are done is the expense reviewed, and only
-  # a reviewed expense can be filed.
+  # treatment (the rule's, ExpenseState#suggested_vat_treatment, until a
+  # person confirms one). Only once both are done is the expense reviewed,
+  # and only a reviewed expense can be filed.
   class Expense < Sourced::Machine
     partition_by expense_id: Types::ExpenseID
     message_prefix 'expenses'
 
-    # The queue scans wait in (see Queued), 3 expenses scanning at once. Each
-    # scan makes up to four model calls, one after another, so this caps the
-    # model calls in flight for scanning.
-    ScanQueue = WorkQueue.define('scans', capacity: 3)
-
-    # How long a scan may take, every LLM call and its retries included,
-    # before it's given up on.
-    SCAN_TIMEOUT = ENV.fetch('SCAN_TIMEOUT', '10m')
-
     CurrencyCode = Types::String[/\A[A-Z]{3}\z/]
     CountryCode = Types::String[/\A[A-Z]{2}\z/]
 
+    # The form's fields, which SaveExpense files: all of them optional in a
+    # draft, as a scan may read none of them.
+    DRAFT = %i[description net_price_cents tax_amount_cents tax_description currency incurred_on
+               supplier_country_code reverse_charge payment_reference].freeze
+
     # ---- States ----
 
-    Queued = State(:queued)
     Reviewing = State(:reviewing)
     CategoryConfirmed = State(:category_confirmed)
     VatConfirmed = State(:vat_confirmed)
     Reviewed = State(:reviewed)
     Filed = State(:filed)
-    Rejected = State(:rejected)
-    ScanFailed = State(:scan_failed)
     Discarded = State(:discarded)
     Voided = State(:voided)
 
     # ---- Commands ----
 
-    # +file_ref+ is wherever the upload was stored; +filing_country+, the
-    # country of the company whose books this is in. +reference_date+ is
-    # "today" for the scan: the prompts resolve ambiguous dates towards it,
-    # and passing it in keeps decisions deterministic.
-    UploadDocument = Command(:upload_document) do
+    # The expense, drafted from what +document_id+ (an uploaded document)
+    # read: +filing_country+ is the country of the company whose books it's
+    # in, +vendor+ who it's from, if read, and the rest the form to prefill,
+    # any of it missing. The first starts the expense and attaches the
+    # document; another for the same document, while it's in review,
+    # redrafts it (the document read again). The same again changes nothing.
+    DraftExpenseFromDocument = Command(:draft_expense_from_document) do
       attribute :expense_id, Types::ExpenseID
-      attribute :filename, Types::String.present
-      attribute :content_type, Types::String.present
-      attribute :file_ref, Types::String.present
+      attribute :document_id, Types::DocumentID
       attribute :filing_country, CountryCode
-      attribute :reference_date, Types::Date.default { Date.today }
+      attribute :vendor, Types::String.nullable.default(nil)
+      attribute :description, Types::String.nullable.default(nil)
+      attribute :net_price_cents, Types::Integer.nullable.default(nil)
+      attribute :tax_amount_cents, Types::Integer.nullable.default(nil)
+      attribute :tax_description, Types::String.nullable.default(nil)
+      attribute :currency, CurrencyCode.nullable.default(nil)
+      attribute :incurred_on, Types::Date.nullable.default(nil)
+      attribute :supplier_country_code, CountryCode.nullable.default(nil)
+      attribute :reverse_charge, Types::Boolean.nullable.default(nil)
+      attribute :payment_reference, Types::String.nullable.default(nil)
     end
 
-    # Scan the same file again, from the start.
-    Rescan = Command(:rescan) do
-      attribute :reference_date, Types::Date.default { Date.today }
+    # The expense, entered by a person: the form as SaveExpense takes it.
+    # Only starts one: the same again changes nothing, and a correction is
+    # the review's SaveExpense.
+    EnterExpense = Command(:enter_expense) do
+      attribute :expense_id, Types::ExpenseID
+      attribute :filing_country, CountryCode
+      attribute :description, Types::String.present
+      attribute :net_price_cents, Integer
+      attribute :tax_amount_cents, Types::Integer.default(0)
+      attribute :tax_description, Types::String.nullable.default(nil)
+      attribute :currency, CurrencyCode
+      attribute :incurred_on, Date
+      attribute :supplier_country_code, CountryCode.nullable.default(nil)
+      attribute :reverse_charge, Types::Boolean.default(false)
+      attribute :payment_reference, Types::String.nullable.default(nil)
     end
-
-    # Appended by ScanQueue when the expense's scan gets a slot: what Queued
-    # enqueued it as. Never sent by a person.
-    StartScan = Command(:start_scan)
-
-    # Dispatched by scanning's timer, never by a person.
-    TimeOutScan = Command(:time_out_scan)
-
-    # Fill in the form by hand: the scan failed, or rejected a document the
-    # person knows is a receipt.
-    EnterManually = Command(:enter_manually)
 
     # The reviewed form. Amounts are integer cents, negative for credit notes.
     SaveExpense = Command(:save_expense) do
@@ -102,7 +110,8 @@ module Expenses
       attribute :reason, Types::String.present
     end
 
-    DiscardDocument = Command(:discard_document)
+    # Not an expense after all, before it's filed. Once filed, it's voided.
+    DiscardExpense = Command(:discard_expense)
 
     # The filed total in the reporting currency, from
     # Expenses::CurrencyConverter: the amount it converted (currency,
@@ -158,23 +167,53 @@ module Expenses
 
     # ---- Events ----
 
-    DocumentUploaded = Event(:document_uploaded) do
-      attribute :filename, String
-      attribute :content_type, String
-      attribute :file_ref, String
+    # Tentative figures, for a person to check: a scan's reading.
+    ExpenseDrafted = Event(:expense_drafted) do
       attribute :filing_country, String
+      attribute :vendor, Types::String.nullable
+      attribute :description, Types::String.nullable
+      attribute :net_price_cents, Types::Integer.nullable
+      attribute :tax_amount_cents, Types::Integer.nullable
+      attribute :tax_description, Types::String.nullable
+      attribute :currency, Types::String.nullable
+      attribute :incurred_on, Types::Date.nullable
+      attribute :supplier_country_code, Types::String.nullable
+      attribute :reverse_charge, Types::Boolean.nullable
+      attribute :payment_reference, Types::String.nullable
     end
 
-    # Every scan starts with one, the first and each rescan.
-    ScanRequested = Event(:scan_requested) do
-      attribute :reference_date, Date
+    # New tentative figures for a drafted expense: its document read again.
+    ExpenseRedrafted = Event(:expense_redrafted) do
+      attribute :filing_country, String
+      attribute :vendor, Types::String.nullable
+      attribute :description, Types::String.nullable
+      attribute :net_price_cents, Types::Integer.nullable
+      attribute :tax_amount_cents, Types::Integer.nullable
+      attribute :tax_description, Types::String.nullable
+      attribute :currency, Types::String.nullable
+      attribute :incurred_on, Types::Date.nullable
+      attribute :supplier_country_code, Types::String.nullable
+      attribute :reverse_charge, Types::Boolean.nullable
+      attribute :payment_reference, Types::String.nullable
     end
 
-    # A scan step that went wrong, after its retries. Fatal or not depends
-    # on the step: the chart decides where the scan goes next.
-    StepFailed = Event(:step_failed) do
-      attribute :step, String
-      attribute :reason, String
+    # A person's own figures.
+    ExpenseEntered = Event(:expense_entered) do
+      attribute :filing_country, String
+      attribute :description, String
+      attribute :net_price_cents, Integer
+      attribute :tax_amount_cents, Integer
+      attribute :tax_description, Types::String.nullable
+      attribute :currency, String
+      attribute :incurred_on, Date
+      attribute :supplier_country_code, Types::String.nullable
+      attribute :reverse_charge, Types::Boolean
+      attribute :payment_reference, Types::String.nullable
+    end
+
+    # Where it came from: the uploaded document it was read from.
+    DocumentAttached = Event(:document_attached) do
+      attribute :document_id, String
     end
 
     ExpenseFiled = Event(:expense_filed) do
@@ -232,9 +271,8 @@ module Expenses
 
     # ---- Domain state ----
 
-    # The Document, evolved from the events above and its parts' (the
-    # Scanner reads it the same way).
-    evolve DocumentProjector
+    # The ExpenseState, evolved from the events above.
+    evolve ExpenseProjector
 
     # ---- The statechart ----
 
@@ -248,12 +286,12 @@ module Expenses
     SUGGEST_CATEGORY = proc do
       command SuggestCategory do |doc, cmd|
         unless doc.category_chosen? || doc.category_suggestion == cmd.payload.to_h.except(:expense_id)
-          event CategorySuggested, cmd.payload.to_h.except(:expense_id)
+          event CategorySuggested, cmd.payload
         end
       end
 
       command FailCategorization do |doc, cmd|
-        event CategorizationFailed, cmd.payload.to_h.except(:expense_id) unless doc.category_chosen?
+        event CategorizationFailed, cmd.payload unless doc.category_chosen?
       end
     end
 
@@ -268,62 +306,30 @@ module Expenses
       end
     end
 
-    RESCAN = proc do
-      command Rescan => Queued do |_doc, cmd|
-        event ScanRequested, reference_date: cmd.payload.reference_date
+    # A new draft while in review: its attached document read again. The
+    # steps done stay done. Another document's, or the same draft again,
+    # changes nothing.
+    REDRAFT = proc do
+      command DraftExpenseFromDocument do |doc, cmd|
+        if doc.document_id == cmd.payload.document_id && !doc.drafted?(cmd.payload.to_h.except(:expense_id, :document_id))
+          event ExpenseRedrafted, cmd.payload
+        end
       end
     end
 
     initial do
-      command UploadDocument => Queued do |_doc, cmd|
-        event DocumentUploaded, cmd.payload.to_h.slice(:filename, :content_type, :file_ref, :filing_country)
-        event ScanRequested, reference_date: cmd.payload.reference_date
-      end
-    end
-
-    # Waiting for a slot to scan in: ScanQueue lets its capacity of expenses scan
-    # at once, and appends StartScan when it's this one's turn. Discarded before
-    # its turn, it gives its place up. The slot is held through every step of
-    # the scan, until it leaves Scanning.
-    state Queued do
-      entry WorkQueue::Enqueue do |_doc, entered|
-        dispatch ScanQueue.enqueue(StartScan, expense_id: entered.payload.expense_id)
+      command DraftExpenseFromDocument => Reviewing do |_doc, cmd|
+        event ExpenseDrafted, cmd.payload
+        event DocumentAttached, cmd.payload
       end
 
-      exit WorkQueue::Release | nil do |_doc, left_by|
-        next if left_by.payload.entered.include?('scanning')
-
-        dispatch ScanQueue.release(StartScan, expense_id: left_by.payload.expense_id)
+      command EnterExpense => Reviewing do |_doc, cmd|
+        event ExpenseEntered, cmd.payload
       end
-
-      command StartScan => Scanning
-      command DiscardDocument => Discarded
-    end
-
-    # The progress a person waiting sees is the step scanning is at. The
-    # timeout runs from when its slot started it, not from the wait. Leaving
-    # it, however, frees the slot.
-    state Scanning do
-      on_final Scanning::Scanned => Reviewing.history,
-               Scanning::NotAnInvoice => Rejected,
-               Scanning::Failed => ScanFailed
-
-      exit WorkQueue::Release do |_doc, left_by|
-        dispatch ScanQueue.release(StartScan, expense_id: left_by.payload.expense_id)
-      end
-
-      after(SCAN_TIMEOUT => TimeOutScan)
-
-      command TimeOutScan => ScanFailed do
-        event StepFailed, step: 'scanning', reason: "The scan took longer than #{SCAN_TIMEOUT}"
-      end
-
-      command DiscardDocument => Discarded
     end
 
     # The prefilled form, waiting for a person to choose its category and
-    # confirm its VAT treatment, in either order. Entered through its
-    # history, so a step done before a rescan stays done.
+    # confirm its VAT treatment, in either order.
     state Reviewing do
       region :category do
         initial do
@@ -349,8 +355,8 @@ module Expenses
       # final, so the change comes here.
       instance_exec(&CHANGE_REVIEW)
       instance_exec(&SUGGEST_CATEGORY)
-      instance_exec(&RESCAN)
-      command DiscardDocument => Discarded
+      instance_exec(&REDRAFT)
+      command DiscardExpense => Discarded
     end
 
     # Category and VAT treatment confirmed: ready to file.
@@ -358,34 +364,20 @@ module Expenses
       command SaveExpense => Filed, &FILE_EXPENSE
       instance_exec(&SUGGEST_CATEGORY)
       instance_exec(&CHANGE_REVIEW)
-      instance_exec(&RESCAN)
-      command DiscardDocument => Discarded
-    end
-
-    # Not a receipt, says the verification call, with its explanation
-    # (doc.verification) to show the person.
-    state Rejected do
-      command EnterManually => Reviewing.history
-      instance_exec(&RESCAN)
-      command DiscardDocument => Discarded
-    end
-
-    # A step failed (doc.failure), or the scan timed out.
-    state ScanFailed do
-      command EnterManually => Reviewing.history
-      instance_exec(&RESCAN)
-      command DiscardDocument => Discarded
+      instance_exec(&REDRAFT)
+      command DiscardExpense => Discarded
     end
 
     # Corrections are saved in place, re-entering filed. The category and
-    # VAT treatment stay as confirmed, unless a person changes them.
+    # VAT treatment stay as confirmed, unless a person changes them. A new
+    # draft changes nothing: what was filed stands.
     state Filed do
       command SaveExpense => Filed, &FILE_EXPENSE
       instance_exec(&SUGGEST_CATEGORY)
       instance_exec(&CHANGE_REVIEW)
 
       command VoidExpense => Voided do |_doc, cmd|
-        event ExpenseVoided, reason: cmd.payload.reason
+        event ExpenseVoided, cmd.payload
       end
 
       # The conversion, for the total as filed now: one of an amount since
@@ -394,14 +386,14 @@ module Expenses
       command RecordConversion do |doc, cmd|
         converted = cmd.payload.to_h.except(:expense_id)
         if doc.converting?(**converted.slice(:currency, :amount_cents, :incurred_on)) && doc.converted != converted
-          event ConversionRecorded, converted
+          event ConversionRecorded, cmd.payload
         end
       end
 
       command FailConversion do |doc, cmd|
         failure = cmd.payload.to_h.except(:expense_id)
         if doc.converting?(**failure.slice(:currency, :amount_cents, :incurred_on)) && doc.conversion_failure != failure
-          event ConversionFailed, failure
+          event ConversionFailed, cmd.payload
         end
       end
     end

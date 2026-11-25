@@ -25,7 +25,7 @@ RSpec.describe 'Uploading a document' do
   end
 
   def uploaded_documents
-    store.read_all(limit: 1000).to_a.select { it.is_a?(Expenses::Expense::UploadDocument) }
+    store.read_all(limit: 1000).to_a.select { it.is_a?(Expenses::Document::UploadDocument) }
   end
 
   it 'stores the file and dispatches UploadDocument with its id' do
@@ -34,7 +34,7 @@ RSpec.describe 'Uploading a document' do
     expect(last_response.status).to eq(200)
     command = uploaded_documents.last
     file_id = Digest::MD5.hexdigest(pdf)
-    expect(command.payload.to_h).to include(expense_id: file_id, filename: 'receipt.pdf', content_type: 'application/pdf',
+    expect(command.payload.to_h).to include(document_id: file_id, filename: 'receipt.pdf', content_type: 'application/pdf',
                                             file_ref: file_id, filing_country: 'NL')
     expect(File.binread(file_store.read(file_id).path)).to eq(pdf)
   end
@@ -48,13 +48,13 @@ RSpec.describe 'Uploading a document' do
     expect(body).not_to include('window.location')
   end
 
-  it 'reports a file uploaded before, linking to its expense, dispatching nothing' do
+  it 'reports a file uploaded before, linking to its document, dispatching nothing' do
     upload(pdf)
-    expense_id = uploaded_documents.last.payload.expense_id
+    document_id = uploaded_documents.last.payload.document_id
 
     expect { upload(pdf, filename: 'again.pdf') }.not_to(change { uploaded_documents.size })
     expect(last_response.body.force_encoding(Encoding::UTF_8)).to include(
-      '<strong>again.pdf</strong> was uploaded before: ', "href=\"/submissions/#{expense_id}\""
+      '<strong>again.pdf</strong> was uploaded before: ', "href=\"/documents/#{document_id}\""
     )
   end
 

@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 module Expenses
-  class Expense
-    # Expense's `scanning`: the OCR pipeline, one LLM call per waiting state,
+  class Document
+    # Document's `scanning`: the OCR pipeline, one LLM call per waiting state,
     # each in its own chat with its own schema. A worker does each step when
     # its state is entered and reports back with the step's Complete… or
     # Fail… command. The decisions in between are code (Document), taken as
@@ -31,7 +31,7 @@ module Expenses
     #   rechecking_date  DATE_RECHECK_PROMPT, told the first reading is suspect
     #   cleaning         CLEANUP_PROMPT: mojibake in description and tax_description
     class Scanning < Sourced::Machine::Part
-      part_of Expense
+      part_of Document
 
       # ---- States ----
 
@@ -142,13 +142,13 @@ module Expenses
         attribute :tax_description, Types::String.nullable
       end
 
-      # Evolved on the Document by DocumentProjector.
+      # Evolved on the DocumentState by DocumentProjector.
 
       # ---- The statechart ----
 
       started Preparing do
         command CompletePreparation => Extracting do |_doc, cmd|
-          event FilePrepared, cmd.payload.to_h.slice(:processed_file_ref, :downsized)
+          event FilePrepared, cmd.payload
         end
 
         command FailPreparation => Failed do |_doc, cmd|
@@ -158,7 +158,7 @@ module Expenses
 
       state Extracting do
         command CompleteExtraction => CheckingExtraction do |_doc, cmd|
-          event ExtractionRecorded, cmd.payload.to_h.slice(*EXTRACTION.keys)
+          event ExtractionRecorded, cmd.payload
         end
 
         command FailExtraction => Failed do |_doc, cmd|
@@ -177,7 +177,7 @@ module Expenses
       # is rejected with the model's explanation.
       state Verifying do
         command CompleteVerification => CheckingDate | NotAnInvoice do |_doc, cmd|
-          event DocumentVerified, cmd.payload.to_h.slice(:is_invoice_or_receipt, :explanation)
+          event DocumentVerified, cmd.payload
           to(cmd.payload.is_invoice_or_receipt ? CheckingDate : NotAnInvoice)
         end
 
@@ -197,7 +197,7 @@ module Expenses
       state RecheckingDate do
         command CompleteDateRecheck => Cleaning do |doc, cmd|
           event DateRechecked,
-                **cmd.payload.to_h.slice(:date_as_printed, :candidates, :date, :reasoning),
+                **cmd.payload.to_h,
                 previous_date: doc.extracted_date&.iso8601,
                 corrected_date: doc.date_correction(cmd.payload.date)&.iso8601
         end
@@ -210,7 +210,7 @@ module Expenses
       # The original text stands if the cleanup fails.
       state Cleaning do
         command CompleteCleanup => Scanned do |_doc, cmd|
-          event TextCleaned, cmd.payload.to_h.slice(:description, :tax_description)
+          event TextCleaned, cmd.payload
         end
 
         command FailCleanup => Scanned do |_doc, cmd|

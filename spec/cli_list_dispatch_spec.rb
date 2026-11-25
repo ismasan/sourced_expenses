@@ -13,17 +13,17 @@ RSpec.describe 'bin/sid expenses list | dispatch' do
 
   around do |example|
     db.transaction(rollback: :always, auto_savepoint: true) do
-      db[:submissions].delete
-      db[:submissions_search].delete
+      db[:expenses].delete
+      db[:expenses_search].delete
       example.run
     end
   end
 
   def row(description, machine, on: Date.new(2026, 3, 1), **columns)
     SecureRandom.hex(16).tap do |expense_id|
-      db[:submissions].insert(expense_id:, filename: "#{description}.pdf", machine: JSON.generate(machine), description:,
-                              incurred_on: on, total_cents: 1000, currency: 'GBP', uploaded_at: Time.now, updated_at: Time.now,
-                              **columns)
+      db[:expenses].insert(expense_id:, document_id: nil, machine: JSON.generate(machine), description:, vendor: "#{description} ltd",
+                           incurred_on: on, total_cents: 1000, currency: 'GBP', created_at: Time.now, updated_at: Time.now,
+                           **columns)
     end
   end
 
@@ -55,7 +55,7 @@ RSpec.describe 'bin/sid expenses list | dispatch' do
   describe 'list' do
     it 'prints every field as JSON lines, with the state as --state takes it' do
       expect(json_lines.find { it[:expense_id] == hotel }).to eq(
-        expense_id: hotel, state: 'reviewing', filename: 'hotel.pdf', description: 'hotel', total_cents: 1000,
+        expense_id: hotel, state: 'reviewing', document_id: nil, description: 'hotel', vendor: 'hotel ltd', total_cents: 1000,
         currency: 'GBP', incurred_on: '2026-01-05', category: 'accommodation_and_meals', category_chosen: false,
         vat_treatment: 'foreign_vat', vat_confirmed: false, filing_country: 'NL'
       )
@@ -72,7 +72,7 @@ RSpec.describe 'bin/sid expenses list | dispatch' do
     end
 
     it 'filters by the country it is filed in, any of several' do
-      db[:submissions].where(expense_id: [suggested, chosen]).update(filing_country: 'GB')
+      db[:expenses].where(expense_id: [suggested, chosen]).update(filing_country: 'GB')
       ids = ->(*args) { json_lines(*args).map { it[:expense_id] }.sort }
 
       expect(ids.('--filing-country', 'nl')).to eq([hotel])
@@ -92,8 +92,8 @@ RSpec.describe 'bin/sid expenses list | dispatch' do
     end
 
     it 'filters by what the expenses say, as the search box does' do
-      db[:submissions].each do |row|
-        db[:submissions_search].insert(expense_id: row[:expense_id], body: Expenses::Submissions.search_body(row))
+      db[:expenses].each do |row|
+        db[:expenses_search].insert(expense_id: row[:expense_id], body: Expenses::ExpenseList.search_body(row))
       end
 
       expect(json_lines('--search', 'UBE').map { it[:expense_id] }).to eq([suggested])

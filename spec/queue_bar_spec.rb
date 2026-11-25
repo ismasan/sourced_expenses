@@ -76,7 +76,8 @@ RSpec.describe UI::Page do
   def started(queue_name) = WorkQueue::Started.new(payload: { queue_name:, item_id: 'x' })
 
   it "is every page's, each following the scan queue's events" do
-    [UI::WelcomePage, UI::ExpensesPage, UI::SubmissionPage, UI::SubmissionDiagramPage].each do |page_class|
+    [UI::WelcomePage, UI::ExpensesPage, UI::NewExpensePage, UI::ExpensePage, UI::ExpenseDiagramPage, UI::DocumentPage,
+     UI::DocumentDiagramPage].each do |page_class|
       expect(page_class.ancestors).to include(described_class)
       expect(page_class.reactions.keys).to include(*WorkQueue.events)
     end

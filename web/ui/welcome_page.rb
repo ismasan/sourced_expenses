@@ -1,11 +1,13 @@
 # frozen_string_literal: true
 
 module UI
-  # The home page: upload receipts and invoices, the uploads being read
-  # (BeingRead), and those waiting for a person (NeedsYou), all live, so an
-  # upload is followed here until it's ready to review. Every upload is on
-  # the expense list (ExpensesPage). How many are scanning and waiting to is
-  # the scan queue's bar, along the bottom of every page (QueueBar).
+  # The home page: upload receipts and invoices, the documents being read
+  # (BeingRead), and what's waiting for a person (NeedsYou: expenses to
+  # review, documents that couldn't be read), all live, so an upload is
+  # followed here until its expense is ready to review. Every expense is on
+  # the expense list (ExpensesPage). How many documents are scanning and
+  # waiting to is the scan queue's bar, along the bottom of every page
+  # (QueueBar).
   class WelcomePage < Page
     stylesheet 'ui/welcome_page.css', path: 'welcome_page.css'
 
@@ -15,28 +17,26 @@ module UI
     # reload the whole page on everything an upload leads to.
     disable_causal_reactivity!
 
-    on Expenses::Submissions::Projected do |_evt|
+    on Expenses::DocumentList::Projected do |_evt|
       browser.patch_elements UI::Components::BeingRead.load
-      browser.patch_elements UI::Components::NeedsYou.new(*UI::WelcomePage.needs_you)
+      browser.patch_elements UI::Components::NeedsYou.load
+    end
+
+    on Expenses::ExpenseList::Projected do |_evt|
+      browser.patch_elements UI::Components::NeedsYou.load
     end
 
     on Expenses::Ledger::Projected do |_evt|
       browser.patch_elements UI::Components::LedgerTotal.current
     end
 
-    # Every expense's channel: the list follows them all.
-    def channel_names = ['expenses.>', *SYSTEM_CHANNELS]
+    # Every document's and expense's channel: the lists follow them all.
+    def channel_names = ['documents.>', 'expenses.>', *SYSTEM_CHANNELS]
 
-    # The latest of the uploads waiting for a person, and how many there are.
-    def self.needs_you
-      Expenses::Submissions.page(Sidereal.config['db'], states: Expenses::Submissions::NEEDS_YOU, per_page: 50)
-    end
+    def self.load(_params, _ctx) = new(UI::Components::NeedsYou.load)
 
-    def self.load(_params, _ctx) = new(*needs_you)
-
-    def initialize(rows = [], total = 0)
-      @rows = rows
-      @total = total
+    def initialize(needs_you = UI::Components::NeedsYou.new)
+      @needs_you = needs_you
     end
 
     def view_template
@@ -44,13 +44,17 @@ module UI
         header(class: 'masthead') do
           div do
             h1(class: 'masthead__title') { 'Expenses' }
-            p(class: 'masthead__lead') { 'Drop in a receipt. It’s read for you, and you check it before it’s filed.' }
+            p(class: 'masthead__lead') do
+              plain 'Drop in a receipt. It’s read for you, and you check it before it’s filed. Or '
+              a(href: NewExpensePage.path) { 'add an expense by hand' }
+              plain '.'
+            end
           end
           render UI::Components::LedgerTotal.current
         end
         render UI::Components::UploadForm.new
         render UI::Components::BeingRead.load
-        render UI::Components::NeedsYou.new(@rows, @total)
+        render @needs_you
       end
     end
   end

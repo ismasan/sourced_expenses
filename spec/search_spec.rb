@@ -14,8 +14,8 @@ RSpec.describe 'Searching expenses' do
   # Each example on empty tables, rolled back after.
   around do |example|
     db.transaction(rollback: :always, auto_savepoint: true) do
-      db[:submissions].delete
-      db[:submissions_search].delete
+      db[:expenses].delete
+      db[:expenses_search].delete
       db[:ledger].delete
       example.run
     end
@@ -25,18 +25,17 @@ RSpec.describe 'Searching expenses' do
   # projectors leave them.
   def expense(description, vendor: nil, category: nil, cents: 1000, on: Date.today, at: Time.now)
     SecureRandom.hex(16).tap do |expense_id|
-      row = { expense_id:, filename: "#{description.downcase.tr(' ', '-')}.pdf", machine: '["filed"]',
-              description:, vendor:, category:, total_cents: cents, currency: 'GBP', incurred_on: on,
-              uploaded_at: at, updated_at: at }
-      db[:submissions].insert(row)
-      db[:submissions_search].insert(expense_id:, body: Expenses::Submissions.search_body(row))
+      row = { expense_id:, machine: '["filed"]', description:, vendor:, category:, total_cents: cents, currency: 'GBP',
+              incurred_on: on, created_at: at, updated_at: at }
+      db[:expenses].insert(row)
+      db[:expenses_search].insert(expense_id:, body: Expenses::ExpenseList.search_body(row))
       db[:ledger].insert(expense_id:, incurred_on: on, currency: 'GBP', amount_cents: cents, category:, updated_at: at)
     end
   end
 
-  def found(text) = Expenses::Submissions.in_states(db, search: text).select_map(:description).sort
+  def found(text) = Expenses::ExpenseList.in_states(db, search: text).select_map(:description).sort
 
-  describe Expenses::Submissions do
+  describe Expenses::ExpenseList do
     let(:expense_id) { SecureRandom.hex(16) }
     let(:date) { Date.new(2025, 10, 24) }
 
@@ -44,25 +43,20 @@ RSpec.describe 'Searching expenses' do
 
     def project(*commands)
       decided(Expenses::Expense, { expense_id: }, *commands)
-        .reduce(with_reactor(Expenses::Submissions, expense_id:)) { |r, m| r.given(m) }.then! { nil }
+        .reduce(with_reactor(Expenses::ExpenseList, expense_id:)) { |r, m| r.given(m) }.then! { nil }
     end
 
     let(:scanned) do
-      [cmd(Expenses::Expense::UploadDocument, filename: 'receipt-0042.pdf', content_type: 'application/pdf', file_ref: 'f1',
-                                              filing_country: 'NL', reference_date: date),
-       cmd(Expenses::Expense::StartScan),
-       cmd(Expenses::Expense::Scanning::CompletePreparation, processed_file_ref: 'f1'),
-       cmd(Expenses::Expense::Scanning::CompleteExtraction,
-           document_type: 'receipt', description: 'Café Central - Lunch', total_amount: 24.2, net_amount: 20.0, tax_amount: 4.2,
-           tax_description: 'BTW 21%', currency: 'EUR', date_as_printed: '24 Oct 2025', date: '2025-10-24',
-           vendor_name: 'Horeca Holding BV', confidence: 'high', supplier_country_code: 'NL', reverse_charge: false),
-       cmd(Expenses::Expense::Scanning::CompleteCleanup, description: 'Café Central - Lunch', tax_description: 'BTW 21%')]
+      [cmd(Expenses::Expense::DraftExpenseFromDocument,
+           filing_country: 'NL', document_id: SecureRandom.hex(16), description: 'Café Central - Lunch',
+           vendor: 'Horeca Holding BV', net_price_cents: 2000, tax_amount_cents: 420, tax_description: 'BTW 21%',
+           currency: 'EUR', incurred_on: date, supplier_country_code: 'NL', reverse_charge: false)]
     end
 
-    it 'indexes what the scan read, the vendor, the filename and the category, as they change' do
+    it 'indexes the description, the vendor and the category, as they change' do
       project(*scanned, cmd(Expenses::Expense::ChooseCategory, category: 'business_entertaining'))
 
-      expect([found('horeca'), found('0042'), found('entertaining'), found('lunch')]).to all(eq(['Café Central - Lunch']))
+      expect([found('horeca'), found('entertaining'), found('lunch')]).to all(eq(['Café Central - Lunch']))
 
       project(*scanned, cmd(Expenses::Expense::ChooseCategory, category: 'business_entertaining'),
               cmd(Expenses::Expense::ConfirmVatTreatment, treatment: 'domestic'),
@@ -70,15 +64,15 @@ RSpec.describe 'Searching expenses' do
                                                            currency: 'EUR', incurred_on: date, supplier_country_code: 'NL'))
       expect(found('lunch')).to be_empty
       expect(found('dinner')).to eq(['Team dinner'])
-      expect(db[:submissions_search].where(expense_id:).count).to eq(1)
+      expect(db[:expenses_search].where(expense_id:).count).to eq(1)
     end
 
     it 'empties the index when its group is reset' do
       project(*scanned)
 
-      Expenses::Submissions.on_reset
+      Expenses::ExpenseList.on_reset
 
-      expect(db[:submissions_search].count).to eq(0)
+      expect(db[:expenses_search].count).to eq(0)
     end
 
     describe '.search' do
@@ -98,8 +92,14 @@ RSpec.describe 'Searching expenses' do
       end
 
       it 'finds words shorter than the index can, as plain text' do
-        expect(found('ub')).to eq(['Uber - Trip to airport'])
+        expect(found('Ub')).to eq(['Uber - Trip to airport'])
         expect(found('lunch al')).to eq(['Café Central - Lunch'])
+      end
+
+      # Sequel's SQLite adapter turns case_sensitive_like on: .search
+      # lowercases both sides of a short word's LIKE.
+      it 'finds words shorter than the index can whatever their case' do
+        expect(found('ub')).to eq(['Uber - Trip to airport'])
       end
 
       it 'takes anything typed as text to find, never as query syntax' do
@@ -114,7 +114,7 @@ RSpec.describe 'Searching expenses' do
       end
 
       it 'is no filter for blank text' do
-        expect(Expenses::Submissions.search(db, '  ')).to be_nil
+        expect(Expenses::ExpenseList.search(db, '  ')).to be_nil
         expect(found(nil).size).to eq(3)
       end
     end
@@ -127,7 +127,7 @@ RSpec.describe 'Searching expenses' do
       expense('Hetzner - Server', category: 'software', cents: 3000)
     end
 
-    def descriptions = last_response.body.scan(/class="submission__description">([^<]+)</).flatten
+    def descriptions = last_response.body.scan(/class="submission__file">([^<]+)</).flatten
 
     it 'lists only the matches, counted and totalled in the header and the chart, saying what it searched for' do
       get '/expenses?q=uber'

@@ -11,7 +11,7 @@ module CLI
     # `bin/sid expenses upload <paths...>`: each file as if dropped on the
     # upload form. Checked as the form checks them (type, by extension, and
     # size), stored, and its UploadDocument dispatched. A file uploaded
-    # before is that expense already: it says so, and dispatches nothing. A file that fails a
+    # before is that document already: it says so, and dispatches nothing. A file that fails a
     # check is skipped and the rest go on; any skipped makes the exit status
     # non-zero.
     #
@@ -52,12 +52,12 @@ module CLI
           ::Expenses::Upload.store(config['file_store'], filename: File.basename(path), content_type:, io:,
                                                          filing_country: config['expenses.filing_country'], reference_date:)
         end
-        expense_id = command.payload.expense_id
-        if ::Expenses::Upload.uploaded?(expense_id)
-          terminal.print_line :title, 'Already uploaded ', :reset, "#{path}  ", :key, submission_url(expense_id)
+        document_id = command.payload.document_id
+        if ::Expenses::Upload.uploaded?(document_id)
+          terminal.print_line :title, 'Already uploaded ', :reset, "#{path}  ", :key, document_url(document_id)
         else
           Sidereal.dispatch!(command)
-          terminal.print_line :title, 'Uploaded ', :reset, "#{path}  ", :key, submission_url(expense_id)
+          terminal.print_line :title, 'Uploaded ', :reset, "#{path}  ", :key, document_url(document_id)
         end
         true
       end
@@ -76,13 +76,13 @@ module CLI
       def config = Sidereal.config
 
       # Where to watch it scan, on the app as falcon.rb serves it.
-      def submission_url(expense_id)
-        "http://#{ENV.fetch('HOST', 'localhost')}:#{ENV.fetch('PORT', '9292')}/submissions/#{expense_id}"
+      def document_url(document_id)
+        "http://#{ENV.fetch('HOST', 'localhost')}:#{ENV.fetch('PORT', '9292')}/documents/#{document_id}"
       end
     end
 
     # `bin/sid expenses list`: expenses from the list the app shows
-    # (Expenses::Submissions), newest first, filtered. A table to read, or
+    # (Expenses::ExpenseList), newest first, filtered. A table to read, or
     # with --json one JSON object per line, for `bin/sid expenses dispatch`
     # (or jq) to take.
     #
@@ -91,15 +91,14 @@ module CLI
       self.description = 'List expenses, filtered: a table, or JSON lines to pipe into `expenses dispatch`'
 
       options do
-        # Submissions::STATES' keys, written out: this file loads with the
+        # ExpenseList::STATES' keys, written out: this file loads with the
         # components, before the app's classes can.
-        option '--state <states>', 'Only in these states, comma-separated: scanning, reviewing, rejected, ' \
-                                   'scan_failed, reviewed, filed, discarded, voided'
+        option '--state <states>', 'Only in these states, comma-separated: reviewing, reviewed, filed, voided'
         option '--category <keys>', 'Only with these categories, comma-separated (keys, as `--json` prints them)'
         option '--category-status <statuses>', 'Only those whose category is, comma-separated: suggested, chosen, none (no category yet)'
         option '--vat-status <statuses>', 'Only those whose VAT treatment is, comma-separated: suggested, confirmed, none (none yet)'
         option '--filing-country <codes>', 'Only those filed in these countries, comma-separated (two-letter codes, e.g. GB,NL)'
-        option '--search <text>', 'Only those whose description, vendor, filename or category has every word, as the search box finds them'
+        option '--search <text>', 'Only those whose description, vendor or category has every word, as the search box finds them'
         option '--from <date>', 'Only dated on or after this day (YYYY-MM-DD)'
         option '--to <date>', 'Only dated on or before this day (YYYY-MM-DD)'
         option '--limit <n>', 'At most this many'
@@ -109,7 +108,7 @@ module CLI
       def call
         filters = parse_filters
         Sidereal::CLI.boot_app!
-        rows = dataset(**filters).map { record(::Expenses::Submissions.row(it)) }
+        rows = dataset(**filters).map { record(::Expenses::ExpenseList.row(it)) }
         @options[:json] ? rows.each { output.puts JSON.generate(it) } : print_table(rows)
       end
 
@@ -117,7 +116,7 @@ module CLI
 
       def parse_filters
         states = list(:state)
-        unknown = states - ::Expenses::Submissions::STATES.keys
+        unknown = states - ::Expenses::ExpenseList::STATES.keys
         raise Sidereal::CLI::Error, "No such state: #{unknown.join(', ')}" if unknown.any?
 
         categories = list(:category)
@@ -128,8 +127,8 @@ module CLI
         unknown = filing_countries.grep_v(/\A[A-Z]{2}\z/)
         raise Sidereal::CLI::Error, "--filing-country takes two-letter country codes, not #{unknown.join(', ')}" if unknown.any?
 
-        category_statuses = statuses(:category_status, ::Expenses::Submissions::CATEGORY_STATUSES)
-        vat_statuses = statuses(:vat_status, ::Expenses::Submissions::VAT_STATUSES)
+        category_statuses = statuses(:category_status, ::Expenses::ExpenseList::CATEGORY_STATUSES)
+        vat_statuses = statuses(:vat_status, ::Expenses::ExpenseList::VAT_STATUSES)
 
         limit = @options[:limit] && Integer(@options[:limit], 10, exception: false)
         raise Sidereal::CLI::Error, '--limit is a number' if @options[:limit] && !limit&.positive?
@@ -148,19 +147,20 @@ module CLI
       end
 
       def dataset(states:, limit:, **filters)
-        ds = ::Expenses::Submissions.in_states(Sidereal.config['db'], states, **filters)
+        ds = ::Expenses::ExpenseList.in_states(Sidereal.config['db'], states, **filters)
         ds = ds.limit(limit) if limit
-        ds.reverse(:uploaded_at)
+        ds.reverse(:created_at)
       end
 
-      # Where the row is, as one of Submissions::STATES' keys.
+      # Where the row is, as one of ExpenseList::STATES' keys.
       def state_of(row)
-        (::Expenses::Submissions::STATES.keys & row.machine).first || 'scanning'
+        (::Expenses::ExpenseList::STATES.keys & row.machine).first || 'drafting'
       end
 
       def record(row)
         {
-          expense_id: row.expense_id, state: state_of(row), filename: row.filename, description: row.description,
+          expense_id: row.expense_id, state: state_of(row), document_id: row.document_id, description: row.description,
+          vendor: row.vendor,
           total_cents: row.total_cents, currency: row.currency, incurred_on: row.incurred_on&.iso8601,
           category: row.category, category_chosen: row.category_chosen,
           vat_treatment: row.vat_treatment, vat_confirmed: row.vat_confirmed, filing_country: row.filing_country
@@ -173,7 +173,7 @@ module CLI
           category = r[:category] ? "#{::Expenses.category_label(r[:category])}#{r[:category_chosen] ? '' : ' (suggested)'}" : ''
           vat = r[:vat_treatment] ? "#{r[:vat_treatment]}#{r[:vat_confirmed] ? '' : ' (suggested)'}" : ''
           terminal.print_line :key, r[:expense_id], :reset, '  ', r[:state].ljust(16), (r[:incurred_on] || '').ljust(12),
-                              total.rjust(14), '  ', category.ljust(40), vat.ljust(28), (r[:description] || r[:filename]).to_s
+                              total.rjust(14), '  ', category.ljust(40), vat.ljust(28), r[:description].to_s
         end
         terminal.print_line :reset, "#{rows.size} #{rows.size == 1 ? 'expense' : 'expenses'}"
       end
