@@ -109,6 +109,18 @@ class App < Sidereal::App
     end
   end
 
+  # Every day at 8am, the server's local time: an import of what changed on
+  # FreeAgent since the last one, the same SyncFreeAgent the FreeAgent
+  # page's button and `bin/sid expenses import freeagent` send. The
+  # scheduler appends it to the store itself, for Integrations::FreeAgentImport
+  # to take. Not connected yet, the run fails, saying so on the FreeAgent
+  # page. Schedules tick on the leader process alone, so it's one import
+  # however many processes run; a morning the app isn't running is skipped,
+  # not made up.
+  schedule 'FreeAgent import' do
+    at '0 8 * * *', I::SyncFreeAgent, import_id: I::ACCOUNT
+  end
+
   # Where FreeAgent sends a person back to once they've let this app read
   # their account: FREEAGENT_REDIRECT_URI, or this app's callback at
   # +base_url+. It must be one the app has in FreeAgent's Developer Dashboard.

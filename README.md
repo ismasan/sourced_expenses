@@ -182,7 +182,7 @@ Expenses created or changed on [FreeAgent](https://www.freeagent.com) are import
 2. Create an app in the [FreeAgent Developer Dashboard](https://dev.freeagent.com), with the redirect URI `http://localhost:9292/integrations/freeagent/callback` (or wherever the app runs; `FREEAGENT_REDIRECT_URI` overrides it).
 3. Put its OAuth identifier and secret in `.env` as `FREEAGENT_CLIENT_ID` and `FREEAGENT_CLIENT_SECRET` (`FREEAGENT_SANDBOX=1` for a sandbox account), and restart the app.
 4. Connect your account on the FreeAgent page (`/integrations/freeagent`). Its tokens are kept in the database, never in the event store.
-5. Import: the page's button, or `bin/sid expenses import freeagent`, from cron or the like. The first import reads everything, unless `--since` says from when.
+5. Import: the app imports every day at 8am (server time; a named schedule in `web/app.rb`), and the page's button or `bin/sid expenses import freeagent` start one at any time. The first import reads everything, unless `--since` says from when, so run that one from the command line.
 
 `bin/sid expenses import --categories freeagent` lists FreeAgent's categories and which of the baseline's each is. One that is a baseline category under another name goes in `Integrations::FreeAgent::ExpenseMapping::ALIASES`; the rest are their own.
 
