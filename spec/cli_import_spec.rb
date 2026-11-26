@@ -42,7 +42,7 @@ RSpec.describe CLI::Expenses::Import do
     }
 
     expect { run('--categories', 'freeagent') }.not_to(change { syncs.size })
-    expect(out.string).to match(/285\s+Accommodation and Meals\s+Accommodation and meals/)
+    expect(out.string).to match(/285\s+Accommodation and Meals\s+Accommodation and Meals/)
     expect(out.string).to match(/999\s+Widgets\s+its own \(widgets\)/)
   end
 

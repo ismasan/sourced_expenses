@@ -124,10 +124,10 @@ RSpec.describe 'Searching expenses' do
     before do
       expense('Uber - Trip', category: 'travel', cents: 1800, at: Time.now - 10)
       expense('Uber Eats - Lunch', category: 'accommodation_and_meals', cents: 1200)
-      expense('Hetzner - Server', category: 'software', cents: 3000)
+      expense('Hetzner - Server', category: 'computer_software', cents: 3000)
     end
 
-    def descriptions = last_response.body.scan(/class="submission__file">([^<]+)</).flatten
+    def descriptions = last_response.body.scan(/class="submission__file"[^>]*>([^<]+)</).flatten
 
     it 'lists only the matches, counted and totalled in the header and the chart, saying what it searched for' do
       get '/expenses?q=uber'

@@ -36,13 +36,13 @@ module Expenses
                                              currency: 'GBP', incurred_on: Date.new(2026, 11, 1))
 
     it 'lists a source’s own category with its name there, after the baseline' do
-      project(import(category: 'use_of_home', source_category: 'Use of home'))
+      project(import(category: 'materials', source_category: 'Materials'))
 
       choices = CategoryList.all(db)
       expect(choices.first(CATEGORIES.size).map(&:key)).to eq(CATEGORIES.keys)
-      expect(choices.last).to eq(CategoryList::Choice.new(key: 'use_of_home', label: 'Use of home', description: nil))
-      expect(db[:categories].where(key: 'use_of_home').first).to include(label: 'Use of home', source: 'freeagent')
-      expect(Expenses.category_label('use_of_home')).to eq('Use of home')
+      expect(choices.last).to eq(CategoryList::Choice.new(key: 'materials', label: 'Materials', description: nil))
+      expect(db[:categories].where(key: 'materials').first).to include(label: 'Materials', source: 'freeagent')
+      expect(Expenses.category_label('materials')).to eq('Materials')
     end
 
     it 'lists every category an expense has had: suggested, chosen, or imported' do
@@ -55,11 +55,11 @@ module Expenses
     end
 
     it 'keeps the first name a category came with, taking one only if it had none' do
-      project(entered, cmd(Expense::ChooseCategory, category: 'use_of_home'))
-      project(import(category: 'use_of_home', source_category: 'Use of Home'), id: SecureRandom.uuid)
-      project(import(category: 'use_of_home', source_category: 'USE OF HOME'), id: SecureRandom.uuid)
+      project(entered, cmd(Expense::ChooseCategory, category: 'materials'))
+      project(import(category: 'materials', source_category: 'Materials'), id: SecureRandom.uuid)
+      project(import(category: 'materials', source_category: 'MATERIALS'), id: SecureRandom.uuid)
 
-      expect(db[:categories].where(key: 'use_of_home').select_map(:label)).to eq(['Use of Home'])
+      expect(db[:categories].where(key: 'materials').select_map(:label)).to eq(['Materials'])
     end
 
     it 'lists the rest by name, and the baseline’s once, whatever expenses had them' do

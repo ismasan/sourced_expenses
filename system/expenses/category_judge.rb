@@ -17,7 +17,7 @@ module Expenses
     choice :category,
            'Which bookkeeping category should this business expense be booked under? ' \
            'Judge by what was bought, from the supplier and description. ' \
-           'Choose general only when no other category fits.',
+           'Choose sundries only when no other category fits.',
            -> { categories }
   end
 

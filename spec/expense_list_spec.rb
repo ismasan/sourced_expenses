@@ -122,12 +122,12 @@ module Expenses
       end
 
       it 'takes a change at its source, filed again as it is there' do
-        changed = after(import(description: 'Pret - Dinner', category: 'general', vat_treatment: 'no_vat', tax_amount_cents: 0),
+        changed = after(import(description: 'Pret - Dinner', category: 'sundries', vat_treatment: 'no_vat', tax_amount_cents: 0),
                         given: imported)
         project(imported, changed - imported)
 
         expect(row).to have_attributes(machine: ['filed'], description: 'Pret - Dinner', total_cents: 2000,
-                                       category: 'general', category_chosen: true, vat_treatment: 'no_vat')
+                                       category: 'sundries', category_chosen: true, vat_treatment: 'no_vat')
       end
     end
 

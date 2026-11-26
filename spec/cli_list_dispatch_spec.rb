@@ -48,7 +48,7 @@ RSpec.describe 'bin/sid expenses list | dispatch' do
     row('hotel', %w[reviewing], category: 'accommodation_and_meals', vat_treatment: 'foreign_vat', filing_country: 'NL',
                                 on: Date.new(2026, 1, 5))
   end
-  let!(:chosen) { row('github', %w[filed], category: 'software', category_chosen: true, vat_treatment: 'import', vat_confirmed: true) }
+  let!(:chosen) { row('github', %w[filed], category: 'computer_software', category_chosen: true, vat_treatment: 'import', vat_confirmed: true) }
   let!(:none) { row('misc', %w[reviewing]) }
   let!(:ready) { row('taxi', %w[reviewed], category: 'travel', category_chosen: true, vat_treatment: 'domestic', vat_confirmed: true) }
 
@@ -101,12 +101,12 @@ RSpec.describe 'bin/sid expenses list | dispatch' do
     end
 
     it 'prints a table to read' do
-      expect(list('--state', 'filed')).to include(chosen, 'filed', '10.00 GBP', 'Software and web services', 'github', '1 expense')
+      expect(list('--state', 'filed')).to include(chosen, 'filed', '10.00 GBP', 'Computer Software', 'github', '1 expense')
     end
 
     it 'refuses filters it does not know' do
       expect { list('--state', 'lost') }.to raise_error(Sidereal::CLI::Error, 'No such state: lost')
-      expect { list('--category', 'Use of home') }.to raise_error(Sidereal::CLI::Error, 'No such category: Use of home')
+      expect { list('--category', 'Materials') }.to raise_error(Sidereal::CLI::Error, 'No such category: Materials')
       expect { list('--category-status', 'maybe') }.to raise_error(Sidereal::CLI::Error, /suggested, chosen, none/)
       expect { list('--vat-status', 'maybe') }.to raise_error(Sidereal::CLI::Error, /suggested, confirmed, none/)
     end

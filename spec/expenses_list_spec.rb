@@ -145,12 +145,12 @@ RSpec.describe 'The expense lists' do
 
   it 'shows each expense’s category, a suggestion apart from a person’s choice' do
     db[:expenses].where(expense_id: submission('Uber - Trip', 'reviewing')).update(category: 'travel')
-    db[:expenses].where(expense_id: submission('GitHub', 'filed')).update(category: 'software', category_chosen: true)
+    db[:expenses].where(expense_id: submission('GitHub', 'filed')).update(category: 'computer_software', category_chosen: true)
     get '/expenses'
 
     expect(last_response.body).to include(
       'class="submission__category submission__category--suggested" title="Suggested category">Travel<',
-      'class="submission__category" title="Category">Software and web services<'
+      'class="submission__category" title="Category">Computer Software<'
     )
   end
 
@@ -162,8 +162,8 @@ RSpec.describe 'The expense lists' do
     before do
       categorized('uber.pdf', 'travel', 'filed')
       categorized('train.pdf', 'travel', 'reviewing')
-      categorized('github.pdf', 'software', 'filed')
-      categorized('render.pdf', 'software', 'filed')
+      categorized('github.pdf', 'computer_software', 'filed')
+      categorized('render.pdf', 'computer_software', 'filed')
       submission('misc.pdf', 'reviewing')
     end
 
@@ -173,7 +173,7 @@ RSpec.describe 'The expense lists' do
       get '/expenses'
 
       expect(count(last_response.body, 'Travel')).to eq(2)
-      expect(count(last_response.body, 'Software and web services')).to eq(2)
+      expect(count(last_response.body, 'Computer Software')).to eq(2)
       expect(last_response.body).not_to include('>Insurance<')
     end
 
@@ -184,7 +184,7 @@ RSpec.describe 'The expense lists' do
       expect(filenames(body)).to eq(%w[uber.pdf])
       expect(body).to include('value="travel" checked', 'value="insurance" checked', 'Clear filters')
       expect(count(body, 'Travel')).to eq(1)            # filed only
-      expect(count(body, 'Software and web services')).to eq(2)
+      expect(count(body, 'Computer Software')).to eq(2)
       expect(count(body, 'Insurance')).to eq(0)         # ticked, so listed
       expect(count(body, 'Filed')).to eq(1)             # travel only
       expect(count(body, 'Ready to review')).to eq(1)
@@ -199,7 +199,7 @@ RSpec.describe 'The expense lists' do
     end
 
     it 'totals only the categories ticked in the header and the chart, naming them' do
-      [['taxi', 'travel', 1500], ['hosting', 'software', 700]].each do |name, category, cents|
+      [['taxi', 'travel', 1500], ['hosting', 'computer_software', 700]].each do |name, category, cents|
         expense_id = filed("#{name}.pdf", on: Date.today, cents:)
         db[:ledger].where(expense_id:).update(category:)
       end
@@ -207,8 +207,8 @@ RSpec.describe 'The expense lists' do
       get '/expenses?category[]=travel'
       expect(last_response.body).to include('>Travel</span> · ', 'ledger-total__amount">15.00 GBP<', '1 expense filed')
 
-      get '/expenses?category[]=travel&category[]=software'
-      expect(last_response.body).to include('>2 categories</span> · ', 'title="Software and web services, Travel"',
+      get '/expenses?category[]=travel&category[]=computer_software'
+      expect(last_response.body).to include('>2 categories</span> · ', 'title="Computer Software, Travel"',
                                             'ledger-total__amount">22.00 GBP<')
 
       get '/expenses'
@@ -243,7 +243,7 @@ RSpec.describe 'The expense lists' do
       db[:expenses].where(expense_id: submission('hotel.pdf', 'reviewing', at: Time.now - 20))
                    .update(category: 'travel', category_chosen: true, vat_treatment: 'foreign_vat')
       db[:expenses].where(expense_id: submission('github.pdf', 'filed', at: Time.now - 10))
-                   .update(category: 'software', category_chosen: true, vat_treatment: 'import', vat_confirmed: true)
+                   .update(category: 'computer_software', category_chosen: true, vat_treatment: 'import', vat_confirmed: true)
       submission('misc.pdf', 'reviewing')
     end
 

@@ -61,7 +61,7 @@ module Expenses
       end
 
       it 'asks the model about one whose category isn’t, telling it the name there' do
-        FAKE_LLM.category = { category: 'software', probability: 0.8 }
+        FAKE_LLM.category = { category: 'computer_software', probability: 0.8 }
         imported = history(import(category: nil, source_category: 'Web Hosting', description: 'Hosting'))
 
         expect(dispatched(last(Expense::ExpenseImported, imported)).map(&:class)).to eq([Expense::SuggestCategory])
@@ -100,12 +100,12 @@ module Expenses
     it 'offers the model the baseline and every other category expenses have had' do
       db = Sidereal.config['db']
       db.transaction(rollback: :always, auto_savepoint: true) do
-        db[:categories].insert(key: 'use_of_home', label: 'Use of home', source: 'freeagent', first_seen_at: Time.now)
+        db[:categories].insert(key: 'materials', label: 'Materials', source: 'freeagent', first_seen_at: Time.now)
         entered = history(cmd(Expense::EnterExpense, filing_country: 'GB', description: 'Home office heating',
                                                      net_price_cents: 2600, currency: 'GBP', incurred_on: date))
         dispatched(last(Expense::ExpenseEntered, entered))
 
-        expect(FAKE_LLM.choices).to include('use_of_home' => 'Use of home',
+        expect(FAKE_LLM.choices).to include('materials' => 'Materials',
                                             'travel' => start_with('Travel: Flights, trains'))
         expect(FAKE_LLM.choices.keys.first(Expenses::CATEGORIES.size)).to eq(Expenses::CATEGORIES.keys)
       end
@@ -212,7 +212,7 @@ module Expenses
       it 'keeps a person’s choice over any later suggestion' do
         scanned = history(*reviewing)
         later = history(cmd(Expense::ChooseCategory, category: 'travel'),
-                        cmd(Expense::SuggestCategory, category: 'general', probability: 0.4, description: 'Uber - Trip'), given: scanned)
+                        cmd(Expense::SuggestCategory, category: 'sundries', probability: 0.4, description: 'Uber - Trip'), given: scanned)
 
         expect(later - scanned).to all(satisfy { !it.is_a?(Expense::CategorySuggested) })
         expect(doc(later)).to have_attributes(category: 'travel', category_chosen?: true)
@@ -220,8 +220,8 @@ module Expenses
 
       # Any category is one: the baseline's or another (CategoryList).
       it 'takes any category key, refusing one that is not a key' do
-        expect(cmd(Expense::ChooseCategory, category: 'use_of_home')).to be_valid
-        expect(cmd(Expense::ChooseCategory, category: 'Use of home')).not_to be_valid
+        expect(cmd(Expense::ChooseCategory, category: 'materials')).to be_valid
+        expect(cmd(Expense::ChooseCategory, category: 'Materials')).not_to be_valid
         expect(cmd(Expense::ChooseCategory, category: '')).not_to be_valid
       end
 
@@ -229,7 +229,7 @@ module Expenses
         scanned = history(*reviewing)
         suggested = history(cmd(Expense::SuggestCategory, category: 'travel', probability: 0.9, description: 'Uber - Trip'), given: scanned)
         chosen = history(cmd(Expense::ChooseCategory, category: 'motor_expenses'),
-                         cmd(Expense::SuggestCategory, category: 'general', probability: 0.4, description: 'Other'), given: suggested)
+                         cmd(Expense::SuggestCategory, category: 'sundries', probability: 0.4, description: 'Other'), given: suggested)
         project = ->(messages) { messages.reduce(with_reactor(ExpenseList, expense_id:)) { |r, m| r.given(m) }.then! { nil } }
         row = -> { ExpenseList.recent(db, limit: 1000).find { it.expense_id == expense_id } }
 

@@ -82,8 +82,8 @@ module Expenses
         body = at(ecmd(Expense::SuggestCategory, category: 'business_entertaining', probability: 0.82,
                                                  description: 'Café Central — Lunch'))
 
-        expect(body).to include('Suggested category: ', '<strong>Business entertaining</strong>', '82% sure',
-                                '>Light, heat and power</option>', 'category__form category__form--suggested')
+        expect(body).to include('Suggested category: ', '<strong>Business Entertaining</strong>', '82% sure',
+                                '>Use Of Home</option>', 'category__form category__form--suggested')
       end
 
       it 'flags another country’s VAT for a closer look' do
@@ -205,7 +205,7 @@ module Expenses
       it 'shows it filed as it is on FreeAgent, a correction here to be made there' do
         body = at
 
-        expect(body).to include('Pret - Lunch', 'Filed, as it is on FreeAgent', 'Accommodation and meals', 'Domestic',
+        expect(body).to include('Pret - Lunch', 'Filed, as it is on FreeAgent', 'Accommodation and Meals', 'Domestic',
                                 'FreeAgent’s next change to it replaces a correction made here', 'record-page__body--no-preview')
         expect(body).not_to include('Read from its document', 'Scan again', 'Its document')
       end
@@ -214,7 +214,7 @@ module Expenses
         expense!(expense_id, import(vat_treatment: nil))
         get "/expenses/#{expense_id}"
 
-        expect(last_response.body).to include('Imported from FreeAgent', 'Category on FreeAgent: ', 'Accommodation and meals')
+        expect(last_response.body).to include('Imported from FreeAgent', 'Category on FreeAgent: ', 'Accommodation and Meals')
       end
 
       it 'links to it on FreeAgent, when the import knows where' do
@@ -228,10 +228,10 @@ module Expenses
       it 'offers a source’s own category to choose, by its name' do
         db = Sidereal.config['db']
         db.transaction(rollback: :always, auto_savepoint: true) do
-          db[:categories].insert(key: 'use_of_home', label: 'Use of home', source: 'freeagent', first_seen_at: Time.now)
+          db[:categories].insert(key: 'materials', label: 'Materials', source: 'freeagent', first_seen_at: Time.now)
           body = at
 
-          expect(body).to include('<option value="use_of_home">Use of home</option>')
+          expect(body).to include('<option value="materials">Materials</option>')
         end
       end
 

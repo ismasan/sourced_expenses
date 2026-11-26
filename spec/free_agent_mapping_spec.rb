@@ -89,9 +89,9 @@ RSpec.describe Integrations::FreeAgent::ExpenseMapping do
   describe 'the category' do
     it 'is ours where the names match, whatever their case or punctuation' do
       expect(described_class.ours('Accommodation and Meals')).to eq('accommodation_and_meals')
-      expect(described_class.ours('Bank/Finance Charges')).to eq('bank_charges')
+      expect(described_class.ours('Bank/Finance Charges')).to eq('bank_finance_charges')
       expect(described_class.ours('ACCOMMODATION & MEALS')).to eq('accommodation_and_meals')
-      expect(described_class.normalize('Bank/Finance Charges')).to eq(described_class.normalize('Bank and finance charges'))
+      expect(described_class.normalize('Bank/Finance Charges')).to eq(described_class.normalize('Bank and Finance charges'))
     end
 
     it 'is its own for a name that is none of the baseline’s, keyed from its name' do

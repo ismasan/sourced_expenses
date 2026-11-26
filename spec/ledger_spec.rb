@@ -38,7 +38,7 @@ module Expenses
     end
 
     # Reviewed, and ready to file: the category chosen, the VAT confirmed.
-    def reviewed(id = expense_id, category: 'general')
+    def reviewed(id = expense_id, category: 'sundries')
       [*reviewing(id), cmd(Expense::ConfirmVatTreatment, id, treatment: 'domestic'),
        cmd(Expense::ChooseCategory, id, category:)]
     end
@@ -64,10 +64,10 @@ module Expenses
     it 'records an imported expense, filed as its source has it, in its source’s category' do
       import = cmd(Expense::ImportExpense, source: 'freeagent', external_id: '1', filing_country: 'GB', description: 'Home office',
                                            net_price_cents: 2600, tax_amount_cents: 0, currency: 'GBP', incurred_on: date,
-                                           category: 'use_of_home', source_category: 'Use of home', vat_treatment: 'no_vat')
+                                           category: 'materials', source_category: 'Materials', vat_treatment: 'no_vat')
       project(import)
 
-      expect(row).to include(amount_cents: 2600, currency: 'GBP', incurred_on: date, category: 'use_of_home')
+      expect(row).to include(amount_cents: 2600, currency: 'GBP', incurred_on: date, category: 'materials')
     end
 
     it 'records a filed expense, its conversion to come' do
@@ -119,7 +119,7 @@ module Expenses
       end
 
       it 'takes a change of category once filed, over any later suggestion' do
-        project(*reviewed, save, choose('business_entertaining'), suggest('general'))
+        project(*reviewed, save, choose('business_entertaining'), suggest('sundries'))
 
         expect(row).to include(category: 'business_entertaining')
       end
@@ -128,12 +128,12 @@ module Expenses
         travel, software, other = Array.new(3) { SecureRandom.hex(16) }
         project(*reviewed(travel, category: 'travel'), save(travel, currency: 'GBP', net_price_cents: 1000, tax_amount_cents: 0),
                 id: travel)
-        project(*reviewed(software, category: 'software'), save(software, currency: 'GBP', net_price_cents: 500, tax_amount_cents: 0,
+        project(*reviewed(software, category: 'computer_software'), save(software, currency: 'GBP', net_price_cents: 500, tax_amount_cents: 0,
                                                                           incurred_on: Date.new(2025, 9, 2)), id: software)
         project(*reviewed(other), save(other, currency: 'GBP', net_price_cents: 200, tax_amount_cents: 0), id: other)
 
         expect(Ledger.month(db, 'GBP', date, categories: %w[travel])).to have_attributes(cents: 1000, expenses: 1)
-        expect(Ledger.total(db, 'GBP', categories: %w[travel software])).to have_attributes(cents: 1500, expenses: 2)
+        expect(Ledger.total(db, 'GBP', categories: %w[travel computer_software])).to have_attributes(cents: 1500, expenses: 2)
         expect(Ledger.total(db, 'GBP')).to have_attributes(cents: 1700, expenses: 3)
         # The months still run from the first expense, whatever the categories.
         expect(Ledger.months(db, 'GBP', date:, categories: %w[travel]).map { [it.from.month, it.cents] }).to eq([[9, 0], [10, 1000]])

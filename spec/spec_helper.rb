@@ -28,7 +28,7 @@ class FakeLLM
     @calls = []
     @answers = {}
     @categorized = []
-    @category = { category: 'general', probability: 0.5 }
+    @category = { category: 'sundries', probability: 0.5 }
   end
 
   # +categories+, the choices it was given, are in +choices+.

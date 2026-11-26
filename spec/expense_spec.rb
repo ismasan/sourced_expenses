@@ -16,7 +16,7 @@ module Expenses
       def value(history) = expense(history).machine.value
       def reviewing(category: :initial, vat: :initial) = { Reviewing => { category:, vat: } }
 
-      def choose(given, category = 'general') = history(cmd(ChooseCategory, category:), given:)
+      def choose(given, category = 'sundries') = history(cmd(ChooseCategory, category:), given:)
       def confirm(given, treatment = 'domestic') = history(cmd(ConfirmVatTreatment, treatment:), given:)
       def reviewed(given) = confirm(choose(given))
 
@@ -166,10 +166,10 @@ module Expenses
         end
 
         it 'takes a change to a step already done while the other waits' do
-          rechosen = choose(choose(drafted, 'travel'), 'general')
+          rechosen = choose(choose(drafted, 'travel'), 'sundries')
 
           expect(value(rechosen)).to eq(reviewing(category: CategoryConfirmed))
-          expect(expense(rechosen).context.category).to eq('general')
+          expect(expense(rechosen).context.category).to eq('sundries')
           expect(expense(confirm(confirm(drafted), 'import')).context.vat_treatment).to eq('import')
         end
 
@@ -369,15 +369,15 @@ module Expenses
 
         it 'is filed again with a change at its source, its source winning over a correction here' do
           corrected = file(imported, **import_form(description: 'Pret - Corrected here'))
-          changed = imported(given: corrected, net_price_cents: 9900, category: 'general', vat_treatment: 'no_vat')
+          changed = imported(given: corrected, net_price_cents: 9900, category: 'sundries', vat_treatment: 'no_vat')
           doc = expense(changed).context
 
           expect(changed.drop(corrected.size).map(&:class))
             .to eq([ImportedExpenseChanged, CategoryChosen, VatTreatmentConfirmed, ExpenseFiled])
           expect(value(changed)).to eq(Filed)
           expect(doc.filed).to eq(import_form(net_price_cents: 9900))
-          expect(doc).to have_attributes(category: 'general', category_chosen?: true, vat_treatment: 'no_vat')
-          expect(imported(given: changed, net_price_cents: 9900, category: 'general', vat_treatment: 'no_vat')).to eq(changed)
+          expect(doc).to have_attributes(category: 'sundries', category_chosen?: true, vat_treatment: 'no_vat')
+          expect(imported(given: changed, net_price_cents: 9900, category: 'sundries', vat_treatment: 'no_vat')).to eq(changed)
         end
 
         it 'applies a change at its source while in review, keeping a person’s choice while it’s incomplete' do
