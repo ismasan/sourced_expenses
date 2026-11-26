@@ -68,7 +68,8 @@ a:hover { text-decoration-thickness: 2px; }
 }
 
 .page:has(.record-page),
-.page:has(.expenses-page) { max-width: 66rem; }
+.page:has(.expenses-page),
+.page:has(.integrations) { max-width: 66rem; }
 
 /* ---- Buttons and fields ---- */
 

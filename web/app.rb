@@ -63,6 +63,7 @@ class App < Sidereal::App
   component UI::Components::QueueBar
   component UI::Components::BeingRead
   component UI::Components::ExpenseRows
+  component UI::Components::IntegrationsLayout
   component UI::Components::HistoryFeed
   component UI::Components::LedgerTotal
   component UI::Components::MonthChart
@@ -74,6 +75,7 @@ class App < Sidereal::App
   page UI::ExpenseDiagramPage
   page UI::DocumentPage
   page UI::DocumentDiagramPage
+  page UI::IntegrationsPage
   page UI::FreeAgentPage
 
   component UI::Attention

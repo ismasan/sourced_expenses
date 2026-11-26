@@ -1,0 +1,69 @@
+/* ---- The integrations' pages: a sidebar of them, the one chosen beside it
+   (UI::Components::IntegrationsLayout). Laid out as the expense list's filters. ---- */
+
+.integrations {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  gap: 2.5rem;
+  align-items: start;
+}
+@media (max-width: 48rem) { .integrations { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; } }
+
+.integrations__nav { position: sticky; top: calc(var(--nav-h) + 1.25rem); }
+@media (max-width: 48rem) { .integrations__nav { position: static; } }
+
+.integrations__title {
+  margin: 0 0 0.4rem;
+  padding-bottom: 0.4rem;
+  font-size: 1rem;
+  font-weight: 800;
+  border-bottom: 2px solid var(--ink);
+}
+.integrations__title a { color: inherit; text-decoration: none; }
+.integrations__title a:hover { text-decoration: underline; }
+
+.integrations__list { list-style: none; margin: 0; padding: 0; }
+.integrations__item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  color: var(--ink);
+  text-decoration: none;
+  border-left: 4px solid transparent;
+}
+.integrations__item:hover { background: var(--wash); }
+.integrations__item--current { font-weight: 800; border-left-color: var(--ink); background: var(--wash); }
+.integrations__name { font-weight: inherit; }
+.integrations__status { font-size: 0.85rem; color: var(--ink-2); white-space: nowrap; }
+.integrations__status--done::before,
+.integrations__status--yours::before,
+.integrations__status--closed::before {
+  content: '';
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.35rem;
+  border-radius: 50%;
+  background: var(--stage, var(--rule));
+}
+.integrations__status--done { --stage: var(--done); }
+.integrations__status--yours { --stage: var(--yours); }
+.integrations__status--closed { --stage: var(--closed); }
+
+/* The overview: a card per integration. */
+.integrations__cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
+.integrations__card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem 1.25rem;
+  color: var(--ink);
+  text-decoration: none;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+}
+.integrations__card:hover { background: var(--wash); }
+.integrations__card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+.integrations__card-name { font-size: 1.2rem; font-weight: 800; }
+.integrations__card p { margin: 0; color: var(--ink-2); }

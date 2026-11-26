@@ -1,10 +1,11 @@
 # frozen_string_literal: true
 
 module UI
-  # FreeAgent, as a source of expenses: how to set it up, connecting this
-  # app to an account (App's /integrations/freeagent/connect and callback
-  # routes), and the imports (Integrations::FreeAgentImport): the last run, and
-  # a button to start one. Live: it follows the imports' events.
+  # FreeAgent, as a source of expenses, among the integrations
+  # (Components::IntegrationsLayout): how to set it up, connecting this app
+  # to an account (App's /integrations/freeagent/connect and callback
+  # routes), and the imports (Integrations::FreeAgentImport): the last run,
+  # and a button to start one. Live: it follows the imports' events.
   class FreeAgentPage < Page
     path '/integrations/freeagent'
     # Why connecting failed, from the callback.
@@ -31,17 +32,18 @@ module UI
     end
 
     def view_template
-      div(id: 'freeagent-page', class: 'record-page') do
-        p(class: 'record-page__back') { a(href: '/') { 'Home' } }
-        header(class: 'record-page__header') do
-          h1(class: 'record-page__title') { 'FreeAgent' }
-        end
-        div(class: 'record-page__panel') do
-          p(class: 'reason') { @error } if @error
+      render Components::IntegrationsLayout.new(current: :freeagent) do
+        div(id: 'freeagent-page', class: 'record-page') do
+          header(class: 'record-page__header') do
+            h1(class: 'record-page__title') { 'FreeAgent' }
+          end
+          div(class: 'record-page__panel') do
+            p(class: 'reason') { @error } if @error
 
-          if !@client.configured? then render_setup
-          elsif !@client.connected? then render_connect
-          else render_imports
+            if !@client.configured? then render_setup
+            elsif !@client.connected? then render_connect
+            else render_imports
+            end
           end
         end
       end
@@ -75,7 +77,7 @@ module UI
     def render_imports
       p(class: 'panel-lead') do
         plain "Connected#{' to the sandbox' if @client.sandbox?}. Each import brings in the expenses created or changed "
-        plain 'on FreeAgent since the last one, to review here.'
+        plain 'on FreeAgent since the last one, filed as they are there.'
       end
       dl(class: 'filed') do
         dt { 'Now' }
