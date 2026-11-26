@@ -133,10 +133,7 @@ module UI
       div(id: 'expenses-page', class: 'expenses-page') do
         style { raw safe(VIEW_TRANSITIONS) }
         header(class: 'expenses-page__header') do
-          div do
-            h1(class: 'expenses-page__title') { 'All expenses' }
-            a(href: NewExpensePage.path, class: 'button') { 'Add one by hand' }
-          end
+          h1(class: 'expenses-page__title') { 'All expenses' }
           render Components::LedgerTotal.new(@ledger_total, categories: @categories, search: @search)
         end
         render Components::MonthChart.new(@month_totals, from: @from, to: @to, search: @search, **list_filters)
