@@ -18,7 +18,7 @@ GIT
 
 GIT
   remote: https://github.com/ismasan/sourced-ui.git
-  revision: 57498340d305a3f885fb0a51de3f5144569e43d3
+  revision: db68f691ac667049f1ca6338a31b3543ada9dc87
   specs:
     sourced-ui (0.1.0)
       logger
