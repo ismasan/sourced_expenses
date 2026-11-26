@@ -45,15 +45,15 @@ module CLI
         return skip(path, 'No such file') unless File.file?(path)
 
         content_type = Rack::Mime.mime_type(File.extname(path).downcase, nil)
-        problem = ::Expenses::Upload.problem(content_type:, size: File.size(path))
+        problem = ::Documents::Upload.problem(content_type:, size: File.size(path))
         return skip(path, problem) if problem
 
         command = File.open(path, 'rb') do |io|
-          ::Expenses::Upload.store(config['file_store'], filename: File.basename(path), content_type:, io:,
+          ::Documents::Upload.store(config['file_store'], filename: File.basename(path), content_type:, io:,
                                                          filing_country: config['expenses.filing_country'], reference_date:)
         end
         document_id = command.payload.document_id
-        if ::Expenses::Upload.uploaded?(document_id)
+        if ::Documents::Upload.uploaded?(document_id)
           terminal.print_line :title, 'Already uploaded ', :reset, "#{path}  ", :key, document_url(document_id)
         else
           Sidereal.dispatch!(command)

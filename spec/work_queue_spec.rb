@@ -7,12 +7,12 @@ module Expenses
   RSpec.describe WorkQueue do
     let(:db) { Sequel.sqlite.tap { Sequel::Migrator.run(it, File.expand_path('../db/migrations', __dir__)) } }
     let(:store) { Sourced::Store.new(db).tap { it.message_codec.compile! } }
-    let(:router) { Sourced::Router.new(store:, reactors: [Document, WorkQueue]).tap(&:setup!) }
-    let(:reactors) { [Document, WorkQueue] }
+    let(:router) { Sourced::Router.new(store:, reactors: [Documents::Document, WorkQueue]).tap(&:setup!) }
+    let(:reactors) { [Documents::Document, WorkQueue] }
     let(:ids) { Array.new(3) { SecureRandom.hex(16) } }
 
     before do
-      stub_const('Expenses::Document::ScanQueue', WorkQueue.define('scans', capacity: 2))
+      stub_const('Documents::Document::ScanQueue', WorkQueue.define('scans', capacity: 2))
       router
     end
 
@@ -21,21 +21,21 @@ module Expenses
     end
 
     def upload(id)
-      store.append(Document::UploadDocument.new(payload: { document_id: id, filename: "#{id}.pdf", content_type: 'application/pdf',
+      store.append(Documents::Document::UploadDocument.new(payload: { document_id: id, filename: "#{id}.pdf", content_type: 'application/pdf',
                                                           file_ref: "f/#{id}", filing_country: 'NL' }))
     end
 
     def send_command(klass, id, **payload) = store.append(klass.new(payload: { document_id: id, **payload }))
-    def job(id) = WorkQueue.item_id(Document::StartScan, document_id: id)
-    def start(id) = { type: Document::StartScan.type, payload: { document_id: id } }
+    def job(id) = WorkQueue.item_id(Documents::Document::StartScan, document_id: id)
+    def start(id) = { type: Documents::Document::StartScan.type, payload: { document_id: id } }
 
-    def enqueue(id, capacity: nil, queue: Document::ScanQueue)
-      enqueuing = queue.enqueue(Document::StartScan, document_id: id)
+    def enqueue(id, capacity: nil, queue: Documents::Document::ScanQueue)
+      enqueuing = queue.enqueue(Documents::Document::StartScan, document_id: id)
       store.append((capacity ? enqueuing.with_capacity(capacity) : enqueuing).to_message)
     end
 
     # The documents whose scan got a slot, in order.
-    def started = store.read(Sourced::Selector[Document::StartScan]).messages.map { it.payload.document_id }
+    def started = store.read(Sourced::Selector[Documents::Document::StartScan]).messages.map { it.payload.document_id }
     def stats(name = 'scans') = WorkQueue.status(name, store:).to_h
     def history(name = 'scans') = store.read(WorkQueue.history_selector.bind(queue_name: name)).messages
 
@@ -45,7 +45,7 @@ module Expenses
 
     # Each document's Enqueue, and its StartScan, by document id.
     def enqueue_of(id) = store.read(Sourced::Selector[WorkQueue::Enqueue]).messages.find { it.payload.item_id == job(id) }
-    def start_scan_of(id) = store.read(Sourced::Selector[Document::StartScan]).messages.find { it.payload.document_id == id }
+    def start_scan_of(id) = store.read(Sourced::Selector[Documents::Document::StartScan]).messages.find { it.payload.document_id == id }
 
     def correlated_with?(message, source)
       message.causation_id == source.id && message.correlation_id == source.correlation_id &&
@@ -53,8 +53,8 @@ module Expenses
     end
 
     def paths(id)
-      document_history = store.read(Document.history_selector.bind(document_id: id)).messages
-      Document.new(document_id: id).tap { it.evolve(document_history) }.machine.paths
+      document_history = store.read(Documents::Document.history_selector.bind(document_id: id)).messages
+      Documents::Document.new(document_id: id).tap { it.evolve(document_history) }.machine.paths
     end
 
     it 'starts as many scans as it has room for, and queues the rest, oldest first' do
@@ -73,8 +73,8 @@ module Expenses
       upload(ids[0])
       drain
 
-      decided = store.read(Sourced::Selector[WorkQueue::Started, Document::StartScan]).messages
-      expect(decided.map(&:class)).to eq([WorkQueue::Started, Document::StartScan])
+      decided = store.read(Sourced::Selector[WorkQueue::Started, Documents::Document::StartScan]).messages
+      expect(decided.map(&:class)).to eq([WorkQueue::Started, Documents::Document::StartScan])
       expect(decided.map(&:position)).to eq([decided[0].position, decided[0].position + 1])
       expect(decided[1].payload.to_h).to eq(document_id: ids[0])
       expect(history.map(&:class)).to eq([WorkQueue::Enqueued, WorkQueue::Started])
@@ -94,7 +94,7 @@ module Expenses
         expect(call[:messages].map(&:class)).to eq([WorkQueue::Enqueue])
         expect(call[:events].map(&:class)).to eq([WorkQueue::Enqueued, WorkQueue::Started])
         expect(call[:events].map(&:id)).to eq(history.map(&:id))
-        expect(call[:started].map(&:class)).to eq([Document::StartScan])
+        expect(call[:started].map(&:class)).to eq([Documents::Document::StartScan])
         expect(call[:started].first.causation_id).to eq(enqueue_of(ids[0]).id)
         expect(call[:context]).to include(in_flight: [job(ids[0])])
       end
@@ -108,17 +108,17 @@ module Expenses
         upload(ids[0])
         drain
         enqueue = enqueue_of(ids[0])
-        upload_command = store.read(Sourced::Selector[Document::UploadDocument]).messages.first
+        upload_command = store.read(Sourced::Selector[Documents::Document::UploadDocument]).messages.first
 
         expect(correlated_with?(start_scan_of(ids[0]), enqueue)).to be(true)
         expect(start_scan_of(ids[0]).correlation_id).to eq(upload_command.correlation_id)
-        expect(start_scan_of(ids[0]).correlation_type).to eq(Document::UploadDocument.type)
+        expect(start_scan_of(ids[0]).correlation_type).to eq(Documents::Document::UploadDocument.type)
       end
 
       it 'keeps to it when another command frees the slot, and the queue’s own events to the command that decided them' do
         ids.each { upload(it) }
         drain
-        send_command(Document::TimeOutScan, ids[0])
+        send_command(Documents::Document::TimeOutScan, ids[0])
         drain
         release = store.read(Sourced::Selector[WorkQueue::Release]).messages.first
         started = history.select { it.is_a?(WorkQueue::Started) }.last
@@ -132,11 +132,11 @@ module Expenses
       it 'shows the queue as the producer of what it appends, and its caller as the Enqueue’s' do
         ids.each { upload(it) }
         drain
-        send_command(Document::TimeOutScan, ids[0])
+        send_command(Documents::Document::TimeOutScan, ids[0])
         drain
 
-        expect(enqueue_of(ids[0]).metadata[:producer]).to eq(Document.group_id)
-        expect(store.read(Sourced::Selector[WorkQueue::Release]).messages.map { it.metadata[:producer] }).to all(eq(Document.group_id))
+        expect(enqueue_of(ids[0]).metadata[:producer]).to eq(Documents::Document.group_id)
+        expect(store.read(Sourced::Selector[WorkQueue::Release]).messages.map { it.metadata[:producer] }).to all(eq(Documents::Document.group_id))
         expect(history.map { it.metadata[:producer] }.uniq).to eq(['work_queue(scans)'])
         expect(ids.map { start_scan_of(it).metadata[:producer] }).to all(eq('work_queue(scans)'))
       end
@@ -145,7 +145,7 @@ module Expenses
     it 'starts the next one when a scan ends' do
       ids.each { upload(it) }
       drain
-      send_command(Document::TimeOutScan, ids[0])
+      send_command(Documents::Document::TimeOutScan, ids[0])
       drain
 
       expect(started).to eq(ids)
@@ -157,7 +157,7 @@ module Expenses
     it 'drops one discarded before its turn, starting nothing in its place' do
       ids.each { upload(it) }
       drain
-      send_command(Document::DiscardDocument, ids[2])
+      send_command(Documents::Document::DiscardDocument, ids[2])
       drain
 
       expect(started).to eq(ids[0..1])
@@ -168,8 +168,8 @@ module Expenses
     it 'queues a rescan again, once its scan has ended' do
       upload(ids[0])
       drain
-      send_command(Document::TimeOutScan, ids[0])
-      send_command(Document::Rescan, ids[0])
+      send_command(Documents::Document::TimeOutScan, ids[0])
+      send_command(Documents::Document::Rescan, ids[0])
       drain
 
       expect(started).to eq([ids[0], ids[0]])
@@ -193,12 +193,12 @@ module Expenses
       let(:id) { ids[0] }
 
       it 'builds an Enqueue of the start message, its id the message’s type and payload' do
-        enqueue = queue.enqueue(Document::StartScan, document_id: id).with_capacity(3).to_message
+        enqueue = queue.enqueue(Documents::Document::StartScan, document_id: id).with_capacity(3).to_message
 
         expect(enqueue).to be_a(WorkQueue::Enqueue)
         expect(enqueue.payload.to_h).to eq(queue_name: 'scans', capacity: 3, item_id: %(documents.start_scan:{"document_id":"#{id}"}),
                                            start: start(id))
-        expect(queue.enqueue(Document::StartScan, document_id: id).to_message.payload.capacity).to be_nil
+        expect(queue.enqueue(Documents::Document::StartScan, document_id: id).to_message.payload.capacity).to be_nil
       end
 
       it 'ids an item by its whole payload as built, unambiguously, whatever the order of its keys' do
@@ -221,12 +221,12 @@ module Expenses
       end
 
       it 'refuses a start message that won’t build, where the caller builds its command' do
-        expect { queue.enqueue(Document::StartScan, document_id: 'not an id').to_message }.to raise_error(ArgumentError, /document_id/)
-        expect { queue.release(Document::StartScan, document_id: 'not an id') }.to raise_error(ArgumentError, /document_id/)
+        expect { queue.enqueue(Documents::Document::StartScan, document_id: 'not an id').to_message }.to raise_error(ArgumentError, /document_id/)
+        expect { queue.release(Documents::Document::StartScan, document_id: 'not an id') }.to raise_error(ArgumentError, /document_id/)
       end
 
       it 'builds a Release of the same item' do
-        release = queue.release(Document::StartScan, document_id: id)
+        release = queue.release(Documents::Document::StartScan, document_id: id)
 
         expect(release).to be_a(WorkQueue::Release)
         expect(release.payload.to_h).to eq(queue_name: 'scans', item_id: job(id))
@@ -271,7 +271,7 @@ module Expenses
         drain
         extra = SecureRandom.hex(16)
         enqueue(extra, capacity: 1)
-        send_command(Document::TimeOutScan, ids[0])
+        send_command(Documents::Document::TimeOutScan, ids[0])
         drain
 
         expect(started).to eq(ids[0..1])
@@ -302,7 +302,7 @@ module Expenses
       end
 
       it 'raises for a payload its message won’t take' do
-        expect { decide(type: Document::StartScan.type, payload: { document_id: 'not an id' }) }
+        expect { decide(type: Documents::Document::StartScan.type, payload: { document_id: 'not an id' }) }
           .to raise_error(ArgumentError, /document_id/)
       end
 
@@ -322,7 +322,7 @@ module Expenses
       let(:router) do
         allow(WorkQueue).to receive(:snapshot_config)
           .and_return(Sourced::Snapshots::Config.parse(every: 2, version: 1, type: Sourced::Types::JSONData))
-        Sourced::Router.new(store:, reactors: [Document, WorkQueue]).tap(&:setup!)
+        Sourced::Router.new(store:, reactors: [Documents::Document, WorkQueue]).tap(&:setup!)
       end
       let(:ids) { Array.new(4) { SecureRandom.hex(16) } }
 
@@ -332,7 +332,7 @@ module Expenses
       it 'stores a queue’s state every so often, waiting items, their start messages and its capacity too, and starts them from it' do
         ids.each { upload(it) }
         drain
-        send_command(Document::TimeOutScan, ids[0])
+        send_command(Documents::Document::TimeOutScan, ids[0])
         drain
         expect(snapshot_state[:capacity]).to eq(2)
         expect(snapshot_state[:queued].map { it.slice(:id, :type, :payload) }).to eq(ids[2..3].map { { id: job(it), **start(it) } })
@@ -344,7 +344,7 @@ module Expenses
           original.call(selector, **kw)
         end
         position = snapshot[:position]
-        send_command(Document::TimeOutScan, ids[1])
+        send_command(Documents::Document::TimeOutScan, ids[1])
         drain
 
         expect(reads.first).to eq(position)

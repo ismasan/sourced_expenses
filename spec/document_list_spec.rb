@@ -2,7 +2,7 @@
 
 require 'sourced/testing/rspec'
 
-module Expenses
+module Documents
   RSpec.describe DocumentList do
     include Sourced::Testing::RSpec
 

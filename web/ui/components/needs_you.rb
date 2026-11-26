@@ -11,11 +11,11 @@ module UI
 
       def self.load(db = Sidereal.config['db'])
         new(Expenses::ExpenseList.page(db, states: Expenses::ExpenseList::NEEDS_YOU, per_page: PER_PAGE),
-            Expenses::DocumentList.page(db, states: Expenses::DocumentList::NEEDS_YOU, per_page: PER_PAGE))
+            Documents::DocumentList.page(db, states: Documents::DocumentList::NEEDS_YOU, per_page: PER_PAGE))
       end
 
       # @param expenses [Array(Array<Expenses::ExpenseList::Row>, Integer)] the latest, and how many in all
-      # @param documents [Array(Array<Expenses::DocumentList::Row>, Integer)] the latest, and how many in all
+      # @param documents [Array(Array<Documents::DocumentList::Row>, Integer)] the latest, and how many in all
       def initialize(expenses = [[], 0], documents = [[], 0])
         @expenses, @expenses_total = expenses
         @documents, @documents_total = documents

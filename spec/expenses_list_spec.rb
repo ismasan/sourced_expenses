@@ -94,7 +94,7 @@ RSpec.describe 'The expense lists' do
 
     q = WorkQueue
     items = Array.new(9) { SecureRandom.hex(16) }
-    start = ->(id) { { type: Expenses::Document::StartScan.type, payload: { document_id: id } } }
+    start = ->(id) { { type: Documents::Document::StartScan.type, payload: { document_id: id } } }
     queue = { queue_name: 'scans' }
     Sourced.store.append(items.map { q::Enqueued.new(payload: { **queue, capacity: 3, item_id: it, start: start.(it) }) } +
                          items.take(5).map { q::Started.new(payload: { **queue, item_id: it }) } +

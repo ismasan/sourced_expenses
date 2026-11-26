@@ -2,7 +2,7 @@
 
 require 'date'
 
-module Expenses
+module Documents
   # One uploaded receipt or invoice, from the upload to its expense's draft.
   # Once read, it drafts an Expense with what it read, under its own id, and
   # is attached to it; one it couldn't read, a person can draft by hand. The expense goes its own
@@ -162,8 +162,8 @@ module Expenses
     # Read: its expense is drafted with what was read, under the document's
     # id, the first time or again after a rescan.
     state Scanned do
-      entry Expense::DraftExpenseFromDocument do |doc, _entered|
-        dispatch Expense::DraftExpenseFromDocument, doc.prefill
+      entry Expenses::Expense::DraftExpenseFromDocument do |doc, _entered|
+        dispatch Expenses::Expense::DraftExpenseFromDocument, doc.prefill
       end
 
       instance_exec(&RESCAN)
@@ -187,8 +187,8 @@ module Expenses
 
     # Unread, its expense drafted empty for a person to fill in.
     state EnteredByHand do
-      entry Expense::DraftExpenseFromDocument do |doc, _entered|
-        dispatch Expense::DraftExpenseFromDocument, doc.prefill(read: false)
+      entry Expenses::Expense::DraftExpenseFromDocument do |doc, _entered|
+        dispatch Expenses::Expense::DraftExpenseFromDocument, doc.prefill(read: false)
       end
 
       instance_exec(&RESCAN)

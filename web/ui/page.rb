@@ -17,7 +17,7 @@ module UI
     # Each of the scan queue's events re-renders its bar, as changed: so the
     # queue going idle shows as done, and the bar leaves.
     on WorkQueue do |evt|
-      next unless evt.payload.queue_name == Expenses::Document::ScanQueue.name
+      next unless evt.payload.queue_name == Documents::Document::ScanQueue.name
 
       browser.patch_elements Components::QueueBar.scans(changed: true)
     end

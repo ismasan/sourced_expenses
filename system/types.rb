@@ -4,7 +4,7 @@
 # attributes read String, Types::ExpenseID, Types::Boolean and the
 # rest. App-wide types can be added here too.
 # Types::String.desc("…"): a description, for the JSON Schemas made from
-# Plumb types (Expenses::Prompts).
+# Plumb types (Documents::Prompts).
 Plumb.policy :desc, helper: true do |type, description|
   type.metadata(description:)
 end

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module Expenses
+module Documents
   # The worker for Document::Scanning. When a document enters one of
   # scanning's waiting states, the scanner does that state's step
   # (ScanSteps) and reports back with the step's Complete… command, or its

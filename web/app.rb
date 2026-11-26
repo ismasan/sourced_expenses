@@ -10,7 +10,7 @@ class App < Sidereal::App
   dep :file_store, :thumbnails, :freeagent
 
   E = Expenses::Expense
-  D = Expenses::Document
+  D = Documents::Document
   I = Integrations::FreeAgentImport
 
   # Ids are the digest of the bytes, so a file never changes under its URL.

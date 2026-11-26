@@ -2,7 +2,7 @@
 
 require 'sourced/testing/rspec'
 
-module Expenses
+module Documents
   RSpec.describe Scanner do
     include Sourced::Testing::RSpec
 
@@ -82,7 +82,7 @@ module Expenses
     end
 
     it "fails the step with the model's error" do
-      FAKE_LLM.answers[P::EXTRACTION_SCHEMA] = LLM::Error.new('OpenAI is rate limiting requests')
+      FAKE_LLM.answers[P::EXTRACTION_SCHEMA] = Expenses::LLM::Error.new('OpenAI is rate limiting requests')
 
       event = at(*upload, cmd(S::CompletePreparation, processed_file_ref: pdf))
       expect(dispatched(event)[0]).to have_attributes(class: S::FailExtraction, payload: having_attributes(reason: 'OpenAI is rate limiting requests'))

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module Expenses
+module Documents
   # How a document's DocumentState is evolved from its events: the upload
   # and each scan's results.
   #

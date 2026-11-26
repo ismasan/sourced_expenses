@@ -2,7 +2,7 @@
 
 require 'date'
 
-module Expenses
+module Documents
   # What a Document machine knows about its file: the upload and the current
   # scan's results. The machine's position (which step of the scan it's at)
   # is the machine's own.
@@ -142,7 +142,7 @@ module Expenses
       }
     end
 
-    # The Expense::DraftExpenseFromDocument payload for this document's expense: its id
+    # The Expenses::Expense::DraftExpenseFromDocument payload for this document's expense: its id
     # is the document's, and its draft what the scan read, if anything
     # (+read: false+ for one filled in by hand).
     def prefill(read: true)
@@ -159,7 +159,7 @@ module Expenses
     def parse_date(value) = Types.iso_date(value)
 
     # ISO 4217, upcased, or nothing: a draft's currency is three letters
-    # (Expense::DraftExpenseFromDocument refuses anything else), so a symbol or a name
+    # (Expenses::Expense::DraftExpenseFromDocument refuses anything else), so a symbol or a name
     # the model read ("€", "Euro") is left for the person to fill in. None
     # read at all is EUR, as before.
     def currency_code(code)

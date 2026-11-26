@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module Expenses
+module Documents
   # A document to scan, from a file: what's accepted, and the
   # UploadDocument that stores it and starts its scan. Shared by the upload
   # form (UI::Components::UploadForm's UploadFile handler) and

@@ -3,7 +3,7 @@
 require 'sourced/testing/rspec'
 
 # Inside Document, so its commands, states and parts read by their own names.
-module Expenses
+module Documents
   class Document
     RSpec.describe Document do
       include Sourced::Testing::RSpec
@@ -56,10 +56,10 @@ module Expenses
                 given: extracted(**overrides))
       end
 
-      def drafts(history) = dispatched_entering(history).grep(Expense::DraftExpenseFromDocument)
+      def drafts(history) = dispatched_entering(history).grep(Expenses::Expense::DraftExpenseFromDocument)
 
       it 'is a valid chart' do
-        expect(Expenses.machines.map(&:to_h)).to all(include(:states))
+        expect([*Documents.machines, *Expenses.machines].map(&:to_h)).to all(include(:states))
       end
 
       describe 'the scan queue' do
@@ -276,7 +276,7 @@ module Expenses
           { 'eur' => 'EUR', ' gbp ' => 'GBP', '€' => nil, 'Euro' => nil }.each do |read, drafted|
             found = draft(scanned(currency: read))
             expect(found[:currency]).to eq(drafted), read.inspect
-            expect(Expense::DraftExpenseFromDocument.new(payload: found)).to be_valid, read.inspect
+            expect(Expenses::Expense::DraftExpenseFromDocument.new(payload: found)).to be_valid, read.inspect
           end
         end
 

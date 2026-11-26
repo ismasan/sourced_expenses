@@ -21,12 +21,12 @@ module UI
       stylesheet 'ui/components/upload_form.css', path: 'upload_form.css'
 
       # A file posted from the form. Web only: the handler below stores the
-      # file and dispatches Expenses::Document::UploadDocument with its id.
+      # file and dispatches Documents::Document::UploadDocument with its id.
       # This command is never stored itself: its payload holds a Tempfile.
       #
       # +file+ is a Sidereal::Types::UploadedFile, the struct Rack parses a
       # multipart part into (filename, type, tempfile...). The checks are
-      # Expenses::Upload's, made the command's, so an upload that fails one
+      # Documents::Upload's, made the command's, so an upload that fails one
       # never reaches the handler: Sidereal streams the message back to the
       # form's file field.
       UploadFile = Sidereal::Message.define('web.upload_file') do
@@ -34,8 +34,8 @@ module UI
           # Not .where(type: Types::String.options(...)): it works, but its
           # error is Plumb's own ("must have attribute type === ..."), shown
           # on the form.
-          .check(Expenses::Upload::WRONG_TYPE) { Expenses::Upload.accepted_type?(it.type) }
-          .check(Expenses::Upload::TOO_BIG) { Expenses::Upload.accepted_size?(it.tempfile.size) }
+          .check(Documents::Upload::WRONG_TYPE) { Documents::Upload.accepted_type?(it.type) }
+          .check(Documents::Upload::TOO_BIG) { Documents::Upload.accepted_size?(it.tempfile.size) }
       end
 
       # One file, of the one or many the form sends one at a time. Runs in
@@ -47,10 +47,10 @@ module UI
       # the new document.
       handle UploadFile do |cmd|
         file = cmd.payload.file
-        document = Expenses::Upload.store(Sidereal.config['file_store'], filename: file.filename, content_type: file.type,
+        document = Documents::Upload.store(Sidereal.config['file_store'], filename: file.filename, content_type: file.type,
                                           io: file.tempfile, filing_country: Sidereal.config['expenses.filing_country'])
         document_id = document.payload.document_id
-        already = Expenses::Upload.uploaded?(document_id)
+        already = Documents::Upload.uploaded?(document_id)
         dispatch document unless already
         browser.patch_elements UploadReport::Item.new(file.filename, already ? :already : :uploaded, document_id),
                                selector: "##{UploadReport::ID}", mode: 'append'
@@ -84,7 +84,7 @@ module UI
 
       # The upload, as window.uploadFiles(form, signals), which the form's
       # submit calls (UPLOAD): the report emptied, a line for each file
-      # skipped (as the command would refuse it: Expenses::Upload's checks),
+      # skipped (as the command would refuse it: Documents::Upload's checks),
       # then each of the rest alone in the input, posted, and waited for
       # before the next, so they go one at a time. The form is cleared after.
       #
@@ -102,9 +102,9 @@ module UI
           if (!files.length || signals.busy()) return;
           const report = document.getElementById('#{UploadReport::ID}');
           report.replaceChildren();
-          const types = #{JSON.generate(Expenses::Upload::ACCEPTED_TYPES)};
-          const problem = f => !types.includes(f.type) ? #{JSON.generate(Expenses::Upload::WRONG_TYPE)}
-            : f.size > #{Expenses::Upload::MAX_BYTES} ? #{JSON.generate(Expenses::Upload::TOO_BIG)} : null;
+          const types = #{JSON.generate(Documents::Upload::ACCEPTED_TYPES)};
+          const problem = f => !types.includes(f.type) ? #{JSON.generate(Documents::Upload::WRONG_TYPE)}
+            : f.size > #{Documents::Upload::MAX_BYTES} ? #{JSON.generate(Documents::Upload::TOO_BIG)} : null;
           const sending = files.filter(f => {
             const why = problem(f);
             if (!why) return true;
@@ -166,7 +166,7 @@ module UI
               # UPLOAD sends one at a time as the command's one file.
               f.send(:with_errors, :file) do |id|
                 input(id:, type: 'file', name: 'command[payload][file]', multiple: true, required: true,
-                      accept: Expenses::Upload::ACCEPTED_TYPES.join(','), 'aria-label': 'Receipts or invoices')
+                      accept: Documents::Upload::ACCEPTED_TYPES.join(','), 'aria-label': 'Receipts or invoices')
               end
               # !! because data-attr only drops an attribute for false or null.
               button(type: :submit, class: 'button button--primary', data: { 'attr:disabled' => '!!$_uploading' }) { 'Upload' }

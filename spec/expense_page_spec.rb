@@ -65,14 +65,14 @@ module Expenses
       it 'offers to scan its document again while in review, as the document’s command' do
         body = at
 
-        expect(body).to include('>Scan again</button>', %(value="#{Document::Rescan.type}"), 'Discard')
+        expect(body).to include('>Scan again</button>', %(value="#{Documents::Document::Rescan.type}"), 'Discard')
         rescan = body[/<form[^>]*>(?:(?!<\/form>).)*Scan again.*?<\/form>/m]
         expect(rescan).to include(%(name="command[payload][document_id]" value="#{document_id}"))
         expect(rescan).not_to include('command[payload][expense_id]')
       end
 
       it 'says so while its document is read again' do
-        body = at(document: [*scan, dcmd(Document::Rescan, reference_date: Date.new(2026, 8, 11))])
+        body = at(document: [*scan, dcmd(Documents::Document::Rescan, reference_date: Date.new(2026, 8, 11))])
 
         expect(body).to include('Its document is being read again', ': Waiting to be read…')
         expect(body).not_to include('>Scan again</button>')
@@ -87,7 +87,7 @@ module Expenses
       end
 
       it 'flags another country’s VAT for a closer look' do
-        doc = [*scan[0..2], dcmd(Document::Scanning::CompleteExtraction, **extraction, supplier_country_code: 'DE'), scan.last]
+        doc = [*scan[0..2], dcmd(Documents::Document::Scanning::CompleteExtraction, **extraction, supplier_country_code: 'DE'), scan.last]
         document!(*doc)
         expense!(expense_id, drafted(*doc))
         get "/expenses/#{expense_id}"

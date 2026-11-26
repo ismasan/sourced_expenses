@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module Expenses
+module Documents
   class Document
     # Document's `scanning`: the OCR pipeline, one LLM call per waiting state,
     # each in its own chat with its own schema. A worker does each step when

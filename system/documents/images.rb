@@ -2,7 +2,7 @@
 
 require 'open3'
 
-module Expenses
+module Documents
   # Shrinks a photo before it goes to the model, with ImageMagick's `magick`.
   # The original is never sent when it's over MAX_BYTES: if it can't be
   # shrunk below that, preparing fails.

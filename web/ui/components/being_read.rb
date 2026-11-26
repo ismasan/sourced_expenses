@@ -13,10 +13,10 @@ module UI
 
       # The latest of them, and how many there are.
       def self.load(db = Sidereal.config['db'])
-        new(*Expenses::DocumentList.page(db, states: %w[scanning], per_page: 50))
+        new(*Documents::DocumentList.page(db, states: %w[scanning], per_page: 50))
       end
 
-      # @param rows [Array<Expenses::DocumentList::Row>] the latest of them
+      # @param rows [Array<Documents::DocumentList::Row>] the latest of them
       # @param total [Integer] how many there are in all
       def initialize(rows, total)
         @rows = rows

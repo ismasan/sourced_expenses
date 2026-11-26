@@ -2,7 +2,7 @@
 
 require 'json'
 
-module Expenses
+module Documents
   # The read model behind the home page's documents: one row per uploaded
   # document, in the `documents` table, rewritten whenever it moves: being
   # read, read (its expense drafted: ExpenseList has it from then on), or
@@ -58,7 +58,7 @@ module Expenses
     def self.row(row) = Row.new(**row.slice(*Row.members), machine: JSON.parse(row[:machine]))
 
     # The group's offsets were rewound (`bin/sid sourced groups reset
-    # expenses.document_list`): every row goes, and it builds them again
+    # documents.document_list`): every row goes, and it builds them again
     # from the start of the store once started.
     def self.on_reset = Sidereal.config['db'][:documents].delete
 

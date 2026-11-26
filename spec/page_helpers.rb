@@ -5,9 +5,9 @@
 # expense's are Expense commands, the first a DraftExpenseFromDocument (#drafted, the
 # one a scan of +scan+ drafts).
 module PageHelpers
-  D = Expenses::Document
+  D = Documents::Document
   E = Expenses::Expense
-  S = Expenses::Document::Scanning
+  S = Documents::Document::Scanning
 
   def self.included(group)
     group.let(:store) { Sidereal.config['sourced.store'] }

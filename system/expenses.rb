@@ -1,20 +1,15 @@
 # frozen_string_literal: true
 
-# Expense tracking, from scanned receipts and invoices or by hand: a photo or
-# PDF goes in, several small LLM calls read it and draft an expense, a person
-# reviews the prefilled form and files the expense, and a plain rule (not the
-# model) infers its VAT treatment. The model suggests its category
-# (Categorizer); a person has the last word. An expense needn't come from a
-# document: a person can draft one by hand, and other sources can too.
+# Expense tracking: an expense is drafted (from a scanned document:
+# Documents), entered by hand, or imported from another system
+# (Integrations); a person reviews it and files it, and a plain rule (not
+# the model) infers its VAT treatment. The model suggests its category
+# (Categorizer); a person has the last word.
 # After https://gist.github.com/julik/405662cc3106fe73ae2e46073f483b62
 #
-#   Document                one per uploaded file: reads it, drafts its expense
-#   └ Document::Scanning    (part: the OCR pipeline, one LLM call per state)
-#   Expense                 one per expense, however drafted: review, file
+#   Expense                 one per expense, however it came: review, file
 #
-# The machines are the spec: every LLM call is a state waiting for its
-# worker to report back (Complete…/Fail…), and every decision between calls
-# is code, in DocumentState and ExpenseState. Nothing here calls a model.
+# The machine is the spec, and every decision is code, in ExpenseState.
 module Expenses
   # How an expense's VAT is accounted for. See ExpenseState.infer_vat_treatment.
   #
@@ -72,5 +67,5 @@ module Expenses
   # The key for a category named +name+: "Use of home" is use_of_home.
   def self.category_key(name) = name.to_s.downcase.gsub('&', ' and ').gsub(/[^a-z0-9]+/, '_').gsub(/\A_+|_+\z/, '')
 
-  def self.machines = [Document, Expense, Integrations::FreeAgentImport]
+  def self.machines = [Expense]
 end

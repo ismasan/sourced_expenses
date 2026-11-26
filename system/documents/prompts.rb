@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module Expenses
+module Documents
   # The scan's prompts and JSON schemas, from the write-up
   # (https://gist.github.com/julik/405662cc3106fe73ae2e46073f483b62): the
   # prompts verbatim, the schemas as Plumb types that generate the same JSON.

@@ -3,7 +3,7 @@
 require 'date'
 require 'tmpdir'
 
-module Expenses
+module Documents
   # What each of Document::Scanning's waiting states asks for: the work
   # Expenses::Scanner does when a document enters one. Each step takes the
   # document's DocumentState and returns the payload of the step's Complete…
@@ -107,7 +107,7 @@ module Expenses
 
     def ask(**)
       @llm.ask(**)
-    rescue LLM::Error => e
+    rescue Expenses::LLM::Error => e
       raise Error, e.message
     end
 

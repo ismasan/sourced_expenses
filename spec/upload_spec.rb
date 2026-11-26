@@ -25,7 +25,7 @@ RSpec.describe 'Uploading a document' do
   end
 
   def uploaded_documents
-    store.read_all(limit: 1000).to_a.select { it.is_a?(Expenses::Document::UploadDocument) }
+    store.read_all(limit: 1000).to_a.select { it.is_a?(Documents::Document::UploadDocument) }
   end
 
   it 'stores the file and dispatches UploadDocument with its id' do
@@ -84,7 +84,7 @@ RSpec.describe 'Uploading a document' do
   end
 
   it 'refuses a file over the size limit' do
-    expect { upload('x' * (Expenses::Upload::MAX_BYTES + 1)) }.not_to(change { uploaded_documents.size })
+    expect { upload('x' * (Documents::Upload::MAX_BYTES + 1)) }.not_to(change { uploaded_documents.size })
 
     expect(last_response.body).to include('web_upload_file-cmd-file-errors', 'That file is over 20 MB')
   end

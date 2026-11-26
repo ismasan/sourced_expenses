@@ -21,7 +21,7 @@ RSpec.describe CLI::Expenses::Upload do
   def run(*arguments) = described_class.new(arguments, output: out).call
 
   def uploaded_documents
-    store.read_all(limit: 1000).to_a.select { it.is_a?(Expenses::Document::UploadDocument) }
+    store.read_all(limit: 1000).to_a.select { it.is_a?(Documents::Document::UploadDocument) }
   end
 
   it 'stores each file and dispatches its UploadDocument, saying where to watch it scan' do
@@ -57,7 +57,7 @@ RSpec.describe CLI::Expenses::Upload do
 
   it 'skips what the form would refuse, uploads the rest, and fails' do
     notes = file('notes.txt', 'hi')
-    big = file('big.pdf', 'x' * (Expenses::Upload::MAX_BYTES + 1))
+    big = file('big.pdf', 'x' * (Documents::Upload::MAX_BYTES + 1))
     missing = File.join(dir, 'missing.pdf')
 
     expect { run(notes, big, missing, file('lunch.pdf')) }

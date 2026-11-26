@@ -20,7 +20,7 @@ module UI
     query_schema expense_id: Types::ExpenseID
 
     E = Expenses::Expense
-    D = Expenses::Document
+    D = Documents::Document
 
     # Every event the expense's machine evolves, its states included, and its
     # document's: a rescan shows here as it goes.

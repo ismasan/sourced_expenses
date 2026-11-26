@@ -17,7 +17,7 @@ module UI
     # reload the whole page on everything an upload leads to.
     disable_causal_reactivity!
 
-    on Expenses::DocumentList::Projected do |_evt|
+    on Documents::DocumentList::Projected do |_evt|
       browser.patch_elements UI::Components::BeingRead.load
       browser.patch_elements UI::Components::NeedsYou.load
     end

@@ -9,7 +9,7 @@ module UI
   # before the machine has decided UploadDocument: it shows "Uploading…" and
   # reloads as the document's events arrive on its channel.
   class DocumentPage < RecordPage
-    MACHINE = Expenses::Document
+    MACHINE = Documents::Document
     ID_TYPE = Types::DocumentID
     NOUN = :document
 
@@ -17,7 +17,7 @@ module UI
     # Anything else in the path is a 400.
     query_schema document_id: Types::DocumentID
 
-    D = Expenses::Document
+    D = Documents::Document
     E = Expenses::Expense
 
     # Every event the document's machine evolves, its states included, and

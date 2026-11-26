@@ -4,7 +4,7 @@ module UI
   module Components
     # Uploaded documents and where each one is: its status and file, then
     # what the scan read (or why it stopped). Rows are
-    # Expenses::DocumentList::Row, in the order given, styled as
+    # Documents::DocumentList::Row, in the order given, styled as
     # ExpenseRows' (its stylesheet).
     class DocumentRows < Phlex::HTML
       def initialize(rows)

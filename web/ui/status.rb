@@ -2,7 +2,7 @@
 
 module UI
   # Where a document or an expense is, as a person reads it, from its
-  # machine's active paths (Expenses::DocumentList and ExpenseList keep
+  # machine's active paths (Documents::DocumentList and ExpenseList keep
   # them; a loaded machine has machine.paths). Their states' names don't
   # overlap, but for discarded, which reads the same for both. Shared by the
   # lists and the pages.

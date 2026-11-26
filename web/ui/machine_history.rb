@@ -6,7 +6,7 @@ module UI
   # now (+step+ nil), or as it was after any message in its history.
   #
   #   MachineHistory.load(Expenses::Expense, expense_id)
-  #   MachineHistory.load(Expenses::Document, document_id, step: 3)
+  #   MachineHistory.load(Documents::Document, document_id, step: 3)
   class MachineHistory
     attr_reader :machine_class, :id, :messages, :step
 

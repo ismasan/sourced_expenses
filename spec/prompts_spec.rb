@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module Expenses
+module Documents
   RSpec.describe Prompts do
     SCHEMAS = %i[EXTRACTION_SCHEMA DOCUMENT_VERIFICATION_SCHEMA DATE_RECHECK_SCHEMA CLEANUP_SCHEMA].freeze
 

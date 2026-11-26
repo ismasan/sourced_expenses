@@ -8,9 +8,9 @@ https://github.com/user-attachments/assets/cfff0917-b71f-42b0-8cf4-f792b5111e46
 
 Two machines: one reads documents, the other is the expense, wherever it came from.
 
-`Expenses::Document` (`system/expenses/document.rb`) is one machine per uploaded document, keyed by the MD5 of its bytes, so re-uploading the same file is a no-op. Once read, entering `scanned` drafts its expense (`Expense::DraftExpenseFromDocument`) with what it read, under the document's own id; one that couldn't be read, a person can draft by hand (`EnterManually`), empty. A rescan drafts again, which replaces the expense's draft while it's in review, and changes nothing once it's filed.
+`Documents::Document` (`system/documents/document.rb`) is one machine per uploaded document, keyed by the MD5 of its bytes, so re-uploading the same file is a no-op. Once read, entering `scanned` drafts its expense (`Expense::DraftExpenseFromDocument`) with what it read, under the document's own id; one that couldn't be read, a person can draft by hand (`EnterManually`), empty. A rescan drafts again, which replaces the expense's draft while it's in review, and changes nothing once it's filed.
 
-<!-- mermaid Expenses::Document -->
+<!-- mermaid Documents::Document -->
 ```mermaid
 stateDiagram-v2
   [*] --> queued : UploadDocument
@@ -66,11 +66,11 @@ stateDiagram-v2
 ```
 <!-- /mermaid -->
 
-`Document::Scanning` (`system/expenses/document/scanning.rb`) is the OCR pipeline. Each LLM step waits for the `Expenses::Scanner` worker's `Complete…` / `Fail…`; the `checking_*` states are guarded decisions.
+`Documents::Document::Scanning` (`system/documents/document/scanning.rb`) is the OCR pipeline. Each LLM step waits for the `Documents::Scanner` worker's `Complete…` / `Fail…`; the `checking_*` states are guarded decisions.
 
 An upload or rescan waits in `queued` until the scan queue (a `WorkQueue` queue named `scans`) gives its scan a slot and appends `StartScan`, the command the document enqueued it with, so at most 3 documents (the queue's capacity) are in `scanning` at once, each making its model calls in turn. The scan's timeout starts with the scan, not the wait, and leaving `scanning` (or `queued`, discarded before its turn) frees the slot.
 
-<!-- mermaid Expenses::Document scanning -->
+<!-- mermaid Documents::Document scanning -->
 ```mermaid
 stateDiagram-v2
   [*] --> preparing
@@ -140,10 +140,10 @@ Each is its own consumer group, so slow work never blocks the machine.
 | Class | Does |
 | --- | --- |
 | `WorkQueue` | Capped work queues (`system/work_queue.rb`), one per `queue_name`, each with the capacity its latest `Enqueue` gave. A caller names its queue with `WorkQueue.define` and dispatches what it builds: `Document::ScanQueue = WorkQueue.define('scans', capacity: 3)`, enqueued with `ScanQueue.enqueue(StartScan, document_id:)` (`.with_capacity(n)` overrides the capacity), and each document holds its slot through every step of its scan. It records `Enqueued`, `Started`, `Released` and `Dropped`, and appends each item's start message (a document's `StartScan`) in the same commit as its `Started`. A plain reactor (a decider may only append to its own partition), which snapshots each queue's state every 100 history messages so a claim never reads its whole history. The bar along the bottom of every page shows the scan queue from the same snapshot and history (`ScanQueue.status`), following its events. |
-| `Expenses::Scanner` | Runs each scan step against the LLM (`Expenses::ScanSteps`, prompts in `Expenses::Prompts`). Shrinks images over 500 KB with ImageMagick. |
+| `Documents::Scanner` | Runs each scan step against the LLM (`Documents::ScanSteps`, prompts in `Documents::Prompts`). Shrinks images over 500 KB with ImageMagick. |
 | `Expenses::Categorizer` | Suggests a category for each draft or hand entry with a description, from the baseline (`Expenses::CATEGORIES`) and every other category expenses have had (`Expenses::CategoryList`), via a [RubyLLM judgment](https://rubyllm.com/judgments/). A person's `ChooseCategory` always wins. |
 | `Expenses::CurrencyConverter` | Converts filed totals to `REPORTING_CURRENCY` at the ECB rate for the expense's date ([Frankfurter](https://frankfurter.dev)). |
-| `Expenses::DocumentList` | Read model for the home page's documents: being read, and those that couldn't be. |
+| `Documents::DocumentList` | Read model for the home page's documents: being read, and those that couldn't be. |
 | `Expenses::ExpenseList` | Read model for the expense lists, plus the FTS5 search index (`expenses_search`). |
 | `Expenses::CategoryList` | Read model of every category an expense has had (suggested, chosen or imported: a source's own with its name there), offered beside the baseline wherever a category is chosen. |
 | `Expenses::Ledger` | Read model for monthly totals and category breakdowns in the reporting currency. |
@@ -230,7 +230,7 @@ bin/sid expenses list --state reviewing --category-status suggested --json |
 
 | Path | |
 | --- | --- |
-| `system/` | Messages, machines, reactors, read models (no web) |
+| `system/` | Messages, machines, reactors, read models (no web): `expenses/` the expenses (`Expenses`), `documents/` reading uploaded documents into them (`Documents`), `integrations/` importing them from other systems (`Integrations`) |
 | `web/app.rb`, `web/ui/` | Web app, pages and components. Each page or component has its stylesheet beside it (`top_nav.rb`, `top_nav.css`); `layout.css` has the shared rules. `web/app.rb` installs them, in the order of the cascade |
 | `cli/` | The app's `bin/sid expenses …` commands |
 | `config/components/` | Components (`db`, clients…) declared with `Sidereal.config` |

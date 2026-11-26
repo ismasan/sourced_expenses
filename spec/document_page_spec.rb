@@ -4,7 +4,7 @@ require 'rack/test'
 require_relative 'page_helpers'
 
 # Inside Expenses, so the machines read by their own names.
-module Expenses
+module Documents
   RSpec.describe UI::DocumentPage do
     include Rack::Test::Methods
     include PageHelpers
@@ -81,7 +81,7 @@ module Expenses
     end
 
     it 'links to its expense filled in by hand' do
-      body = at(*rejected, dcmd(Document::EnterManually), expense: [ecmd(Expense::DraftExpenseFromDocument, document_id:, filing_country: 'NL')])
+      body = at(*rejected, dcmd(Document::EnterManually), expense: [ecmd(Expenses::Expense::DraftExpenseFromDocument, document_id:, filing_country: 'NL')])
 
       expect(body).to include('Filled in by hand', 'Its expense, to fill in by hand: ', 'New expense', %(href="/expenses/#{document_id}"))
       expect(body).not_to include('>Fill in by hand</button>')
@@ -97,10 +97,10 @@ module Expenses
     end
 
     it 'no longer offers to scan it again once its expense is filed' do
-      save = ecmd(Expense::SaveExpense, description: 'Lunch', net_price_cents: 2000, tax_amount_cents: 420, currency: 'EUR',
+      save = ecmd(Expenses::Expense::SaveExpense, description: 'Lunch', net_price_cents: 2000, tax_amount_cents: 420, currency: 'EUR',
                                         incurred_on: Date.new(2026, 8, 9))
-      body = at(*scan, expense: [drafted(*scan), ecmd(Expense::ChooseCategory, category: 'travel'),
-                                 ecmd(Expense::ConfirmVatTreatment, treatment: 'domestic'), save])
+      body = at(*scan, expense: [drafted(*scan), ecmd(Expenses::Expense::ChooseCategory, category: 'travel'),
+                                 ecmd(Expenses::Expense::ConfirmVatTreatment, treatment: 'domestic'), save])
 
       expect(body).to include('Its expense: ', 'Filed', '>Discard</button>')
       expect(body).not_to include('Scan again', 'Review it')

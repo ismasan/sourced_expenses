@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module Expenses
+module Documents
   # The document as the Scanner reads it: DocumentProjector's, plus
   # Discarded.
   #
