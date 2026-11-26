@@ -146,6 +146,21 @@ module Integrations
         expect(run(third).context).to include(synced_count: 1, synced_fresh: 0)
       end
 
+      it 'skips a run while FreeAgent isn’t connected, recording nothing' do
+        FAKE_FREEAGENT.connected = false
+        expect(history(cmd(SyncFreeAgent))).to be_empty
+
+        FAKE_FREEAGENT.connected = true
+        FAKE_FREEAGENT.pages = [[expense(1)]]
+        done = sync
+        FAKE_FREEAGENT.connected = false
+        FAKE_FREEAGENT.calls.clear
+
+        expect(history(cmd(SyncFreeAgent), given: done)).to eq(done)
+        expect(value(done)).to eq(Idle)
+        expect(FAKE_FREEAGENT.calls).to be_empty
+      end
+
       it 'backfills from a date given' do
         sync(since: Time.utc(2026, 1, 1))
 

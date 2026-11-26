@@ -54,7 +54,9 @@ module Integrations
     # ---- Commands ----
 
     # Start a run: from +since+ (a backfill), or else from where the last
-    # run finished (everything, the first time).
+    # run finished (everything, the first time). Not while FreeAgent isn't
+    # connected: there's nothing to read, so it's skipped, recording
+    # nothing (the daily schedule's, before anyone connects).
     SyncFreeAgent = Command(:sync_freeagent) do
       attribute :import_id, Types::String.present
       attribute :since, Types::Time.nullable.default(nil)
@@ -175,8 +177,11 @@ module Integrations
     # ---- The statechart ----
 
     START = proc do
-      command SyncFreeAgent => Fetching do |run, cmd|
+      command SyncFreeAgent => Fetching | nil do |run, cmd|
+        next unless freeagent.connected?
+
         event SyncStarted, updated_since: cmd.payload.since || (run[:cursor] && run[:cursor] - OVERLAP)
+        to Fetching
       end
     end
 
