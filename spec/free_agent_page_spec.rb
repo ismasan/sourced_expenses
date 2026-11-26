@@ -85,6 +85,21 @@ module Expenses
       expect(page).to include('The last import failed', 'Last failure', 'FreeAgent could not be reached', 'Import now')
     end
 
+    it 'says when imports start by themselves, from the named schedule, and when the next is due' do
+      html = page
+
+      expect(html).to include('imported automatically every day at 08:00, server time (the “FreeAgent import” schedule)')
+      next_at = Sidereal.scheduler.schedules.find { it.name == 'FreeAgent import' }.steps.first.cron.next_time.to_local_time
+      expect(html).to include('Next scheduled', next_at.getlocal.strftime('%-d %b %Y, %H:%M'))
+    end
+
+    it 'says imports only start by hand when no schedule starts them' do
+      allow(Sidereal.scheduler).to receive(:schedules).and_return([])
+
+      expect(page).to include('imported only when you start an import here')
+      expect(last_response.body).not_to include('Next scheduled')
+    end
+
     it 'offers no import while one is running' do
       imports!(icmd(Integrations::FreeAgentImport::SyncFreeAgent))
 

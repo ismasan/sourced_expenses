@@ -79,9 +79,14 @@ module UI
         plain "Connected#{' to the sandbox' if @client.sandbox?}. Each import brings in the expenses created or changed "
         plain 'on FreeAgent since the last one, filed as they are there.'
       end
+      render_schedule
       dl(class: 'filed') do
         dt { 'Now' }
         dd { status }
+        if (step = scheduled)
+          dt { 'Next scheduled' }
+          dd { step.cron.next_time.to_local_time.getlocal.strftime('%-d %b %Y, %H:%M') }
+        end
         dt { 'Last import' }
         dd do
           if @run[:synced_at]
@@ -115,6 +120,37 @@ module UI
       again = count - fresh
       text = fresh.zero? ? 'none new or changed' : "#{fresh} new or changed"
       again.positive? ? "#{text} (#{again} read again)" : text
+    end
+
+    # When imports start by themselves: App's schedule (Integrations::FreeAgentImport::SCHEDULE),
+    # as declared, or that there's none.
+    def render_schedule
+      step = scheduled
+      p(class: 'filed__note') do
+        if step
+          plain "Expenses are imported automatically #{schedule_words(step)} (the “#{I::SCHEDULE}” schedule), "
+          plain 'and whenever you start an import here.'
+        else
+          plain 'Expenses are imported only when you start an import here: no schedule starts them by themselves.'
+        end
+      end
+    end
+
+    # The schedule's step that starts imports, or nil.
+    def scheduled
+      schedule = Sidereal.scheduler.schedules.find { it.name == I::SCHEDULE }
+      schedule&.steps&.find { it.klass == I::SyncFreeAgent && it.respond_to?(:cron) }
+    end
+
+    # A cron as a person reads it: a daily one in words ("every day at
+    # 08:00"), any other as its expression. In its time zone, or else the
+    # server's.
+    def schedule_words(step)
+      cron = step.cron
+      daily = [cron.monthdays, cron.months, cron.weekdays].all?(&:nil?) &&
+              cron.hours&.size == 1 && cron.minutes&.size == 1
+      at = daily ? format('every day at %02d:%02d', cron.hours.first, cron.minutes.first) : "on the schedule #{step.expression}"
+      "#{at}, #{cron.timezone ? cron.timezone.name : 'server time'}"
     end
 
     def status

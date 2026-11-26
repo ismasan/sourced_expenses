@@ -119,7 +119,7 @@ class App < Sidereal::App
   # page. Schedules tick on the leader process alone, so it's one import
   # however many processes run; a morning the app isn't running is skipped,
   # not made up.
-  schedule 'FreeAgent import' do
+  schedule I::SCHEDULE do
     at '0 8 * * *', I::SyncFreeAgent, import_id: I::ACCOUNT
   end
 

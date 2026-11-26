@@ -37,6 +37,10 @@ module Integrations
     # The one account there is, for now: its partition.
     ACCOUNT = 'freeagent'
 
+    # The name of App's schedule that starts an import every morning, for
+    # the FreeAgent page to say when.
+    SCHEDULE = 'FreeAgent import'
+
     # How long a page may take, its retries included.
     FETCH_TIMEOUT = '5m'
 
