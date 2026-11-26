@@ -42,7 +42,9 @@ module UI
 
             if !@client.configured? then render_setup
             elsif !@client.connected? then render_connect
-            else render_imports
+            else
+              render_imports
+              render Components::FreeAgentDisconnect.new
             end
           end
         end

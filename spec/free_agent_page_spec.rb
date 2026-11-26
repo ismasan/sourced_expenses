@@ -119,6 +119,28 @@ module Expenses
       expect(synced.size).to eq(1)
     end
 
+    describe 'disconnecting' do
+      it 'is offered while connected, an import running or not, and not otherwise' do
+        expect(page).to include('Disconnect FreeAgent', 'web.disconnect_freeagent', 'remove it there too')
+
+        imports!(icmd(Integrations::FreeAgentImport::SyncFreeAgent))
+        expect(page).to include('Importing…', 'Disconnect FreeAgent')
+
+        FAKE_FREEAGENT.connected = false
+        expect(page).to include('Connect FreeAgent')
+        expect(last_response.body).not_to include('web.disconnect_freeagent')
+      end
+
+      it 'forgets the connection, keeping what was imported, and offers to connect again' do
+        post '/commands', { command: { type: 'web.disconnect_freeagent', _cid: 'x' } },
+             'HTTP_DATASTAR_REQUEST' => 'true', 'HTTP_ACCEPT' => 'text/event-stream'
+
+        expect(FAKE_FREEAGENT.connected?).to be(false)
+        expect(last_response.body).to include('/integrations/freeagent')
+        expect(page).to include('Connect FreeAgent')
+      end
+    end
+
     describe 'connecting' do
       def connect_state
         get '/integrations/freeagent/connect'

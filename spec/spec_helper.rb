@@ -113,6 +113,8 @@ class FakeFreeAgent
 
   def web_url = 'https://example.freeagent.com'
 
+  def disconnect = @connected = false
+
   def expenses(updated_since: nil, page: 1)
     @calls << { updated_since:, page: }
     raise pages if pages.is_a?(Exception)

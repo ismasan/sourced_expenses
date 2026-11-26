@@ -64,6 +64,7 @@ class App < Sidereal::App
   component UI::Components::BeingRead
   component UI::Components::ExpenseRows
   component UI::Components::IntegrationsLayout
+  component UI::Components::FreeAgentDisconnect
   component UI::Components::HistoryFeed
   component UI::Components::LedgerTotal
   component UI::Components::MonthChart
