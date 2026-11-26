@@ -4,30 +4,40 @@ module UI
   # FreeAgent, as a source of expenses, among the integrations
   # (Components::IntegrationsLayout): how to set it up, connecting this app
   # to an account (App's /integrations/freeagent/connect and callback
-  # routes), and the imports (Integrations::FreeAgentImport): the last run,
-  # and a button to start one. Live: it follows the imports' events.
+  # routes), the imports (Integrations::FreeAgentImport): the last run,
+  # and a button to start one, and whether expenses filed here are uploaded
+  # to it (Integrations::FreeAgentSettings, Integrations::FreeAgentUpload).
+  # Live: it follows the imports' events and the settings'.
   class FreeAgentPage < Page
     path '/integrations/freeagent'
     # Why connecting failed, from the callback.
     query_schema error?: Types::String.nullable
 
     I = Integrations::FreeAgentImport
+    S = Integrations::FreeAgentSettings
 
-    on I
+    on I, S
 
     with_machine { @import }
 
-    def channel_names = ["freeagent_imports.#{channel_segment(I::ACCOUNT)}", *SYSTEM_CHANNELS]
+    def channel_names
+      ["freeagent_imports.#{channel_segment(I::ACCOUNT)}", "freeagent_settings.#{channel_segment(S::ACCOUNT)}",
+       *SYSTEM_CHANNELS]
+    end
 
     def self.load(params, _ctx)
       history = MachineHistory.load(I, I::ACCOUNT)
-      new(Sidereal.config['freeagent'], history.machine, error: params[:error])
+      settings = S.load(account: S::ACCOUNT)
+      new(Sidereal.config['freeagent'], history.machine, settings:, error: params[:error])
     end
 
-    def initialize(client, import, error: nil)
+    # +settings+: FreeAgentSettings' snapshot (Sourced::Machine.load), or
+    # nil for its defaults.
+    def initialize(client, import, settings: nil, error: nil)
       @client = client
       @import = import
       @run = import.context
+      @uploads_since = settings&.context&.dig(:uploads_since)
       @error = error
     end
 
@@ -44,6 +54,7 @@ module UI
             elsif !@client.connected? then render_connect
             else
               render_imports
+              render_uploads
               render Components::FreeAgentDisconnect.new
             end
           end
@@ -109,6 +120,32 @@ module UI
       command I::SyncFreeAgent, class: 'actions' do |f|
         f.payload_fields(import_id: I::ACCOUNT)
         button(type: :submit, class: 'button button--primary') { 'Import now' }
+      end
+    end
+
+    # Whether expenses filed here go to FreeAgent, and a button to turn it
+    # the other way. Only those filed while it's on: none filed before.
+    def render_uploads
+      h2 { 'Uploads' }
+      if @uploads_since
+        p(class: 'filed__note') do
+          plain "On since #{@uploads_since.getlocal.strftime('%-d %b %Y, %H:%M')}: each expense filed here from then on is "
+          plain 'created on FreeAgent, updated there when it’s corrected here, and deleted there when it’s voided here. '
+          plain 'Expenses imported from FreeAgent are never uploaded; correct those on FreeAgent.'
+        end
+        command S::TurnUploadsOff, class: 'actions' do |f|
+          f.payload_fields(account: S::ACCOUNT)
+          button(type: :submit, class: 'button') { 'Turn uploads off' }
+        end
+      else
+        p(class: 'filed__note') do
+          plain 'Off. Turn uploads on to create each expense filed here on FreeAgent too. '
+          plain 'Only expenses filed from then on are uploaded: none filed before.'
+        end
+        command S::TurnUploadsOn, class: 'actions' do |f|
+          f.payload_fields(account: S::ACCOUNT)
+          button(type: :submit, class: 'button button--primary') { 'Turn uploads on' }
+        end
       end
     end
 

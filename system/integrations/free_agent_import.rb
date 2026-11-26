@@ -32,7 +32,7 @@ module Integrations
     partition_by import_id: Types::String.present
     message_prefix 'freeagent_imports'
 
-    dep :freeagent, 'expenses.filing_country' => 'filing_country'
+    dep :freeagent, :db, 'expenses.filing_country' => 'filing_country'
 
     # The one account there is, for now: its partition.
     ACCOUNT = 'freeagent'
@@ -200,9 +200,13 @@ module Integrations
         import_id = entered.payload.import_id
         begin
           page = freeagent.expenses(updated_since: run[:updated_since], page: run[:page])
-          categories = page.expenses.empty? ? {} : freeagent.categories
-          web_url = page.expenses.empty? ? nil : web_url()
-          imported = page.expenses.filter_map do |expense|
+          # Those uploaded from here (FreeAgentUpload) are expenses here
+          # already: left out, counted neither as imported nor as skipped.
+          ours = FreeAgentUploadList.external_ids(db)
+          theirs = page.expenses.reject { ours.include?(it['url'].to_s.split('/').last) }
+          categories = theirs.empty? ? {} : freeagent.categories
+          web_url = theirs.empty? ? nil : web_url()
+          imported = theirs.filter_map do |expense|
             command = import_for(expense, categories, web_url)
             command && [command, Types.iso_time(expense['updated_at'])]
           end
@@ -212,7 +216,7 @@ module Integrations
           fresh = imported.count { |_, updated_at| run[:cursor].nil? || updated_at.nil? || updated_at > run[:cursor] }
           latest = page.expenses.filter_map { Types.iso_time(it['updated_at']) }.max
           dispatch CompleteFetch, import_id:, page: run[:page], count: imported.size, fresh:,
-                                  skipped: page.expenses.size - imported.size, latest_updated_at: latest,
+                                  skipped: theirs.size - imported.size, latest_updated_at: latest,
                                   next_page: page.next_page
         rescue FreeAgent::Error => e
           dispatch FailFetch, import_id:, reason: e.message

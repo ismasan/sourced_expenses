@@ -53,6 +53,28 @@ module Expenses
       doc.conversion_failure = evt.payload.to_h.except(:expense_id)
     end
 
+    # ---- Uploaded elsewhere ----
+
+    evolve E::ExpenseUploaded do |doc, evt|
+      p = evt.payload
+      # Its file is sent once: later updates leave it there.
+      attachment = p.attachment || doc.upload(p.destination)&.dig(:attachment)
+      doc.uploads[p.destination] = { external_id: p.external_id, external_url: p.external_url, attachment:,
+                                     attachment_problem: attachment ? nil : p.attachment_problem,
+                                     failure: nil, deleted: false }
+    end
+
+    evolve E::ExpenseUploadFailed do |doc, evt|
+      p = evt.payload
+      upload = doc.uploads[p.destination] ||= { external_id: nil, external_url: nil, deleted: false }
+      upload[:failure] = { reason: p.reason, unsure: p.unsure }
+    end
+
+    evolve E::ExpenseUploadDeleted do |doc, evt|
+      upload = doc.uploads[evt.payload.destination] or next
+      upload.merge!(deleted: true, failure: nil)
+    end
+
     # ---- The category ----
 
     evolve E::CategorySuggested do |doc, evt|

@@ -33,10 +33,12 @@ class App < Sidereal::App
     payload = msg.payload
     queue_name = payload.respond_to?(:queue_name) && payload.queue_name
     import_id = payload.respond_to?(:import_id) && payload.import_id
+    account = payload.respond_to?(:account) && payload.account
     expense_id = payload.respond_to?(:expense_id) && payload.expense_id
     document_id = payload.respond_to?(:document_id) && payload.document_id
     if queue_name then "system.#{queue_name}"
     elsif import_id then "freeagent_imports.#{import_id}"
+    elsif account then "freeagent_settings.#{account}"
     elsif expense_id then "expenses.#{expense_id}"
     elsif document_id then "documents.#{document_id}"
     else 'system'
@@ -47,6 +49,8 @@ class App < Sidereal::App
   # any its current state doesn't accept.
   handle D::Rescan, D::EnterManually, D::DiscardDocument,
          I::SyncFreeAgent,
+         Integrations::FreeAgentSettings::TurnUploadsOn, Integrations::FreeAgentSettings::TurnUploadsOff,
+         Integrations::FreeAgentUpload::RetryUpload, Integrations::FreeAgentUpload::RetryDelete,
          E::SaveExpense, E::DiscardExpense, E::VoidExpense, E::ConfirmVatTreatment, E::ChooseCategory
 
   # The components the pages render, for their stylesheets and the commands
@@ -65,6 +69,7 @@ class App < Sidereal::App
   component UI::Components::ExpenseRows
   component UI::Components::IntegrationsLayout
   component UI::Components::FreeAgentDisconnect
+  component UI::Components::FreeAgentUploadStatus
   component UI::Components::HistoryFeed
   component UI::Components::LedgerTotal
   component UI::Components::MonthChart

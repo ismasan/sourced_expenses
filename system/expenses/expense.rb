@@ -24,6 +24,9 @@ module Expenses
   #               vat       ─ConfirmVatTreatment─▶ vat_confirmed
   #
   #   filed ─VoidExpense─▶ voided;  reviewing, reviewed ─DiscardExpense─▶ discarded
+  #   filed, voided ⟲ RecordUpload | RecordUploadFailure | RecordUploadDeletion
+  #     (another system it was uploaded to, saying how that went:
+  #     Integrations::FreeAgentUpload)
   #   reviewing, reviewed ⟲ DraftExpenseFromDocument (its attached document read again: a new draft)
   #   initial ─ImportExpense─▶ filed (its source's category and VAT treatment, confirmed),
   #                          or reviewing, for one without them (to choose here)
@@ -125,6 +128,30 @@ module Expenses
     # amount_cents, incurred_on), what it came to in which currency, and at
     # what rate. Only records data: refused once the expense isn't filed,
     # and ignored if the filed amount has changed since.
+    # Uploaded to +destination+ (another system's name, e.g. freeagent),
+    # created there or updated: its id there, and its page there, if known;
+    # its document's file, if sent with it, or why it couldn't be.
+    RecordUpload = Command(:record_upload) do
+      attribute :destination, Types::String.present
+      attribute :external_id, Types::String.present
+      attribute :external_url, Types::String.nullable.default(nil)
+      attribute :attachment, Types::String.nullable.default(nil)
+      attribute :attachment_problem, Types::String.nullable.default(nil)
+    end
+
+    # Not uploaded to +destination+, or not deleted there: why, and whether
+    # it may have been done there all the same (+unsure+).
+    RecordUploadFailure = Command(:record_upload_failure) do
+      attribute :destination, Types::String.present
+      attribute :reason, Types::String.present
+      attribute :unsure, Types::Boolean.default(false)
+    end
+
+    # Deleted at +destination+, as it was voided here.
+    RecordUploadDeletion = Command(:record_upload_deletion) do
+      attribute :destination, Types::String.present
+    end
+
     RecordConversion = Command(:record_conversion) do
       attribute :currency, CurrencyCode
       attribute :amount_cents, Integer
@@ -328,6 +355,26 @@ module Expenses
       attribute :rate_date, Date
     end
 
+    # +attachment+: the name of its document's file, sent with this upload;
+    # +attachment_problem+, why it couldn't be.
+    ExpenseUploaded = Event(:expense_uploaded) do
+      attribute :destination, String
+      attribute :external_id, String
+      attribute :external_url, Types::String.nullable.default(nil)
+      attribute :attachment, Types::String.nullable.default(nil)
+      attribute :attachment_problem, Types::String.nullable.default(nil)
+    end
+
+    ExpenseUploadFailed = Event(:expense_upload_failed) do
+      attribute :destination, String
+      attribute :reason, String
+      attribute :unsure, Types::Boolean.default(false)
+    end
+
+    ExpenseUploadDeleted = Event(:expense_upload_deleted) do
+      attribute :destination, String
+    end
+
     ConversionFailed = Event(:conversion_failed) do
       attribute :currency, String
       attribute :amount_cents, Integer
@@ -357,6 +404,14 @@ module Expenses
     evolve ExpenseProjector
 
     # ---- The statechart ----
+
+    # Another system saying how uploading it went. Recorded as said: each
+    # upload is a fact of its own, a correction's too.
+    RECORD_UPLOAD = proc do
+      command(RecordUpload) { |_doc, cmd| event ExpenseUploaded, cmd.payload }
+      command(RecordUploadFailure) { |_doc, cmd| event ExpenseUploadFailed, cmd.payload }
+      command(RecordUploadDeletion) { |_doc, cmd| event ExpenseUploadDeleted, cmd.payload }
+    end
 
     # Saving the form, the first time or again once filed.
     FILE_EXPENSE = proc do |_doc, cmd|
@@ -505,6 +560,8 @@ module Expenses
         event ExpenseVoided, cmd.payload
       end
 
+      instance_exec(&RECORD_UPLOAD)
+
       # The conversion, for the total as filed now: one of an amount since
       # corrected is dropped (the correction's comes after it), and so is
       # one already recorded.
@@ -524,6 +581,8 @@ module Expenses
     end
 
     final Discarded
-    final Voided
+    # Not final, only so it can still hear from a system it was uploaded
+    # to (deleted there, say): nothing else moves it.
+    state(Voided) { instance_exec(&RECORD_UPLOAD) }
   end
 end

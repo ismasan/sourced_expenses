@@ -99,7 +99,7 @@ module Integrations
 
       def self.present(value) = value.to_s.strip.empty? ? nil : value.to_s.strip
 
-      private_class_method :page_url, :vat_treatment, :tax_description, :decimal, :cents, :present
+      private_class_method :vat_treatment, :tax_description, :decimal, :cents, :present
     end
   end
 end

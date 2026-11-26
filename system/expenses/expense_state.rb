@@ -10,11 +10,18 @@ module Expenses
     attr_accessor :expense_id, :document_id, :filing_country, :vendor, :drafted, :entered, :draft, :filed,
                   :source, :external_id, :external_url, :imported, :source_category, :source_vat_treatment,
                   :confirmed_vat_treatment, :converted, :conversion_failure, :category,
-                  :category_suggestion, :category_chosen, :categorization_failure
+                  :category_suggestion, :category_chosen, :categorization_failure, :uploads
 
     def initialize
       @draft = {}
+      @uploads = {}
     end
+
+    # Where it was uploaded to +destination+, or nil: its +external_id+
+    # and +external_url+ there, the last +failure+ ({ reason:, unsure: }),
+    # and whether it was +deleted+ there.
+    # @return [Hash, nil]
+    def upload(destination) = uploads[destination]
 
     # Whether an uploaded document is attached: it was read from one.
     def document? = !document_id.nil?

@@ -22,9 +22,10 @@ module UI
     E = Expenses::Expense
     D = Documents::Document
 
-    # Every event the expense's machine evolves, its states included, and its
-    # document's: a rescan shows here as it goes.
-    on E, D
+    # Every event the expense's machine evolves, its states included, its
+    # document's (a rescan shows here as it goes), and its upload to
+    # FreeAgent's.
+    on E, D, Integrations::FreeAgentUpload
 
     include ExpenseFields
 
@@ -72,8 +73,16 @@ module UI
       when 'reviewing' then render_review
       when 'reviewed' then render_reviewed
       when 'filed' then render_filed
-      else lead("This expense was #{status_word}. It isn’t in your expenses.")
+      else
+        lead("This expense was #{status_word}. It isn’t in your expenses.")
+        render_upload
       end
+    end
+
+    # Where it is on FreeAgent, if it was uploaded.
+    def render_upload
+      upload = Integrations::FreeAgentUpload.load(expense_id: @doc.expense_id)
+      render Components::FreeAgentUploadStatus.new(@doc.expense_id, upload)
     end
 
     def status_word = paths.include?('voided') ? 'voided' : 'discarded'
@@ -315,6 +324,7 @@ module UI
         p(class: 'filed__note') { render_source_link } if @doc.external_url
       else
         lead('Filed. It’s in your expenses.')
+        render_upload
       end
       dl(class: 'filed') do
         dt { 'Description' }

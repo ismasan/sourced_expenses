@@ -191,6 +191,19 @@ module Integrations
         expect(done.grep(PageFetched).map { [it.payload.count, it.payload.skipped] }).to eq([[1, 2]])
       end
 
+      it 'leaves out an expense uploaded from here, counting it neither way' do
+        db = Sidereal.config['db']
+        db[:freeagent_uploads].insert(external_id: '2', expense_id: SecureRandom.uuid, uploaded_at: Time.now)
+        FAKE_FREEAGENT.pages = [[expense(1), expense(2)]]
+        imports = []
+        done = sync(imports:)
+
+        expect(imports.map { it.payload.expense_id }).to eq(%w[freeagent-1])
+        expect(done.grep(PageFetched).map { [it.payload.count, it.payload.skipped] }).to eq([[1, 0]])
+      ensure
+        db[:freeagent_uploads].delete
+      end
+
       it 'skips an expense FreeAgent sent without what an expense needs, and goes on' do
         FAKE_FREEAGENT.pages = [[expense(1, dated_on: nil), expense(2, url: nil), expense(3, gross_value: 'lots'), expense(4)]]
         imports = []

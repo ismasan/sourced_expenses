@@ -107,8 +107,36 @@ module Expenses
       expect(last_response.body).not_to include('Import now')
     end
 
-    it 'follows the imports’ channel' do
-      expect(stream_channels(page)).to eq(['freeagent_imports.freeagent', 'system.>'])
+    it 'follows the imports’ channel and the settings’' do
+      expect(stream_channels(page)).to eq(['freeagent_imports.freeagent', 'freeagent_settings.freeagent', 'system.>'])
+    end
+
+    describe 'uploads' do
+      let(:settings) { Integrations::FreeAgentSettings }
+      def settings!(*commands)
+        account = settings::ACCOUNT
+        decided(settings, { account: }, *commands.map { it.new(payload: { account: }) }).tap { store.append(it) }
+      end
+
+      it 'are off until turned on, uploading nothing filed before' do
+        expect(page).to include('Uploads', 'Off.', 'none filed before', 'Turn uploads on', settings::TurnUploadsOn.type)
+        expect(last_response.body).not_to include('Turn uploads off')
+      end
+
+      it 'say since when they’re on, offering to turn them off' do
+        settings!(settings::TurnUploadsOn)
+
+        expect(page).to include('On since', 'Expenses imported from FreeAgent are never uploaded', 'Turn uploads off',
+                                settings::TurnUploadsOff.type)
+      end
+
+      it 'are turned on when asked' do
+        post '/commands', { command: { type: settings::TurnUploadsOn.type, _cid: 'x', payload: { account: settings::ACCOUNT } } },
+             'HTTP_DATASTAR_REQUEST' => 'true', 'HTTP_ACCEPT' => 'text/event-stream'
+
+        selector = Sourced::Selector[settings::TurnUploadsOn].by(:account).bind(account: settings::ACCOUNT)
+        expect(store.read(selector).messages.size).to eq(1)
+      end
     end
 
     it 'starts an import when asked' do

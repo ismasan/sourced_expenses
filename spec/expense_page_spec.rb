@@ -246,6 +246,46 @@ module Expenses
       end
     end
 
+    describe 'uploaded to FreeAgent' do
+      let(:uploader) { Integrations::FreeAgentUpload }
+      # Its upload, entered (a filing claimed), then moved to +to+ by +event+
+      # (what the expense recorded), in the store.
+      def upload!(event, to:)
+        store.append([moved(uploader, Expense::ExpenseFiled.type, from: 'initial', to: 'uploading', expense_id:),
+                      event, moved(uploader, event.class.type, from: 'uploading', to:, expense_id:)])
+      end
+
+      def recorded(klass, **payload) = klass.new(payload: { expense_id:, destination: 'freeagent', **payload })
+
+      it 'says nothing of FreeAgent for one never uploaded' do
+        expect(at(*reviewed, save)).not_to include('FreeAgent')
+      end
+
+      it 'says it’s there once uploaded' do
+        upload!(recorded(Expense::ExpenseUploaded, external_id: '9', external_url: 'https://example.freeagent.com/users/1/expenses/9/edit'), to: 'uploaded')
+
+        expect(at(*reviewed, save)).to include('On FreeAgent too', '>Open in FreeAgent</a>',
+                                               'href="https://example.freeagent.com/users/1/expenses/9/edit"')
+      end
+
+      it 'says whether its file went with it' do
+        upload!(recorded(Expense::ExpenseUploaded, external_id: '9', attachment: 'train.pdf'), to: 'uploaded')
+        expect(at(*reviewed, save)).to include('Its file, train.pdf, is attached there.')
+      end
+
+      it 'says why its file didn’t go with it' do
+        upload!(recorded(Expense::ExpenseUploaded, external_id: '9', attachment_problem: 'Its file is missing here'), to: 'uploaded')
+        expect(at(*reviewed, save)).to include('Without its file: Its file is missing here.')
+      end
+
+      it 'says why it isn’t, offering to upload it again' do
+        upload!(recorded(Expense::ExpenseUploadFailed, reason: 'FreeAgent refused it: Category is not valid'), to: 'failed')
+
+        expect(at(*reviewed, save)).to include('Not uploaded to FreeAgent: FreeAgent refused it: Category is not valid',
+                                               'Upload it again', uploader::RetryUpload.type)
+      end
+    end
+
     describe 'its history' do
       it 'lists its events, newest first' do
         body = at(*reviewed)

@@ -62,7 +62,6 @@ stateDiagram-v2
   filed --> filed : ImportExpense
   filed --> voided : VoidExpense
   discarded --> [*]
-  voided --> [*]
 ```
 <!-- /mermaid -->
 
