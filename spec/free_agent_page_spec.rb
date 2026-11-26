@@ -50,11 +50,33 @@ module Expenses
       expect(page).to include('Connected', 'None yet', 'Everything', 'Import now', 'freeagent_imports.sync_freeagent')
     end
 
-    it 'shows the last import and where the next starts' do
+    it 'shows the last import, how many it found new or changed, and where the next starts' do
       imports!(icmd(Integrations::FreeAgentImport::SyncFreeAgent),
-               icmd(Integrations::FreeAgentImport::CompleteFetch, page: 1, count: 3, latest_updated_at: Time.utc(2026, 11, 20, 10)))
+               icmd(Integrations::FreeAgentImport::CompleteFetch, page: 1, count: 3, fresh: 3, latest_updated_at: Time.utc(2026, 11, 20, 10)))
 
-      expect(page).to include('Waiting for the next import', ': 3 imported', 'Changes since 20 Nov 2026', 'Import now')
+      expect(page).to include('Waiting for the next import', ': 3 new or changed<', 'Changes since 20 Nov 2026', 'Import now')
+    end
+
+    it 'says which it read again, and when none was new or changed' do
+      sync = Integrations::FreeAgentImport::SyncFreeAgent
+      fetched = Integrations::FreeAgentImport::CompleteFetch
+      imports!(icmd(sync), icmd(fetched, page: 1, count: 3, fresh: 1, latest_updated_at: Time.utc(2026, 11, 20, 10)))
+      expect(page).to include(': 1 new or changed (2 read again)')
+    end
+
+    it 'says how many a run recorded before it counted them imported' do
+      import = Integrations::FreeAgentImport
+      history = decided(import, { import_id: }, icmd(import::SyncFreeAgent),
+                        icmd(import::CompleteFetch, page: 1, count: 2, latest_updated_at: Time.utc(2026, 11, 20, 10)))
+      # As stored before +fresh+ was counted: none on its events.
+      old = history.map do |msg|
+        next msg unless msg.is_a?(import::PageFetched) || msg.is_a?(import::SyncCompleted)
+
+        msg.class.new(**msg.to_h, payload: msg.payload.to_h.except(:fresh))
+      end
+      store.append(old)
+
+      expect(page).to include(': 2 imported<')
     end
 
     it 'shows the last failure, and still offers an import' do

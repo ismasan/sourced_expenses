@@ -56,6 +56,43 @@ module Integrations
         history
       end
 
+      describe 'snapshots' do
+        # +history+'s machine, through a snapshot as the store keeps one: its
+        # state encoded through the snapshot type's JSON codec (as
+        # Sourced::Store#write_snapshot does), and decoded back.
+        def through_snapshot(history)
+          decoder, encoder = Plumb::Codec::JSON.for(FreeAgentImport.snapshot_config.type)
+          json = JSON.dump(encoder.parse(run(history).snapshot_state))
+          FreeAgentImport.new(import_id:).tap { it.restore_snapshot_state(decoder.parse(JSON.parse(json))) }
+        end
+
+        it 'are taken every SNAPSHOT_EVERY messages, at their version' do
+          expect(FreeAgentImport.snapshot_config).to have_attributes(every: FreeAgentImport::SNAPSHOT_EVERY,
+                                                                     version: FreeAgentImport::SNAPSHOT_VERSION)
+        end
+
+        it 'keep where the next run starts, its times as times, and the last failure' do
+          FAKE_FREEAGENT.pages = [[expense(1)]]
+          done = sync
+          FAKE_FREEAGENT.pages = Integrations::FreeAgent::Error.new('FreeAgent could not be reached')
+          failed = sync(given: done)
+          restored = through_snapshot(failed)
+
+          expect(restored.context).to eq(run(failed).context)
+          expect(restored.context[:cursor]).to eq(Time.utc(2026, 11, 20, 10))
+          expect(restored.context[:failure]).to include(reason: 'FreeAgent could not be reached', at: be_a(Time))
+          expect(restored.machine.value).to eq(Failed)
+        end
+
+        it 'start the next run from where the last one finished' do
+          FAKE_FREEAGENT.pages = [[expense(1)]]
+          restored = through_snapshot(sync)
+
+          started = restored.decide(cmd(SyncFreeAgent)).grep(SyncStarted)
+          expect(started.map { it.payload.updated_since }).to eq([Time.utc(2026, 11, 20, 9, 59)])
+        end
+      end
+
       it 'is a valid chart' do
         expect(FreeAgentImport.to_h).to include(:states)
       end
@@ -89,6 +126,24 @@ module Integrations
         # A minute before, as updated_since may not include the time itself.
         expect(FAKE_FREEAGENT.calls).to eq([{ updated_since: Time.utc(2026, 11, 20, 9, 59), page: 1 }])
         expect(run(second).context[:cursor]).to eq(Time.utc(2026, 11, 20, 10))
+      end
+
+      # FreeAgent answers with what was updated since a minute before the
+      # last run finished: the last ones it read come again, changing nothing.
+      it 'counts only what was updated after the last run finished as new or changed' do
+        FAKE_FREEAGENT.pages = [[expense(1, updated_at: '2026-11-20T09:00:00Z'), expense(2, updated_at: '2026-11-20T10:00:00Z')]]
+        first = sync
+        expect(run(first).context).to include(synced_count: 2, synced_fresh: 2)
+
+        # The overlap: expense 2 again, and a new one.
+        FAKE_FREEAGENT.pages = [[expense(2, updated_at: '2026-11-20T10:00:00Z'), expense(3, updated_at: '2026-11-21T08:00:00Z')]]
+        second = sync(given: first)
+        expect(run(second).context).to include(synced_count: 2, synced_fresh: 1)
+
+        # Nothing more: expense 3 again.
+        FAKE_FREEAGENT.pages = [[expense(3, updated_at: '2026-11-21T08:00:00Z')]]
+        third = sync(given: second)
+        expect(run(third).context).to include(synced_count: 1, synced_fresh: 0)
       end
 
       it 'backfills from a date given' do

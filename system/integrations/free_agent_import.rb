@@ -68,6 +68,9 @@ module Integrations
     CompleteFetch = Command(:complete_fetch) do
       attribute :page, Integer
       attribute :count, Integer
+      # Of +count+, how many were updated there after the last run finished:
+      # new or changed. The rest are read again (see OVERLAP).
+      attribute :fresh, Types::Integer.default(0)
       attribute :skipped, Types::Integer.default(0)
       attribute :latest_updated_at, Types::Time.nullable.default(nil)
       attribute :next_page, Types::Integer.nullable.default(nil)
@@ -86,17 +89,22 @@ module Integrations
       attribute :updated_since, Types::Time.nullable
     end
 
+    # +fresh+: nil in a page recorded before it was counted.
     PageFetched = Event(:page_fetched) do
       attribute :page, Integer
       attribute :count, Integer
+      attribute :fresh, Types::Integer.nullable.default(nil)
       attribute :skipped, Integer
       attribute :latest_updated_at, Types::Time.nullable
     end
 
     # +cursor+: where the next run starts.
+    # +count+: every expense imported, read again or not; +fresh+, how many of
+    # them were new or changed (nil in a run recorded before it was counted).
     SyncCompleted = Event(:sync_completed) do
       attribute :cursor, Types::Time.nullable
       attribute :count, Integer
+      attribute :fresh, Types::Integer.nullable.default(nil)
     end
 
     SyncFailed = Event(:sync_failed) do
@@ -105,17 +113,43 @@ module Integrations
 
     # ---- Its state ----
 
+    # One account's imports are one partition, a run's events added to it
+    # every day: a claim reads its history after the latest snapshot, stored
+    # every SNAPSHOT_EVERY messages. Bump SNAPSHOT_VERSION whenever the
+    # context's shape or its evolve blocks change.
+    SNAPSHOT_EVERY = 100
+    SNAPSHOT_VERSION = 2
+
+    # The context (below), as a snapshot stores it: the store encodes it
+    # through Plumb's JSON codec for this type, so its times are stored as
+    # ISO 8601 and read back as times.
+    Run = Types::Hash[
+      cursor: Types::Time.nullable,
+      updated_since: Types::Time.nullable,
+      page: Integer,
+      count: Integer,
+      fresh: Integer,
+      latest: Types::Time.nullable,
+      fetching: Types::Boolean,
+      synced_at: Types::Time.nullable,
+      synced_count: Types::Integer.nullable,
+      synced_fresh: Types::Integer.nullable,
+      failure: Types::Hash[reason: String, at: Types::Time].nullable
+    ]
+
+    snapshot every: SNAPSHOT_EVERY, version: SNAPSHOT_VERSION, type: Run
+
     # +cursor+ where the next run starts; the run's +updated_since+, the
     # +page+ to read next, how many it has read (+count+) and the latest
     # +updated_at+ among them; when the last run finished, and the last
     # failure.
     context do
-      { cursor: nil, updated_since: nil, page: 1, count: 0, latest: nil, fetching: false,
-        synced_at: nil, synced_count: nil, failure: nil }
+      { cursor: nil, updated_since: nil, page: 1, count: 0, fresh: 0, latest: nil, fetching: false,
+        synced_at: nil, synced_count: nil, synced_fresh: nil, failure: nil }
     end
 
     evolve SyncStarted do |run, evt|
-      run.merge!(updated_since: evt.payload.updated_since, page: 1, count: 0, latest: nil, failure: nil)
+      run.merge!(updated_since: evt.payload.updated_since, page: 1, count: 0, fresh: 0, latest: nil, failure: nil)
     end
 
     evolve Fetching do |run, _evt|
@@ -125,11 +159,13 @@ module Integrations
     evolve PageFetched do |run, evt|
       run[:page] = evt.payload.page + 1
       run[:count] += evt.payload.count
+      run[:fresh] += evt.payload.fresh || evt.payload.count
       run[:latest] = [run[:latest], evt.payload.latest_updated_at].compact.max
     end
 
     evolve SyncCompleted do |run, evt|
-      run.merge!(cursor: evt.payload.cursor, fetching: false, synced_at: evt.created_at, synced_count: evt.payload.count)
+      run.merge!(cursor: evt.payload.cursor, fetching: false, synced_at: evt.created_at, synced_count: evt.payload.count,
+                 synced_fresh: evt.payload.fresh)
     end
 
     evolve SyncFailed do |run, evt|
@@ -157,10 +193,16 @@ module Integrations
           page = freeagent.expenses(updated_since: run[:updated_since], page: run[:page])
           categories = page.expenses.empty? ? {} : freeagent.categories
           web_url = page.expenses.empty? ? nil : web_url()
-          imported = page.expenses.filter_map { import_for(it, categories, web_url) }
-          imported.each { dispatch it }
+          imported = page.expenses.filter_map do |expense|
+            command = import_for(expense, categories, web_url)
+            command && [command, Types.iso_time(expense['updated_at'])]
+          end
+          imported.each { |command, _| dispatch command }
+          # New or changed since the last run finished (+cursor+ moves only
+          # then): updated after it, or every one the first time.
+          fresh = imported.count { |_, updated_at| run[:cursor].nil? || updated_at.nil? || updated_at > run[:cursor] }
           latest = page.expenses.filter_map { Types.iso_time(it['updated_at']) }.max
-          dispatch CompleteFetch, import_id:, page: run[:page], count: imported.size,
+          dispatch CompleteFetch, import_id:, page: run[:page], count: imported.size, fresh:,
                                   skipped: page.expenses.size - imported.size, latest_updated_at: latest,
                                   next_page: page.next_page
         rescue FreeAgent::Error => e
@@ -174,13 +216,14 @@ module Integrations
       # evolves +run+ with it.
       command CompleteFetch => Fetching | Idle do |run, cmd|
         count = run[:count] + cmd.payload.count
+        fresh = run[:fresh] + cmd.payload.fresh
         latest = [run[:latest], cmd.payload.latest_updated_at].compact.max
         cursor = run[:cursor]
         event PageFetched, cmd.payload
         if cmd.payload.next_page
           to Fetching
         else
-          event SyncCompleted, cursor: latest || cursor, count: count
+          event SyncCompleted, cursor: latest || cursor, count: count, fresh: fresh
           to Idle
         end
       end

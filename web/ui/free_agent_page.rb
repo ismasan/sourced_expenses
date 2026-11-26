@@ -83,7 +83,7 @@ module UI
         dt { 'Last import' }
         dd do
           if @run[:synced_at]
-            plain "#{@run[:synced_at].getlocal.strftime('%-d %b %Y, %H:%M')}: #{@run[:synced_count]} imported"
+            plain "#{@run[:synced_at].getlocal.strftime('%-d %b %Y, %H:%M')}: #{last_import_counts}"
           else
             span(class: 'filed__note') { 'None yet' }
           end
@@ -101,6 +101,18 @@ module UI
         f.payload_fields(import_id: I::ACCOUNT)
         button(type: :submit, class: 'button button--primary') { 'Import now' }
       end
+    end
+
+    # New or changed, and read again (each run reads from a little before
+    # where the last one finished: Integrations::FreeAgentImport::OVERLAP).
+    # A run recorded before that was counted says how many it imported.
+    def last_import_counts
+      count, fresh = @run.values_at(:synced_count, :synced_fresh)
+      return "#{count} imported" if fresh.nil?
+
+      again = count - fresh
+      text = fresh.zero? ? 'none new or changed' : "#{fresh} new or changed"
+      again.positive? ? "#{text} (#{again} read again)" : text
     end
 
     def status
