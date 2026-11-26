@@ -170,6 +170,14 @@ RSpec.describe 'The expense lists' do
     expect(last_response.status).to eq(200)
   end
 
+  it 'shows a clip on one with a document attached' do
+    db[:expenses].where(expense_id: submission('Receipt', 'filed')).update(document_id: SecureRandom.hex(16))
+    submission('By hand', 'filed')
+    get '/expenses'
+
+    expect(last_response.body.scan('class="submission__document" title="Has a document"').size).to eq(1)
+  end
+
   it 'marks one whose upload to FreeAgent failed with a cross, and one not deleted there once voided' do
     db[:expenses].where(expense_id: submission('Pret', 'filed'))
                  .update(uploaded_to: '["freeagent"]', upload_failed_to: '["freeagent"]')

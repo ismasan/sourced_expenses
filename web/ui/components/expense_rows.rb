@@ -41,10 +41,10 @@ module UI
         end
       end
 
-      # Its category, who it's from, and whether it came from FreeAgent or
-      # went to it.
+      # Its category, who it's from, a clip if it has a document, and
+      # whether it came from FreeAgent or went to it.
       def detail(exp)
-        return unless exp.vendor || exp.category || freeagent(exp)
+        return unless exp.vendor || exp.category || exp.document_id || freeagent(exp)
 
         span(class: 'submission__description submission__tags') do
           if exp.category
@@ -52,7 +52,20 @@ module UI
                  title: exp.category_chosen ? 'Category' : 'Suggested category') { Expenses.category_label(exp.category) }
           end
           span(class: 'submission__vendor') { exp.vendor } if exp.vendor
+          document_clip if exp.document_id
           freeagent_mark(exp)
+        end
+      end
+
+      # A paperclip (Feather's), for one with a document attached.
+      CLIP = 'M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19' \
+             'a2 2 0 0 1-2.83-2.83l8.49-8.48'
+
+      def document_clip
+        span(class: 'submission__document', title: 'Has a document') do
+          svg(viewbox: '0 0 24 24', width: 16, height: 16, fill: 'none', stroke: 'currentColor', stroke_width: 2,
+              stroke_linecap: 'round', stroke_linejoin: 'round', aria_hidden: 'true') { |s| s.path(d: CLIP) }
+          span(class: 'visually-hidden') { 'Has a document' }
         end
       end
 
