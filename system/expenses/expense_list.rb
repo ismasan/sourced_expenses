@@ -9,6 +9,11 @@ module Expenses
   # and exited paths, so the list never loads a machine. Documents still
   # being read, or that couldn't be, are DocumentList's.
   #
+  # +source+ is the system it was imported from, if any; +uploaded_to+, the
+  # systems it's uploaded to now (Expense::ExpenseUploaded, until
+  # ExpenseUploadDeleted); +upload_failed_to+, those its latest upload or
+  # deletion failed for (ExpenseUploadFailed, until one succeeds).
+  #
   # Each row is in the `expenses_search` full-text index too (an FTS5
   # table, trigram tokenizer): its description, vendor and category, for
   # #search.
@@ -22,13 +27,15 @@ module Expenses
 
     dep :db
 
-    Row = ::Data.define(:expense_id, :document_id, :source, :machine, :description, :vendor, :total_cents, :currency,
+    Row = ::Data.define(:expense_id, :document_id, :source, :uploaded_to, :upload_failed_to, :machine, :description, :vendor, :total_cents, :currency,
                         :incurred_on, :category, :category_chosen, :vat_treatment, :vat_confirmed,
                         :filing_country, :created_at, :updated_at) do
       def in?(path) = machine.include?(path)
+      def uploaded_to?(destination) = uploaded_to.include?(destination)
+      def upload_failed_to?(destination) = upload_failed_to.include?(destination)
     end
 
-    COLUMNS = %i[document_id source machine description vendor total_cents currency incurred_on category
+    COLUMNS = %i[document_id source uploaded_to upload_failed_to machine description vendor total_cents currency incurred_on category
                  category_chosen filing_country vat_treatment vat_confirmed created_at updated_at].freeze
 
     # The machine's paths are a JSON array: whether +path+ is one of them.
@@ -155,7 +162,9 @@ module Expenses
       db[:expenses].reverse(:created_at).limit(limit).map { row(it) }
     end
 
-    def self.row(row) = Row.new(**row.slice(*Row.members), machine: JSON.parse(row[:machine]))
+    def self.row(row)
+      Row.new(**row.slice(*Row.members), **JSON_COLUMNS.to_h { [it, JSON.parse(row[it])] })
+    end
 
     # The group's offsets were rewound (`bin/sid sourced groups reset
     # expenses.expense_list`): every row goes, and it builds them again from
@@ -166,11 +175,14 @@ module Expenses
       db[:expenses_search].delete
     end
 
-    context { { machine: [], category_chosen: false, vat_confirmed: false } }
+    # Columns holding JSON arrays.
+    JSON_COLUMNS = %i[machine uploaded_to upload_failed_to].freeze
+
+    context { { machine: [], uploaded_to: [], upload_failed_to: [], category_chosen: false, vat_confirmed: false } }
 
     load_context do |partition|
       row = db[:expenses].where(expense_id: partition[:expense_id]).first
-      row&.merge(machine: JSON.parse(row[:machine]))
+      row&.merge(JSON_COLUMNS.to_h { [it, JSON.parse(row[it])] })
     end
 
     Expense.transition_classes.each do |klass|
@@ -235,6 +247,20 @@ module Expenses
       row[:vat_confirmed] = true
     end
 
+    evolve Expense::ExpenseUploaded do |row, evt|
+      row[:uploaded_to] |= [evt.payload.destination]
+      row[:upload_failed_to] -= [evt.payload.destination]
+    end
+
+    evolve Expense::ExpenseUploadFailed do |row, evt|
+      row[:upload_failed_to] |= [evt.payload.destination]
+    end
+
+    evolve Expense::ExpenseUploadDeleted do |row, evt|
+      row[:uploaded_to] -= [evt.payload.destination]
+      row[:upload_failed_to] -= [evt.payload.destination]
+    end
+
     sync do |context:, **|
       next unless context[:created_at]
 
@@ -245,7 +271,7 @@ module Expenses
       # Discarded: the row goes too, and nothing comes back (it's final).
       next db[:expenses].where(expense_id:).delete if context[:machine].include?('discarded')
 
-      row = context.slice(*COLUMNS).merge(machine: JSON.generate(context[:machine]))
+      row = context.slice(*COLUMNS).merge(JSON_COLUMNS.to_h { [it, JSON.generate(context[it])] })
       db[:expenses].insert_conflict(target: :expense_id, update: row).insert(row.merge(expense_id:))
       index.insert(expense_id:, body: ExpenseList.search_body(context))
     end

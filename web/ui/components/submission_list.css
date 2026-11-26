@@ -28,14 +28,18 @@
 .submission__link:focus-visible { outline-offset: -3px; }
 /* Left: the status, then the file; under them, what was read or why it
    stopped, from the same left edge as the badge. */
-.submission__head { grid-column: 1; grid-row: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.6rem; min-width: 0; }
-.submission__file { font-weight: 700; overflow-wrap: anywhere; }
+/* One line: a long description is cut short, in full on hover. */
+.submission__head { grid-column: 1; grid-row: 1; display: flex; align-items: baseline; gap: 0.25rem 0.6rem; min-width: 0; }
+.submission__head > :first-child { flex: none; }
+.submission__file { flex: 1 1 auto; min-width: 0; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .submission__description,
 .submission__reason { grid-column: 1; grid-row: 2; font-size: 0.95rem; color: var(--ink-2); }
 /* The category after the description: chosen in ink, suggested dashed. */
+/* An expense's line: its category, vendor and FreeAgent mark, spaced
+   apart, none indented when there's nothing before it. */
+.submission__tags { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; min-width: 0; }
 .submission__category {
   display: inline-block;
-  margin-left: 0.5rem;
   padding: 0 0.4rem;
   font-size: 0.8rem;
   font-weight: 600;
@@ -43,6 +47,17 @@
   border: 1px solid var(--ink);
   border-radius: var(--radius);
 }
+.submission__sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ink-2);
+}
+.submission__sync--failed { color: var(--problem); }
+.submission__sync img { display: block; width: 1rem; height: 1rem; }
 .submission__category--suggested { color: var(--ink-2); border-style: dashed; border-color: var(--ink-2); }
 .submission__reason {
   grid-column: 1 / -1;

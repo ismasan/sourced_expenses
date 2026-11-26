@@ -9,6 +9,9 @@ module UI
     # stylesheet.
     class ExpenseRows < Sidereal::Components::BaseComponent
       stylesheet 'ui/components/submission_list.css', path: 'submission_list.css'
+      file 'ui/components/freeagent.svg', path: 'freeagent.svg'
+
+      FREEAGENT = Integrations::FreeAgent::ExpenseMapping::SOURCE
 
       def initialize(rows)
         @rows = rows
@@ -29,7 +32,7 @@ module UI
           a(class: 'submission__link', href: "/expenses/#{exp.expense_id}") do
             span(class: 'submission__head') do
               render StatusBadge.new(status, size: :small)
-              span(class: 'submission__file') { exp.description || 'New expense' }
+              span(class: 'submission__file', title: exp.description) { exp.description || 'New expense' }
             end
             span(class: 'submission__amount') { Money.format(exp.total_cents, exp.currency) } if exp.total_cents && exp.currency
             detail(exp)
@@ -38,16 +41,47 @@ module UI
         end
       end
 
-      # Who it's from and its category.
+      # Its category, who it's from, and whether it came from FreeAgent or
+      # went to it.
       def detail(exp)
-        return unless exp.vendor || exp.category
+        return unless exp.vendor || exp.category || freeagent(exp)
 
-        span(class: 'submission__description') do
-          plain exp.vendor.to_s
+        span(class: 'submission__description submission__tags') do
           if exp.category
             span(class: ['submission__category', ('submission__category--suggested' unless exp.category_chosen)],
                  title: exp.category_chosen ? 'Category' : 'Suggested category') { Expenses.category_label(exp.category) }
           end
+          span(class: 'submission__vendor') { exp.vendor } if exp.vendor
+          freeagent_mark(exp)
+        end
+      end
+
+      # FreeAgent's logo, with an arrow down for one imported from it, up for
+      # one uploaded to it, and a red cross for one whose upload (or, voided,
+      # deletion there) failed.
+      def freeagent_mark(exp)
+        way = freeagent(exp) or return
+
+        span(class: "submission__sync submission__sync--#{way}", title: sync_title(exp, way)) do
+          img(src: asset_url('ui/components/freeagent.svg'), alt: 'FreeAgent', width: 16, height: 16)
+          span(class: 'submission__sync-arrow', aria_hidden: 'true') { SYNC_MARKS.fetch(way) }
+        end
+      end
+
+      SYNC_MARKS = { imported: '↓', uploaded: '↑', failed: '✕' }.freeze
+
+      def freeagent(exp)
+        if exp.source == FREEAGENT then :imported
+        elsif exp.upload_failed_to?(FREEAGENT) then :failed
+        elsif exp.uploaded_to?(FREEAGENT) then :uploaded
+        end
+      end
+
+      def sync_title(exp, way)
+        case way
+        when :imported then 'Imported from FreeAgent'
+        when :uploaded then 'Uploaded to FreeAgent'
+        else exp.in?('voided') ? 'Not deleted on FreeAgent' : 'Not uploaded to FreeAgent'
         end
       end
     end

@@ -114,6 +114,28 @@ module Expenses
         )
       end
 
+      it 'knows where it’s uploaded to, until it’s deleted there' do
+        uploaded = after(cmd(Expense::RecordUpload, destination: 'sheets', external_id: '9'), given: imported)
+        project(uploaded)
+        expect(row).to have_attributes(uploaded_to: ['sheets'])
+        expect(row).to be_uploaded_to('sheets')
+
+        deleted = after(cmd(Expense::RecordUploadDeletion, destination: 'sheets'), given: uploaded)
+        project(deleted - uploaded)
+        expect(row).to have_attributes(uploaded_to: [])
+      end
+
+      it 'knows where its upload failed, until one succeeds' do
+        failed = after(cmd(Expense::RecordUploadFailure, destination: 'sheets', reason: 'Refused'), given: imported)
+        project(failed)
+        expect(row).to have_attributes(upload_failed_to: ['sheets'], uploaded_to: [])
+        expect(row).to be_upload_failed_to('sheets')
+
+        uploaded = after(cmd(Expense::RecordUpload, destination: 'sheets', external_id: '9'), given: failed)
+        project(uploaded - failed)
+        expect(row).to have_attributes(upload_failed_to: [], uploaded_to: ['sheets'])
+      end
+
       it 'lists one without all it takes in review, its source’s category a suggestion' do
         project(after(import(vat_treatment: nil)))
 

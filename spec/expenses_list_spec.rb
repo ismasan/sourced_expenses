@@ -52,7 +52,7 @@ RSpec.describe 'The expense lists' do
     document('read.pdf', 'scanned', at: Time.now - 5)
   end
 
-  def filenames(body) = body.scan(/class="submission__file">([^<]+)</).flatten
+  def filenames(body) = body.scan(/class="submission__file"[^>]*>([^<]+)</).flatten
 
   describe Expenses::ExpenseList do
     it 'counts every row in exactly one state' do
@@ -152,6 +152,35 @@ RSpec.describe 'The expense lists' do
       'class="submission__category submission__category--suggested" title="Suggested category">Travel<',
       'class="submission__category" title="Category">Computer Software<'
     )
+  end
+
+  it 'marks one imported from FreeAgent and one uploaded to it' do
+    db[:expenses].where(expense_id: submission('Pret', 'filed')).update(source: 'freeagent')
+    db[:expenses].where(expense_id: submission('Uber', 'filed')).update(uploaded_to: '["freeagent"]')
+    submission('Lunch', 'filed')
+    get '/expenses'
+
+    body = last_response.body
+    expect(body).to include('↓', '↑')
+    expect(body).to include('class="submission__sync submission__sync--imported" title="Imported from FreeAgent"',
+                            'class="submission__sync submission__sync--uploaded" title="Uploaded to FreeAgent"',
+                            'src="/_assets/ui/components/freeagent-')
+    expect(body.scan('class="submission__sync ').size).to eq(2)
+    get body[%r{src="(/_assets/ui/components/freeagent-[^"]+)"}, 1]
+    expect(last_response.status).to eq(200)
+  end
+
+  it 'marks one whose upload to FreeAgent failed with a cross, and one not deleted there once voided' do
+    db[:expenses].where(expense_id: submission('Pret', 'filed'))
+                 .update(uploaded_to: '["freeagent"]', upload_failed_to: '["freeagent"]')
+    db[:expenses].where(expense_id: submission('Uber', 'voided'))
+                 .update(uploaded_to: '["freeagent"]', upload_failed_to: '["freeagent"]')
+    get '/expenses'
+
+    body = last_response.body
+    expect(body).to include('class="submission__sync submission__sync--failed" title="Not uploaded to FreeAgent"',
+                            'class="submission__sync submission__sync--failed" title="Not deleted on FreeAgent"', '✕')
+    expect(body).not_to include('submission__sync--uploaded')
   end
 
   describe 'by category' do

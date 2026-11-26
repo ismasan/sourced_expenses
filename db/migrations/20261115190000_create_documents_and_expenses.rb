@@ -6,7 +6,7 @@
 # Expenses::ExpenseList: one row per expense, however it was drafted, for
 # the expense lists. Its category and VAT treatment, each the suggestion
 # (the model's, the rule's) or a person's choice, and the filing country the
-# VAT treatment is suggested against. And its full-text index: description,
+# VAT treatment is suggested against; the systems it's uploaded to. And its full-text index: description,
 # vendor and category in one body, in an FTS5 table with the trigram
 # tokenizer, so any part of a word matches, whatever its case or accents.
 Sequel.migration do
@@ -34,6 +34,8 @@ Sequel.migration do
       String :expense_id, primary_key: true
       String :document_id                                     # the document attached, if any
       String :source                                          # the system it was imported from, if any
+      String :uploaded_to, text: true, null: false, default: '[]' # the systems it's uploaded to, JSON
+      String :upload_failed_to, text: true, null: false, default: '[]' # those its last upload or deletion failed for, JSON
       String :machine, text: true, null: false, default: '[]' # the machine's paths, JSON
       String :description
       String :vendor
