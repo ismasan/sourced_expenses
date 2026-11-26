@@ -81,6 +81,67 @@ module CLI
       end
     end
 
+    # `bin/sid expenses import freeagent`: starts an import of the FreeAgent
+    # expenses created or changed since the last one (all of them, the first
+    # time, unless --since says from when), for a scheduler such as cron to
+    # run. The running app does the import (Integrations::FreeAgentImport): this
+    # only starts it. --categories lists FreeAgent's categories instead, and
+    # which of ours each is (Integrations::FreeAgent::ExpenseMapping), so its ALIASES can be
+    # filled in.
+    #
+    #   bin/sid expenses import --since 2026-01-01 freeagent
+    #   */30 * * * * cd /path/to/app && bin/sid expenses import freeagent
+    class Import < Sidereal::CLI::Command
+      self.description = 'Import expenses from another system (freeagent): starts an import of what changed there'
+
+      SOURCES = %w[freeagent].freeze
+
+      options do
+        option '--since <date>', 'Import what changed since this day (YYYY-MM-DD), not since the last import: a backfill'
+        option '--categories', "List FreeAgent's categories and which of ours each is, instead of importing"
+      end
+
+      one :source, "Where from: #{SOURCES.join(', ')}"
+
+      def call
+        raise Sidereal::CLI::Error, "Import from one of: #{SOURCES.join(', ')}" unless SOURCES.include?(@source)
+
+        since = parse_date(@options[:since])
+        Sidereal::CLI.boot_app!
+        client = Sidereal.config['freeagent']
+        raise Sidereal::CLI::Error, 'FreeAgent isn’t set up: see FREEAGENT_CLIENT_ID in config/components/freeagent.rb' unless client.configured?
+        raise Sidereal::CLI::Error, "FreeAgent isn’t connected: connect it at #{page_url}" unless client.connected?
+
+        @options[:categories] ? print_categories(client) : start(since)
+      end
+
+      private
+
+      def start(since)
+        import = ::Integrations::FreeAgentImport
+        Sidereal.dispatch!(import::SyncFreeAgent.new(payload: { import_id: import::ACCOUNT, since: }))
+        terminal.print_line :title, 'Importing from FreeAgent ', :reset, (since ? "since #{since.to_date}  " : ''), :key, page_url
+      end
+
+      def print_categories(client)
+        client.categories.values.sort_by(&:nominal_code).each do |category|
+          ours = ::Integrations::FreeAgent::ExpenseMapping.ours(category.description)
+          terminal.print_line :key, category.nominal_code.ljust(8), :reset, category.description.ljust(44),
+                              (ours ? ::Expenses.category_label(ours) : "its own (#{::Expenses.category_key(category.description)})")
+        end
+      rescue ::Integrations::FreeAgent::Error => e
+        raise Sidereal::CLI::Error, e.message
+      end
+
+      def parse_date(value)
+        value && Date.iso8601(value).to_time.utc
+      rescue Date::Error
+        raise Sidereal::CLI::Error, "--since #{value.inspect} isn't a date (YYYY-MM-DD)"
+      end
+
+      def page_url = "http://#{ENV.fetch('HOST', 'localhost')}:#{ENV.fetch('PORT', '9292')}/integrations/freeagent"
+    end
+
     # `bin/sid expenses list`: expenses from the list the app shows
     # (Expenses::ExpenseList), newest first, filtered. A table to read, or
     # with --json one JSON object per line, for `bin/sid expenses dispatch`
@@ -278,9 +339,9 @@ module CLI
       end
     end
 
-    self.description = 'Work with expenses: upload documents to scan, list them, send them commands'
+    self.description = 'Work with expenses: upload documents to scan, import them, list them, send them commands'
 
-    nested :command, { 'upload' => Upload, 'list' => List, 'dispatch' => Dispatch }
+    nested :command, { 'upload' => Upload, 'import' => Import, 'list' => List, 'dispatch' => Dispatch }
 
     def call
       @command ? @command.call : print_usage

@@ -72,5 +72,5 @@ module Expenses
   # The key for a category named +name+: "Use of home" is use_of_home.
   def self.category_key(name) = name.to_s.downcase.gsub('&', ' and ').gsub(/[^a-z0-9]+/, '_').gsub(/\A_+|_+\z/, '')
 
-  def self.machines = [Document, Expense]
+  def self.machines = [Document, Expense, Integrations::FreeAgentImport]
 end

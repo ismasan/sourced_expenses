@@ -1,14 +1,17 @@
 # frozen_string_literal: true
 
+require 'securerandom'
+
 # The web app: which commands browsers may send, how they're handled, and pages.
 # config.ru runs it.
 class App < Sidereal::App
   layout UI::Layout
 
-  dep :file_store, :thumbnails
+  dep :file_store, :thumbnails, :freeagent
 
   E = Expenses::Expense
   D = Expenses::Document
+  I = Integrations::FreeAgentImport
 
   # Ids are the digest of the bytes, so a file never changes under its URL.
   IMMUTABLE = 'private, max-age=31536000, immutable'
@@ -29,9 +32,11 @@ class App < Sidereal::App
   channel_name do |msg|
     payload = msg.payload
     queue_name = payload.respond_to?(:queue_name) && payload.queue_name
+    import_id = payload.respond_to?(:import_id) && payload.import_id
     expense_id = payload.respond_to?(:expense_id) && payload.expense_id
     document_id = payload.respond_to?(:document_id) && payload.document_id
     if queue_name then "system.#{queue_name}"
+    elsif import_id then "freeagent_imports.#{import_id}"
     elsif expense_id then "expenses.#{expense_id}"
     elsif document_id then "documents.#{document_id}"
     else 'system'
@@ -41,6 +46,7 @@ class App < Sidereal::App
   # What a person does with a document or an expense. The machine refuses
   # any its current state doesn't accept.
   handle D::Rescan, D::EnterManually, D::DiscardDocument,
+         I::SyncFreeAgent,
          E::SaveExpense, E::DiscardExpense, E::VoidExpense, E::ConfirmVatTreatment, E::ChooseCategory
 
   # The components the pages render, for their stylesheets and the commands
@@ -68,6 +74,7 @@ class App < Sidereal::App
   page UI::ExpenseDiagramPage
   page UI::DocumentPage
   page UI::DocumentDiagramPage
+  page UI::FreeAgentPage
 
   component UI::Attention
 
@@ -100,6 +107,43 @@ class App < Sidereal::App
     browser.stream(heartbeat: false) do |sse|
       sse.patch_elements UI::Components::SearchPreview.for(query)
     end
+  end
+
+  # Where FreeAgent sends a person back to once they've let this app read
+  # their account: FREEAGENT_REDIRECT_URI, or this app's callback at
+  # +base_url+. It must be one the app has in FreeAgent's Developer Dashboard.
+  def self.freeagent_redirect_uri(base_url)
+    Sidereal.config['freeagent.redirect_uri'] || "#{base_url}/integrations/freeagent/callback"
+  end
+
+  # Connecting FreeAgent: off to FreeAgent to let this app read the account,
+  # with a state only this browser's session knows, to check on the way back.
+  get '/integrations/freeagent/connect' do
+    halt 404, 'FreeAgent isn’t set up' unless freeagent.configured?
+
+    state = SecureRandom.hex(16)
+    session['freeagent_state'] = state
+    redirect freeagent.authorize_url(redirect_uri: App.freeagent_redirect_uri(request.base_url), state:), status: 303
+  end
+
+  # Back from FreeAgent: the code it sent traded for tokens (kept by
+  # Integrations::FreeAgent::Tokens), then the FreeAgent page, saying why not if it failed.
+  get '/integrations/freeagent/callback' do
+    params = request.params
+    expected = session.delete('freeagent_state')
+    error = if params['error'] then "FreeAgent didn’t connect: #{params['error_description'] || params['error']}"
+            elsif expected.nil? || !Rack::Utils.secure_compare(expected, params['state'].to_s)
+              'That connection wasn’t started here: connect again'
+            end
+    unless error
+      begin
+        freeagent.connect(code: params['code'].to_s, redirect_uri: App.freeagent_redirect_uri(request.base_url))
+      rescue Integrations::FreeAgent::Error => e
+        error = e.message
+      end
+    end
+    path = UI::FreeAgentPage.path
+    redirect error ? "#{path}?#{URI.encode_www_form(error:)}" : path, status: 303
   end
 
   # An uploaded file as it was uploaded, for the document and expense pages' modal.

@@ -12,6 +12,7 @@ module UI
       LINKS = [
         ['All expenses', '/expenses'],
         ['New expense', '/expenses/new'],
+        ['FreeAgent', '/integrations/freeagent'],
         ['Sourced dashboard', '/sourced']
       ].freeze
 

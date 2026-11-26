@@ -118,6 +118,21 @@ stateDiagram-v2
 
 `bin/readme-diagrams` regenerates these from the code; the pre-commit hook runs it (enable with `git config core.hooksPath .githooks`).
 
+`Integrations::FreeAgentImport` (`system/integrations/free_agent_import.rb`, its FreeAgent client and mapping in `system/integrations/free_agent/`) imports a FreeAgent account's expenses, a run at a time. Entering `fetching` reads a page of the expenses changed there since the last run finished, dispatches an `ImportExpense` for each (`Integrations::FreeAgent::ExpenseMapping`) and `CompleteFetch` for itself, all in one reaction in its own consumer group. Where the next run starts moves only when one finishes. Another source would be another machine like it, sending `ImportExpense`.
+
+<!-- mermaid Integrations::FreeAgentImport -->
+```mermaid
+stateDiagram-v2
+  [*] --> fetching : SyncFreeAgent
+  fetching --> fetching : CompleteFetch
+  fetching --> idle : CompleteFetch
+  fetching --> failed : FailFetch
+  fetching --> failed : after 5m / TimeOutFetch
+  idle --> fetching : SyncFreeAgent
+  failed --> fetching : SyncFreeAgent
+```
+<!-- /mermaid -->
+
 ## Reactors and read models
 
 Each is its own consumer group, so slow work never blocks the machine.
@@ -159,6 +174,18 @@ Requires ImageMagick (`brew install imagemagick`). `bin/dev` reloads on change i
 | `SIDEREAL_SECRET` | `storage/secret.txt`, which the first boot creates | The master secret Sidereal derives the session cookie's key and the live-updates URL signer's from. Set it (64 bytes or more, `bin/sid secret` makes one) when `storage/` doesn't survive deploys or the app runs on several machines: the same in every process and across deploys. Changing it logs everyone out |
 | `PORT`, `HOST`, `COUNT` | | Server port, host, worker processes |
 
+## FreeAgent
+
+Expenses created or changed on [FreeAgent](https://www.freeagent.com) are imported and filed as FreeAgent has them: their figures, FreeAgent's category (one of the baseline's where the names match, or else its own, such as "Use of home") and its VAT treatment, both confirmed. One changed there is filed again with the change, so correct an imported expense on FreeAgent: a correction made here lasts until its next change there. One FreeAgent sends without a category, VAT treatment or description lands in review instead. Mileage claims aren't imported.
+
+1. Optionally, try it on a [sandbox account](https://signup.sandbox.freeagent.com/signup) first, completing its company setup.
+2. Create an app in the [FreeAgent Developer Dashboard](https://dev.freeagent.com), with the redirect URI `http://localhost:9292/integrations/freeagent/callback` (or wherever the app runs; `FREEAGENT_REDIRECT_URI` overrides it).
+3. Put its OAuth identifier and secret in `.env` as `FREEAGENT_CLIENT_ID` and `FREEAGENT_CLIENT_SECRET` (`FREEAGENT_SANDBOX=1` for a sandbox account), and restart the app.
+4. Connect your account on the FreeAgent page (`/integrations/freeagent`). Its tokens are kept in the database, never in the event store.
+5. Import: the page's button, or `bin/sid expenses import freeagent`, from cron or the like. The first import reads everything, unless `--since` says from when.
+
+`bin/sid expenses import --categories freeagent` lists FreeAgent's categories and which of the baseline's each is. One that is a baseline category under another name goes in `Integrations::FreeAgent::ExpenseMapping::ALIASES`; the rest are their own.
+
 ## Docker
 
 ```sh
@@ -186,6 +213,7 @@ bin/sid sourced messages list --tail              # follow the event store
 bin/sid sourced groups list                       # consumer groups and their status
 bin/sid db migrations add <name>                  # new Sequel migration
 bin/sid expenses upload ~/receipts/*.pdf          # upload documents to scan
+bin/sid expenses import [--since <date>] freeagent # import what changed on FreeAgent
 bin/sid expenses list --state filed --json        # filter expenses
 bin/sid expenses list --vat-status suggested      # by whose VAT treatment (or --category-status) it is
 bin/sid expenses dispatch <Command>               # a command per JSON line on stdin

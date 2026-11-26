@@ -74,6 +74,54 @@ class FakeExchangeRates
 end
 FAKE_RATES = FakeExchangeRates.new
 Sidereal.config.config!('exchange_rates') { FAKE_RATES }
+# FreeAgent without the network: +pages+ are its expenses' pages (arrays of
+# FreeAgent's JSON objects, page 1 first), or an Integrations::FreeAgent::Error to raise;
+# +categories+, by url. +calls+ are the pages asked for.
+# Not +configured+ (no OAuth identifier) or not +connected+ as set;
+# +connects+ are the codes #connect was given, which raises +connect_error+
+# if set.
+class FakeFreeAgent
+  attr_reader :calls, :connects
+  attr_accessor :pages, :categories, :connected, :configured, :connect_error
+
+  def initialize = reset!
+
+  def reset!
+    @calls = []
+    @pages = []
+    @categories = {}
+    @connected = true
+    @configured = true
+    @connects = []
+    @connect_error = nil
+  end
+
+  def configured? = configured
+  def connected? = connected
+  def sandbox? = false
+
+  def authorize_url(redirect_uri:, state:)
+    "https://api.freeagent.test/v2/approve_app?#{URI.encode_www_form(redirect_uri:, state:)}"
+  end
+
+  def connect(code:, redirect_uri:)
+    raise connect_error if connect_error
+
+    @connects << { code:, redirect_uri: }
+    @connected = true
+  end
+
+  def web_url = 'https://example.freeagent.com'
+
+  def expenses(updated_since: nil, page: 1)
+    @calls << { updated_since:, page: }
+    raise pages if pages.is_a?(Exception)
+
+    Integrations::FreeAgent::Client::Page.new(expenses: pages.fetch(page - 1, []), next_page: page < pages.size ? page + 1 : nil)
+  end
+end
+FAKE_FREEAGENT = FakeFreeAgent.new
+Sidereal.config.config!('freeagent') { FAKE_FREEAGENT }
 # Specs total in GBP, whatever REPORTING_CURRENCY (or .env) says.
 Sidereal.config.config!('reporting_currency') { 'GBP' }
 # And file in the Netherlands, as their (Dutch) receipts are, whatever
@@ -151,6 +199,7 @@ RSpec.configure do |config|
   config.include StreamHelpers
   config.before { FAKE_LLM.reset! }
   config.before { FAKE_RATES.reset! }
+  config.before { FAKE_FREEAGENT.reset! }
 
   # rspec-expectations config goes here. You can use an alternate
   # assertion/expectation library such as wrong or the stdlib/minitest

@@ -29,6 +29,13 @@ module Types
   # UUID its form was rendered with.
   ExpenseID = String[/\A[A-Za-z0-9][A-Za-z0-9_-]{0,63}\z/]
 
+  # +value+ as a Time, or nil if it isn't an ISO 8601 time.
+  def self.iso_time(value)
+    value.nil? ? nil : ::Time.iso8601(value.to_s)
+  rescue ArgumentError
+    nil
+  end
+
   # +value+ as a Date, or nil if it isn't an ISO 8601 date.
   def self.iso_date(value)
     result = ISODate.resolve(value)
