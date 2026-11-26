@@ -216,10 +216,14 @@ RSpec.describe 'The expense lists' do
       expect(last_response.body).to include('ledger-total__amount">22.00 GBP<')
     end
 
-    it 'refuses a category it does not know' do
-      get '/expenses?category[]=snacks'
-
+    # Any category key is one (CategoryList): one no expense has lists none.
+    it 'refuses what isn’t a category key, and lists nothing for one no expense has' do
+      get '/expenses?category[]=Snacks!'
       expect(last_response.status).to eq(400)
+
+      get '/expenses?category[]=snacks'
+      expect(last_response.status).to eq(200)
+      expect(last_response.body).to include('No expenses match the filters')
     end
   end
 

@@ -19,6 +19,9 @@
 .statechart__final-ring { fill: none; stroke: var(--ink); }
 .statechart__label { fill: var(--ink); font-weight: 700; }
 .statechart__hint, .statechart__timer { fill: var(--ink-2); font-size: 10px; }
+/* A state's entry and exit actions, under its name (sourced-ui draws them). */
+.statechart__action { fill: var(--ink-2); font-size: 10px; }
+.statechart__rule { stroke: var(--rule); stroke-width: 1; }
 .statechart__hint { font-style: italic; }
 .statechart__dot { fill: var(--ink); }
 .statechart__history { fill: var(--paper); stroke: var(--ink); stroke-width: 1.2; }

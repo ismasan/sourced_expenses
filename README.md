@@ -41,19 +41,25 @@ stateDiagram-v2
 | --- | --- | --- |
 | `DraftExpenseFromDocument` | a document once read (its id is the document's); again for the same document while in review, after a rescan | `ExpenseDrafted` and `DocumentAttached`; after a rescan, `ExpenseRedrafted` |
 | `EnterExpense` | the new expense form (the UUID it was rendered with) | `ExpenseEntered` |
+| `ImportExpense` | another system's expense (`freeagent-<its id there>`), trusted as its books have it; again when changed there | `ExpenseImported`, `CategoryChosen`, `VatTreatmentConfirmed` and `ExpenseFiled` (just `ExpenseImported`, in review with suggestions, for one without a category, VAT treatment or description); once changed, `ImportedExpenseChanged`, and filed again, confirming what changed: the source wins over a correction here |
 
 The same command again changes nothing, so a source can safely send it twice.
 
 <!-- mermaid Expenses::Expense -->
 ```mermaid
 stateDiagram-v2
+  [*] --> filed : ImportExpense
+  [*] --> reviewing : ImportExpense
   [*] --> reviewing : DraftExpenseFromDocument
   [*] --> reviewing : EnterExpense
+  reviewing --> filed : ImportExpense
   reviewing --> discarded : DiscardExpense
   reviewing --> reviewed : done
   reviewed --> filed : SaveExpense
+  reviewed --> filed : ImportExpense
   reviewed --> discarded : DiscardExpense
   filed --> filed : SaveExpense
+  filed --> filed : ImportExpense
   filed --> voided : VoidExpense
   discarded --> [*]
   voided --> [*]
@@ -120,10 +126,11 @@ Each is its own consumer group, so slow work never blocks the machine.
 | --- | --- |
 | `WorkQueue` | Capped work queues (`system/work_queue.rb`), one per `queue_name`, each with the capacity its latest `Enqueue` gave. A caller names its queue with `WorkQueue.define` and dispatches what it builds: `Document::ScanQueue = WorkQueue.define('scans', capacity: 3)`, enqueued with `ScanQueue.enqueue(StartScan, document_id:)` (`.with_capacity(n)` overrides the capacity), and each document holds its slot through every step of its scan. It records `Enqueued`, `Started`, `Released` and `Dropped`, and appends each item's start message (a document's `StartScan`) in the same commit as its `Started`. A plain reactor (a decider may only append to its own partition), which snapshots each queue's state every 100 history messages so a claim never reads its whole history. The bar along the bottom of every page shows the scan queue from the same snapshot and history (`ScanQueue.status`), following its events. |
 | `Expenses::Scanner` | Runs each scan step against the LLM (`Expenses::ScanSteps`, prompts in `Expenses::Prompts`). Shrinks images over 500 KB with ImageMagick. |
-| `Expenses::Categorizer` | Suggests a category from `Expenses::CATEGORIES` for each draft with a description, via a [RubyLLM judgment](https://rubyllm.com/judgments/). A person's `ChooseCategory` always wins. |
+| `Expenses::Categorizer` | Suggests a category for each draft or hand entry with a description, from the baseline (`Expenses::CATEGORIES`) and every other category expenses have had (`Expenses::CategoryList`), via a [RubyLLM judgment](https://rubyllm.com/judgments/). A person's `ChooseCategory` always wins. |
 | `Expenses::CurrencyConverter` | Converts filed totals to `REPORTING_CURRENCY` at the ECB rate for the expense's date ([Frankfurter](https://frankfurter.dev)). |
 | `Expenses::DocumentList` | Read model for the home page's documents: being read, and those that couldn't be. |
 | `Expenses::ExpenseList` | Read model for the expense lists, plus the FTS5 search index (`expenses_search`). |
+| `Expenses::CategoryList` | Read model of every category an expense has had (suggested, chosen or imported: a source's own with its name there), offered beside the baseline wherever a category is chosen. |
 | `Expenses::Ledger` | Read model for monthly totals and category breakdowns in the reporting currency. |
 
 Resetting a group (`bin/sid sourced groups reset <group>`) reprocesses: e.g. `expenses.categorizer` retries failed categorizations, `expenses.currency_converter` reconverts after changing `REPORTING_CURRENCY`.

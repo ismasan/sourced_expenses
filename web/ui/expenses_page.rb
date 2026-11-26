@@ -28,8 +28,9 @@ module UI
 
     PER_PAGE = 25
 
-    # A category[] query param: Expenses::CATEGORIES keys only, none if absent.
-    CategoryParam = Types::Array[Types::String.options(Expenses::CATEGORIES.keys)].default([].freeze)
+    # A category[] query param: category keys (Expenses::Expense::Category),
+    # none if absent.
+    CategoryParam = Types::Array[Expenses::Expense::Category].default([].freeze)
 
     query_schema(
       state: StateFilter::Param,
@@ -196,16 +197,19 @@ module UI
     end
 
     # Only categories some expense has, or that are ticked: there are many.
+    # In CategoryList's order: the baseline's, then the rest by name.
     def render_category_filters
-      shown = Expenses::CATEGORIES.select { |key, _| @category_counts.key?(key) || @categories.include?(key) }
+      shown = Expenses::CategoryList.all(Sidereal.config['db'])
+                                    .select { @category_counts.key?(it.key) || @categories.include?(it.key) }
       return if shown.empty?
 
       fieldset(class: 'filters__group') do
         legend(class: 'filters__legend') { 'Category' }
-        shown.each do |key, (label, _)|
+        shown.each do |choice|
+          key = choice.key
           label(class: 'filter filter--category') do
             input(type: 'checkbox', name: 'category[]', value: key, checked: @categories.include?(key))
-            span(class: 'filter__label') { label }
+            span(class: 'filter__label') { choice.label }
             span(class: 'filter__count') { @category_counts.fetch(key, 0).to_s }
           end
         end

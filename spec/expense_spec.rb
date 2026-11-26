@@ -284,6 +284,139 @@ module Expenses
           expect(expense(reviewed(drafted)).handles_command?(cmd(RecordConversion, **conversion))).to be(false)
         end
       end
+
+      describe 'imported' do
+        # Events stored before ImportExpense had an external_url still load.
+        it 'reads an import stored without a link' do
+          payload = { expense_id:, source: 'freeagent', external_id: '1', filing_country: 'GB', description: 'Lunch',
+                      net_price_cents: 2000, tax_amount_cents: 400, tax_description: nil, currency: 'GBP',
+                      incurred_on: Date.new(2026, 11, 18), supplier_country_code: nil, reverse_charge: false,
+                      payment_reference: nil, category: nil, source_category: nil, vat_treatment: 'domestic' }
+          [ExpenseImported, ImportedExpenseChanged].each do |klass|
+            event = klass.new(payload:)
+            expect(event).to be_valid, klass.name
+            expect(event.payload.external_url).to be_nil
+          end
+        end
+
+        let(:expense_id) { 'freeagent-123' }
+
+        # A FreeAgent expense, as Integrations::FreeAgent::ExpenseMapping makes it: a UK
+        # lunch, with no supplier country, booked as domestic VAT there.
+        def import(**overrides)
+          { source: 'freeagent', external_id: '123', filing_country: 'GB', description: 'Pret - Lunch',
+            net_price_cents: 2000, tax_amount_cents: 400, tax_description: 'VAT 20%', currency: 'GBP',
+            incurred_on: Date.new(2026, 11, 18), supplier_country_code: nil, reverse_charge: false,
+            payment_reference: nil, category: 'accommodation_and_meals', source_category: 'Accommodation and Meals',
+            vat_treatment: 'domestic', **overrides }
+        end
+
+        def imported(given: [], **overrides) = history(cmd(ImportExpense, **import(**overrides)), given:)
+
+        def import_form(**overrides)
+          import(**overrides).slice(*DRAFT)
+        end
+
+        it 'is filed as its source has it, its category and VAT treatment confirmed, nothing attached' do
+          doc = expense(imported).context
+
+          data = [ExpenseImported, CategoryChosen, VatTreatmentConfirmed, ExpenseFiled]
+          expect(imported.map(&:class).select { data.include?(it) }).to eq(data)
+
+          expect(value(imported)).to eq(Filed)
+          expect(imported.map(&:class)).to include(ExpenseImported, ExpenseFiled)
+          expect(imported.map(&:class)).not_to include(ExpenseDrafted, ExpenseEntered, DocumentAttached)
+          expect(doc.filed).to eq(import_form)
+          expect(doc).to have_attributes(imported?: true, source: 'freeagent', external_id: '123', document?: false,
+                                         source_category: 'Accommodation and Meals', filing_country: 'GB',
+                                         category: 'accommodation_and_meals', category_chosen?: true,
+                                         vat_treatment: 'domestic', vat_treatment_confirmed?: true)
+        end
+
+        it 'starts in review, with its source’s category as a suggestion, if it hasn’t all it takes to file' do
+          [{ vat_treatment: nil }, { category: nil, source_category: nil }, { description: nil }].each do |missing|
+            incomplete = imported(**missing)
+            doc = expense(incomplete).context
+
+            expect(value(incomplete)).to eq(reviewing), missing.inspect
+            expect(incomplete.map(&:class)).not_to include(ExpenseFiled)
+            expect(doc.category_chosen?).to be(false)
+          end
+          doc = expense(imported(vat_treatment: nil)).context
+          expect(doc.category_suggestion).to eq(category: 'accommodation_and_meals', source: 'freeagent')
+          # No supplier country, and no treatment from its source: the rule's.
+          expect(doc.suggested_vat_treatment).to eq('foreign_vat')
+        end
+
+        it 'suggests its source’s VAT treatment over the rule’s, in review' do
+          doc = expense(imported(category: nil, source_category: nil)).context
+
+          expect(ExpenseState.suggested_vat_treatment(doc.draft, filing_country: 'GB')).to eq('foreign_vat')
+          expect(doc.suggested_vat_treatment).to eq('domestic')
+          expect(doc.vat_treatment_confirmed?).to be(false)
+        end
+
+        it 'confirms again only what changed there' do
+          changed = imported(given: imported, net_price_cents: 2500)
+
+          expect(changed.drop(imported.size).map(&:class)).to eq([ImportedExpenseChanged, ExpenseFiled])
+        end
+
+        it 'changes nothing imported the same again' do
+          first = imported
+          expect(imported(given: first)).to eq(first)
+        end
+
+        it 'is filed again with a change at its source, its source winning over a correction here' do
+          corrected = file(imported, **import_form(description: 'Pret - Corrected here'))
+          changed = imported(given: corrected, net_price_cents: 9900, category: 'general', vat_treatment: 'no_vat')
+          doc = expense(changed).context
+
+          expect(changed.drop(corrected.size).map(&:class))
+            .to eq([ImportedExpenseChanged, CategoryChosen, VatTreatmentConfirmed, ExpenseFiled])
+          expect(value(changed)).to eq(Filed)
+          expect(doc.filed).to eq(import_form(net_price_cents: 9900))
+          expect(doc).to have_attributes(category: 'general', category_chosen?: true, vat_treatment: 'no_vat')
+          expect(imported(given: changed, net_price_cents: 9900, category: 'general', vat_treatment: 'no_vat')).to eq(changed)
+        end
+
+        it 'applies a change at its source while in review, keeping a person’s choice while it’s incomplete' do
+          given = choose(imported(vat_treatment: nil), 'travel')
+          changed = imported(given:, description: 'Pret - Dinner', vat_treatment: nil)
+          doc = expense(changed).context
+
+          expect(changed.drop(given.size).map(&:class)).to eq([ImportedExpenseChanged])
+          expect(value(changed)).to eq(reviewing(category: CategoryConfirmed))
+          expect(doc.draft).to eq(import_form(description: 'Pret - Dinner'))
+          expect(doc.category).to eq('travel')
+        end
+
+        it 'files it once a change at its source brings all it takes, as its source has it' do
+          given = choose(imported(vat_treatment: nil), 'travel')
+          changed = imported(given:)
+          doc = expense(changed).context
+
+          expect(changed.drop(given.size).map(&:class)).to include(ImportedExpenseChanged, ExpenseFiled)
+          expect(value(changed)).to eq(Filed)
+          expect(doc).to have_attributes(category: 'accommodation_and_meals', category_chosen?: true,
+                                         vat_treatment: 'domestic', vat_treatment_confirmed?: true)
+        end
+
+        it 'ignores an import of another source’s expense, or another id' do
+          first = imported
+          expect(imported(given: first, external_id: '999', description: 'Other')).to eq(first)
+          expect(imported(given: first, source: 'xero', description: 'Other')).to eq(first)
+        end
+
+        it 'takes none once voided or discarded' do
+          voided = history(cmd(VoidExpense, reason: 'Duplicate'), given: imported)
+          discarded = history(cmd(DiscardExpense), given: imported(vat_treatment: nil))
+
+          [voided, discarded].each do |closed|
+            expect(expense(closed).handles_command?(cmd(ImportExpense, **import(net_price_cents: 1)))).to be(false)
+          end
+        end
+      end
     end
   end
 end

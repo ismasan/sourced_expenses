@@ -25,12 +25,17 @@ module Expenses
   #   no_vat          exempt, outside scope, or not a tax
   VAT_TREATMENTS = %w[domestic import reverse_charge foreign_vat no_vat].freeze
 
-  # The accounting category an expense is booked under, and what goes in
-  # it: the descriptions are what Expenses::CategoryJudge shows the model.
-  # Modelled on the default expense categories of UK bookkeeping apps (FreeAgent's
-  # admin expenses, Xero's chart of accounts), which split costs the way a
-  # small company's tax return does. A model suggests one (Expenses::Categorizer);
-  # a person's choice is final.
+  # The baseline of accounting categories an expense is booked under, and
+  # what goes in each: the descriptions are what Expenses::CategoryJudge
+  # shows the model. Modelled on the default expense categories of UK
+  # bookkeeping apps (FreeAgent's admin expenses, Xero's chart of accounts),
+  # which split costs the way a small company's tax return does.
+  #
+  # Not the only ones: a category is any key (Expense::Category), and every
+  # one an expense has had is in Expenses::CategoryList, a source's own
+  # among them (FreeAgent's "Use of home" is use_of_home). The model chooses
+  # among these and those (Expenses::Categorizer); a person's choice is
+  # final.
   CATEGORIES = {
     'accommodation_and_meals' => ['Accommodation and meals', 'Hotels, lodging, and meals while travelling away from home on business'],
     'accountancy_and_legal' => ['Accountancy and legal', 'Accountants, bookkeepers, solicitors, company formation and filing fees'],
@@ -60,8 +65,12 @@ module Expenses
     'general' => ['General expenses', 'Business costs that fit none of the other categories']
   }.freeze
 
-  # A category's name for people.
-  def self.category_label(key) = CATEGORIES.dig(key, 0) || key
+  # A category's name for people: the baseline's, or else the one it came
+  # with (CategoryList), or else its key, made readable.
+  def self.category_label(key) = CATEGORIES.dig(key, 0) || CategoryList.label(key) || key.to_s.tr('_', ' ').capitalize
+
+  # The key for a category named +name+: "Use of home" is use_of_home.
+  def self.category_key(name) = name.to_s.downcase.gsub('&', ' and ').gsub(/[^a-z0-9]+/, '_').gsub(/\A_+|_+\z/, '')
 
   def self.machines = [Document, Expense]
 end

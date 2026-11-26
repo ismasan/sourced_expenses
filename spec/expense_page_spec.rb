@@ -185,6 +185,67 @@ module Expenses
       end
     end
 
+    describe 'imported from FreeAgent' do
+      let(:expense_id) { "freeagent-#{SecureRandom.hex(4)}" }
+
+      def import(**overrides)
+        ecmd(Expense::ImportExpense, source: 'freeagent', external_id: expense_id.delete_prefix('freeagent-'),
+                                     filing_country: 'GB', description: 'Pret - Lunch', net_price_cents: 2000,
+                                     tax_amount_cents: 400, currency: 'GBP', incurred_on: Date.new(2026, 11, 18),
+                                     category: 'accommodation_and_meals', source_category: 'Accommodation and Meals',
+                                     vat_treatment: 'domestic', **overrides)
+      end
+
+      def at(*commands)
+        expense!(expense_id, import, *commands)
+        get "/expenses/#{expense_id}"
+        last_response.body
+      end
+
+      it 'shows it filed as it is on FreeAgent, a correction here to be made there' do
+        body = at
+
+        expect(body).to include('Pret - Lunch', 'Filed, as it is on FreeAgent', 'Accommodation and meals', 'Domestic',
+                                'FreeAgent’s next change to it replaces a correction made here', 'record-page__body--no-preview')
+        expect(body).not_to include('Read from its document', 'Scan again', 'Its document')
+      end
+
+      it 'says where it came from, with FreeAgent’s category to confirm, when it couldn’t be filed' do
+        expense!(expense_id, import(vat_treatment: nil))
+        get "/expenses/#{expense_id}"
+
+        expect(last_response.body).to include('Imported from FreeAgent', 'Category on FreeAgent: ', 'Accommodation and meals')
+      end
+
+      it 'links to it on FreeAgent, when the import knows where' do
+        url = 'https://example.freeagent.com/users/42/expenses/7/edit'
+        expense!(expense_id, import(external_url: url))
+        get "/expenses/#{expense_id}"
+
+        expect(last_response.body).to include(%(href="#{url}"), 'Open in FreeAgent')
+      end
+
+      it 'offers a source’s own category to choose, by its name' do
+        db = Sidereal.config['db']
+        db.transaction(rollback: :always, auto_savepoint: true) do
+          db[:categories].insert(key: 'use_of_home', label: 'Use of home', source: 'freeagent', first_seen_at: Time.now)
+          body = at
+
+          expect(body).to include('<option value="use_of_home">Use of home</option>')
+        end
+      end
+
+      it 'has no link without one' do
+        expect(at).not_to include('Open in FreeAgent')
+      end
+
+      it 'shows a change on FreeAgent, filed again' do
+        body = at(import(description: 'Pret - Brunch', net_price_cents: 3000))
+
+        expect(body).to include('Filed, as it is on FreeAgent', 'Pret - Brunch', '34.00 GBP')
+      end
+    end
+
     describe 'its history' do
       it 'lists its events, newest first' do
         body = at(*reviewed)

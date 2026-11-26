@@ -21,7 +21,7 @@ module UI
         @total = total
         @search = search
         # In the list's order, however they came.
-        @categories = Expenses::CATEGORIES.keys & categories
+        @categories = Expenses::CategoryList.all(Sidereal.config['db']).map(&:key) & categories
       end
 
       def view_template

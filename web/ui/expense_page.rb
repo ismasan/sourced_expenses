@@ -136,7 +136,7 @@ module UI
       end
 
       # A draft's figures are tentative; a person's are their own.
-      p(class: 'filed__note') { 'Read from its document: check it against the file.' } unless @doc.entered?
+      render_origin
       net, tax, currency = draft.values_at(:net_price_cents, :tax_amount_cents, :currency)
       tax = tax.to_i
       dl(class: 'filed') do
@@ -168,7 +168,11 @@ module UI
           if @doc.category_chosen?
             plain 'Category: '
             strong { Expenses.category_label(@doc.category) }
-          elsif (suggestion = @doc.category_suggestion)
+          elsif (suggestion = @doc.category_suggestion) && suggestion[:source]
+            plain "Category on #{source_name}: "
+            strong { Expenses.category_label(suggestion[:category]) }
+            span(class: 'filed__note') { '. Choose it to confirm, or choose another.' }
+          elsif suggestion
             plain 'Suggested category: '
             strong { Expenses.category_label(suggestion[:category]) }
             span(class: 'filed__note') { format(' (%d%% sure). Choose it to confirm, or choose another.', suggestion[:probability] * 100) }
@@ -188,8 +192,9 @@ module UI
           f.payload_fields(expense_id: @id)
           select(name: 'command[payload][category]', aria: { label: 'Category' }) do
             option(value: '', disabled: true, selected: @doc.category.nil?) { 'Choose a category' }
-            Expenses::CATEGORIES.each do |key, (label, description)|
-              option(value: key, title: description, selected: key == @doc.category) { label }
+            # The baseline's, then every other one expenses have had.
+            Expenses::CategoryList.all(Sidereal.config['db']).each do |choice|
+              option(value: choice.key, title: choice.description, selected: choice.key == @doc.category) { choice.label }
             end
           end
           if suggested
@@ -278,9 +283,39 @@ module UI
       end
     end
 
+    # Where the form's figures came from, when they aren't a person's: what
+    # to check them against.
+    def render_origin
+      if @doc.imported?
+        p(class: 'filed__note') do
+          plain "Imported from #{source_name}: check it, then confirm its category and VAT treatment."
+          render_source_link
+        end
+      elsif @doc.document? && !@doc.entered?
+        p(class: 'filed__note') { 'Read from its document: check it against the file.' }
+      end
+    end
+
+    # The system an imported expense came from, as a person reads it.
+    SOURCES = { 'freeagent' => 'FreeAgent' }.freeze
+    def source_name = SOURCES.fetch(@doc.source, @doc.source)
+
+    # A link to it on the system it was imported from, when it has one.
+    def render_source_link
+      return unless @doc.external_url
+
+      plain ' '
+      a(href: @doc.external_url, target: '_blank', rel: 'noopener') { "Open in #{source_name}" }
+    end
+
     def render_filed
       filed = @doc.filed
-      lead('Filed. It’s in your expenses.')
+      if @doc.imported?
+        lead("Filed, as it is on #{source_name}. It’s in your expenses.")
+        p(class: 'filed__note') { render_source_link } if @doc.external_url
+      else
+        lead('Filed. It’s in your expenses.')
+      end
       dl(class: 'filed') do
         dt { 'Description' }
         dd { filed[:description] }
@@ -302,6 +337,9 @@ module UI
 
       details(class: 'filed__edit') do
         summary { 'Correct it' }
+        if @doc.imported?
+          p(class: 'filed__note') { "#{source_name}’s next change to it replaces a correction made here: correct it there." }
+        end
         render_form('Save changes')
       end
 

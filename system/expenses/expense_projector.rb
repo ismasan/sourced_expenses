@@ -23,6 +23,10 @@ module Expenses
       doc.enter!(evt.payload.to_h.except(:expense_id))
     end
 
+    IMPORT = proc { |doc, evt| doc.import!(evt.payload.to_h.except(:expense_id)) }
+    evolve E::ExpenseImported, &IMPORT
+    evolve E::ImportedExpenseChanged, &IMPORT
+
     evolve E::DocumentAttached do |doc, evt|
       doc.document_id = evt.payload.document_id
     end

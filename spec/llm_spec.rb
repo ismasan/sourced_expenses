@@ -45,7 +45,7 @@ RSpec.describe Expenses::LLM do
 
   it 'says so for a judgment provider that answers no judgments' do
     with_env('ANTHROPIC_API_KEY' => 'sk-ant-test') do
-      expect { llm(judgment_provider: 'anthropic', judgment_model: 'claude-sonnet-4-5').categorize(description: 'Uber') }
+      expect { llm(judgment_provider: 'anthropic', judgment_model: 'claude-sonnet-4-5').categorize(categories: { 'travel' => 'Travel' }, description: 'Uber') }
         .to raise_error(described_class::Error, "Anthropic doesn't answer judgments: choose another LLM_JUDGMENT_PROVIDER")
     end
   end

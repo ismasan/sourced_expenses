@@ -33,6 +33,7 @@ Sequel.migration do
     create_table(:expenses) do
       String :expense_id, primary_key: true
       String :document_id                                     # the document attached, if any
+      String :source                                          # the system it was imported from, if any
       String :machine, text: true, null: false, default: '[]' # the machine's paths, JSON
       String :description
       String :vendor

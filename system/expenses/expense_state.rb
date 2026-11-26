@@ -2,12 +2,13 @@
 
 module Expenses
   # What an Expense machine knows about its expense: the document attached
-  # to it, if any, the form a person reviews (a draft's tentative figures,
-  # or a person's own), the filed expense, its total in the reporting
+  # to it, or the system it was imported from, if any, the form a person
+  # reviews (a draft's tentative figures, a person's own, or its source's), the filed expense, its total in the reporting
   # currency, its category and its VAT treatment. Nothing about scanning.
   # The machine's position is the machine's own.
   class ExpenseState
     attr_accessor :expense_id, :document_id, :filing_country, :vendor, :drafted, :entered, :draft, :filed,
+                  :source, :external_id, :external_url, :imported, :source_category, :source_vat_treatment,
                   :confirmed_vat_treatment, :converted, :conversion_failure, :category,
                   :category_suggestion, :category_chosen, :categorization_failure
 
@@ -44,6 +45,42 @@ module Expenses
     # and the document's ids) would change nothing: the same draft again.
     def drafted?(payload) = drafted == payload
 
+    # ---- Imported ----
+
+    # Whether it was imported from another system (+source+).
+    def imported? = !source.nil?
+
+    # Whether an import has all it takes to file it as it is: a category, a
+    # VAT treatment and a description. Its source's books are trusted.
+    def self.complete_import?(payload)
+      !payload[:category].nil? && !payload[:vat_treatment].nil? && !payload[:description].to_s.strip.empty?
+    end
+
+    # Its source's figures (the first import, or changed there since) are
+    # the form. Its source's category is a suggestion, until one is chosen;
+    # its VAT treatment, the one suggested. A complete import confirms both
+    # with their own events (CategoryChosen, VatTreatmentConfirmed).
+    def import!(payload)
+      self.imported = payload
+      self.source = payload[:source]
+      self.external_id = payload[:external_id]
+      self.external_url = payload[:external_url]
+      self.filing_country = payload[:filing_country]
+      self.source_category = payload[:source_category]
+      self.source_vat_treatment = payload[:vat_treatment]
+      self.draft = payload.slice(*Expense::DRAFT)
+      return if category_chosen? || payload[:category].nil?
+
+      self.category = payload[:category]
+      self.category_suggestion = { category: payload[:category], source: }
+    end
+
+    # Whether ImportExpense with +payload+ (without the expense's id) is this
+    # expense's, changed at its source since it was last imported.
+    def import_changed?(payload)
+      imported? && payload[:source] == source && payload[:external_id] == external_id && payload != imported
+    end
+
     # ---- VAT treatment ----
 
     # Never the model's call: it depends on whose books the expense is in,
@@ -58,9 +95,12 @@ module Expenses
       'foreign_vat'
     end
 
-    # The rule's treatment for +draft+ (Expense::DRAFT's fields), or nil
-    # with no figures to go on (nothing read, nothing filled in yet).
-    def self.suggested_vat_treatment(draft, filing_country:)
+    # The treatment to suggest for +draft+ (Expense::DRAFT's fields): its
+    # source's (+source_vat_treatment+, an imported expense's), or else the
+    # rule's, or nil with no figures to go on (nothing read, nothing filled
+    # in yet). ExpenseList suggests through here too.
+    def self.suggested_vat_treatment(draft, filing_country:, source_vat_treatment: nil)
+      return source_vat_treatment if source_vat_treatment
       return nil if draft[:tax_amount_cents].nil?
 
       infer_vat_treatment(
@@ -71,7 +111,7 @@ module Expenses
 
     # The rule's treatment for the form as it stands (the draft, or what
     # was filed).
-    def suggested_vat_treatment = self.class.suggested_vat_treatment(draft, filing_country:)
+    def suggested_vat_treatment = self.class.suggested_vat_treatment(draft, filing_country:, source_vat_treatment:)
 
     # The treatment in force: the person's, or else the rule's suggestion.
     def vat_treatment = confirmed_vat_treatment || suggested_vat_treatment

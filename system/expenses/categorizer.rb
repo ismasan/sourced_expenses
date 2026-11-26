@@ -19,7 +19,7 @@ module Expenses
   class Categorizer < Sourced::Decider
     partition_by expense_id: Types::ExpenseID
 
-    dep :llm
+    dep :llm, :db
 
     E = Expense
 
@@ -28,7 +28,7 @@ module Expenses
     # person has chosen one.
     context { { expense: {}, suggested_for: nil, chosen: false } }
 
-    # Its figures, drafted, redrafted or entered: what the model is told.
+    # Its figures, drafted, redrafted, entered or imported: what the model is told.
     FIGURES = proc do |state, evt|
       p = evt.payload.to_h
       total = p[:net_price_cents] && (p[:net_price_cents] + p[:tax_amount_cents].to_i)
@@ -36,10 +36,17 @@ module Expenses
         description: p[:description], vendor: p[:vendor], tax_description: p[:tax_description],
         supplier_country: p[:supplier_country_code], total: total && format('%.2f %s', total / 100.0, p[:currency])
       }
+      state[:expense][:category_at_source] = p[:source_category] if p[:source_category]
+      # An imported expense's category at its source, mapped onto ours, is
+      # its suggestion already: the model is only asked about one that
+      # doesn't map, and told its name there.
+      state[:hinted] = !p[:category].nil?
     end
     evolve E::ExpenseDrafted, &FIGURES
     evolve E::ExpenseRedrafted, &FIGURES
     evolve E::ExpenseEntered, &FIGURES
+    evolve E::ExpenseImported, &FIGURES
+    evolve E::ImportedExpenseChanged, &FIGURES
 
     evolve E::CategorySuggested do |state, evt|
       state[:suggested_for] = evt.payload.description
@@ -63,6 +70,14 @@ module Expenses
       categorize(redrafted, state)
     end
 
+    reaction E::ExpenseImported => E::SuggestCategory | E::FailCategorization | nil do |state, imported|
+      categorize(imported, state)
+    end
+
+    reaction E::ImportedExpenseChanged => E::SuggestCategory | E::FailCategorization | nil do |state, changed|
+      categorize(changed, state)
+    end
+
     reaction E::ExpenseEntered => E::SuggestCategory | E::FailCategorization | nil do |state, entered|
       categorize(entered, state)
     end
@@ -75,14 +90,14 @@ module Expenses
     # description already.
     def categorize(trigger, state)
       return unless projection.current?(trigger)
-      return if state[:chosen]
+      return if state[:chosen] || state[:hinted]
 
       expense = state[:expense]
       description = expense[:description]
       return if description.nil? || description.strip.empty? || state[:suggested_for] == description
 
       expense_id = trigger.payload.expense_id
-      dispatch(E::SuggestCategory, expense_id:, description:, **llm.categorize(**expense))
+      dispatch(E::SuggestCategory, expense_id:, description:, **llm.categorize(categories: Expenses.judged_categories(CategoryList.all(db)), **expense))
     rescue LLM::Error => e
       dispatch(E::FailCategorization, expense_id:, description:, reason: e.message)
     end

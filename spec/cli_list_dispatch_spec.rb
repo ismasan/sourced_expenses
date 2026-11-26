@@ -106,7 +106,7 @@ RSpec.describe 'bin/sid expenses list | dispatch' do
 
     it 'refuses filters it does not know' do
       expect { list('--state', 'lost') }.to raise_error(Sidereal::CLI::Error, 'No such state: lost')
-      expect { list('--category', 'snacks') }.to raise_error(Sidereal::CLI::Error, 'No such category: snacks')
+      expect { list('--category', 'Use of home') }.to raise_error(Sidereal::CLI::Error, 'No such category: Use of home')
       expect { list('--category-status', 'maybe') }.to raise_error(Sidereal::CLI::Error, /suggested, chosen, none/)
       expect { list('--vat-status', 'maybe') }.to raise_error(Sidereal::CLI::Error, /suggested, confirmed, none/)
     end
@@ -134,10 +134,10 @@ RSpec.describe 'bin/sid expenses list | dispatch' do
     end
 
     it 'sends nothing if any line is invalid' do
-      input = %({"expense_id":"#{suggested}","category":"travel"}\n{"expense_id":"#{none}","category":"snacks"}\n)
+      input = %({"expense_id":"#{suggested}","category":"travel"}\n{"expense_id":"#{none}","category":"Snacks!"}\n)
 
       expect { dispatch(input, 'expenses.choose_category') }
-        .to raise_error(Sidereal::CLI::Error, /Nothing dispatched.*Line 2: --category: must be included/m)
+        .to raise_error(Sidereal::CLI::Error, /Nothing dispatched.*Line 2: --category:/m)
       expect(choices).not_to include(suggested)
     end
   end

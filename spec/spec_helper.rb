@@ -19,7 +19,7 @@ Sidereal.config.config!('sidereal.secret_key_base') { 's' * 64 }
 # +category+ (a Hash, or an LLM::Error to raise), asked about in
 # +categorized+.
 class FakeLLM
-  attr_reader :calls, :categorized
+  attr_reader :calls, :categorized, :choices
   attr_accessor :answers, :category
 
   def initialize = reset!
@@ -31,7 +31,9 @@ class FakeLLM
     @category = { category: 'general', probability: 0.5 }
   end
 
-  def categorize(**expense)
+  # +categories+, the choices it was given, are in +choices+.
+  def categorize(categories:, **expense)
+    @choices = categories
     @categorized << expense
     raise category if category.is_a?(Exception)
 

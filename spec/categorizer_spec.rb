@@ -45,6 +45,47 @@ module Expenses
     # The suggestion for +event+, recorded on the expense.
     def suggest(event, given:) = history(cmd(Expense::SuggestCategory, **payload(dispatched(event).first)), given:)
 
+    describe 'an imported expense' do
+      def import(**overrides)
+        cmd(Expense::ImportExpense, source: 'freeagent', external_id: '123', filing_country: 'GB', description: 'Pret - Lunch',
+                                    net_price_cents: 2000, tax_amount_cents: 400, currency: 'GBP', incurred_on: date,
+                                    category: 'accommodation_and_meals', source_category: 'Accommodation and Meals',
+                                    vat_treatment: 'domestic', **overrides)
+      end
+
+      it 'asks the model nothing when its source’s category is one of ours' do
+        imported = history(import)
+
+        expect(dispatched(last(Expense::ExpenseImported, imported))).to be_empty
+        expect(FAKE_LLM.categorized).to be_empty
+      end
+
+      it 'asks the model about one whose category isn’t, telling it the name there' do
+        FAKE_LLM.category = { category: 'software', probability: 0.8 }
+        imported = history(import(category: nil, source_category: 'Web Hosting', description: 'Hosting'))
+
+        expect(dispatched(last(Expense::ExpenseImported, imported)).map(&:class)).to eq([Expense::SuggestCategory])
+        expect(FAKE_LLM.categorized).to eq([{ description: 'Hosting', vendor: nil, tax_description: nil,
+                                              supplier_country: nil, total: '24.00 GBP', category_at_source: 'Web Hosting' }])
+      end
+
+      # Filed as its source had it, its category is chosen: a change there
+      # without one keeps it, asking the model nothing.
+      it 'asks nothing when it changes there without a category, once its category is chosen' do
+        imported = history(import)
+        changed = history(import(category: nil, source_category: 'Sundries', description: 'Odds and ends'), given: imported)
+
+        expect(dispatched(last(Expense::ImportedExpenseChanged, changed))).to be_empty
+        expect(Expense.new(expense_id:).tap { it.evolve(changed) }.context).to have_attributes(category_chosen?: true)
+      end
+    end
+
+    it 'tells the model no category at a source for what wasn’t imported' do
+      history(*reviewing).then { dispatched(last(Expense::ExpenseDrafted, it)) }
+
+      expect(FAKE_LLM.categorized.first).not_to have_key(:category_at_source)
+    end
+
     it 'suggests a category once drafted, from the draft' do
       FAKE_LLM.category = { category: 'travel', probability: 0.93 }
       scanned = history(*reviewing)
@@ -54,6 +95,20 @@ module Expenses
       ])
       expect(FAKE_LLM.categorized).to eq([{ description: 'Uber - Trip', vendor: 'Uber', tax_description: nil,
                                             supplier_country: 'GB', total: '18.50 GBP' }])
+    end
+
+    it 'offers the model the baseline and every other category expenses have had' do
+      db = Sidereal.config['db']
+      db.transaction(rollback: :always, auto_savepoint: true) do
+        db[:categories].insert(key: 'use_of_home', label: 'Use of home', source: 'freeagent', first_seen_at: Time.now)
+        entered = history(cmd(Expense::EnterExpense, filing_country: 'GB', description: 'Home office heating',
+                                                     net_price_cents: 2600, currency: 'GBP', incurred_on: date))
+        dispatched(last(Expense::ExpenseEntered, entered))
+
+        expect(FAKE_LLM.choices).to include('use_of_home' => 'Use of home',
+                                            'travel' => start_with('Travel: Flights, trains'))
+        expect(FAKE_LLM.choices.keys.first(Expenses::CATEGORIES.size)).to eq(Expenses::CATEGORIES.keys)
+      end
     end
 
     it 'suggests for an expense entered by hand, with no document' do
@@ -163,8 +218,11 @@ module Expenses
         expect(doc(later)).to have_attributes(category: 'travel', category_chosen?: true)
       end
 
-      it 'refuses a category that is not on the list' do
-        expect(cmd(Expense::ChooseCategory, category: 'snacks')).not_to be_valid
+      # Any category is one: the baseline's or another (CategoryList).
+      it 'takes any category key, refusing one that is not a key' do
+        expect(cmd(Expense::ChooseCategory, category: 'use_of_home')).to be_valid
+        expect(cmd(Expense::ChooseCategory, category: 'Use of home')).not_to be_valid
+        expect(cmd(Expense::ChooseCategory, category: '')).not_to be_valid
       end
 
       it 'lists the category, the suggestion until a person chooses' do

@@ -52,12 +52,13 @@ module Expenses
     end
 
     # +expense+, what's known about it (description, vendor and the like:
-    # nils are left out), judged against CATEGORIES.
-    # @return [Hash] +category+ (a CATEGORIES key) and its +probability+
+    # nils are left out), judged against +categories+ ({ key => what goes in
+    # it }, CategoryJudge's).
+    # @return [Hash] +category+ (one of +categories+' keys) and its +probability+
     # @raise [LLM::Error] as #ask
-    def categorize(**expense)
+    def categorize(categories:, **expense)
       answer = rescuing(judgment_provider, judgment_model) do
-        CategoryJudge.judge(expense.compact, context: context(judgment_provider), model: judgment_model,
+        CategoryJudge.judge(expense.compact, categories:, context: context(judgment_provider), model: judgment_model,
                                              provider: judgment_provider).category
       end
       { category: answer.choice, probability: answer.probabilities.fetch(answer.choice).to_f.round(4) }

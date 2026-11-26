@@ -91,6 +91,46 @@ module Expenses
       expect(row).to have_attributes(category: 'business_entertaining', category_chosen: true)
     end
 
+    describe 'imported' do
+      let(:expense_id) { "freeagent-#{SecureRandom.hex(4)}" }
+
+      def import(**overrides)
+        cmd(Expense::ImportExpense, source: 'freeagent', external_id: expense_id.delete_prefix('freeagent-'),
+                                    filing_country: 'GB', description: 'Pret - Lunch', net_price_cents: 2000,
+                                    tax_amount_cents: 400, currency: 'GBP', incurred_on: Date.new(2026, 11, 18),
+                                    category: 'accommodation_and_meals', source_category: 'Accommodation and Meals',
+                                    vat_treatment: 'domestic', **overrides)
+      end
+
+      let(:imported) { after(import) }
+
+      it 'lists it filed, with its source, its source’s category and VAT treatment confirmed' do
+        project(imported)
+
+        expect(row).to have_attributes(
+          machine: ['filed'], source: 'freeagent', document_id: nil, description: 'Pret - Lunch',
+          total_cents: 2400, currency: 'GBP', category: 'accommodation_and_meals', category_chosen: true,
+          vat_treatment: 'domestic', vat_confirmed: true
+        )
+      end
+
+      it 'lists one without all it takes in review, its source’s category a suggestion' do
+        project(after(import(vat_treatment: nil)))
+
+        expect(row).to have_attributes(machine: include('reviewing'), category: 'accommodation_and_meals',
+                                       category_chosen: false, vat_confirmed: false)
+      end
+
+      it 'takes a change at its source, filed again as it is there' do
+        changed = after(import(description: 'Pret - Dinner', category: 'general', vat_treatment: 'no_vat', tax_amount_cents: 0),
+                        given: imported)
+        project(imported, changed - imported)
+
+        expect(row).to have_attributes(machine: ['filed'], description: 'Pret - Dinner', total_cents: 2000,
+                                       category: 'general', category_chosen: true, vat_treatment: 'no_vat')
+      end
+    end
+
     it 'shows what was filed' do
       filed = after(cmd(Expense::ChooseCategory, category: 'travel'), cmd(Expense::ConfirmVatTreatment, treatment: 'domestic'),
                     cmd(Expense::SaveExpense, description: 'Team lunch', net_price_cents: 3000, tax_amount_cents: 630,

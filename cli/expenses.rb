@@ -120,7 +120,7 @@ module CLI
         raise Sidereal::CLI::Error, "No such state: #{unknown.join(', ')}" if unknown.any?
 
         categories = list(:category)
-        unknown = categories - ::Expenses::CATEGORIES.keys
+        unknown = categories.reject { ::Expenses::Expense::Category === it }
         raise Sidereal::CLI::Error, "No such category: #{unknown.join(', ')}" if unknown.any?
 
         filing_countries = list(:filing_country).map(&:upcase)

@@ -61,6 +61,15 @@ module Expenses
       expect(row).to be_nil
     end
 
+    it 'records an imported expense, filed as its source has it, in its source’s category' do
+      import = cmd(Expense::ImportExpense, source: 'freeagent', external_id: '1', filing_country: 'GB', description: 'Home office',
+                                           net_price_cents: 2600, tax_amount_cents: 0, currency: 'GBP', incurred_on: date,
+                                           category: 'use_of_home', source_category: 'Use of home', vat_treatment: 'no_vat')
+      project(import)
+
+      expect(row).to include(amount_cents: 2600, currency: 'GBP', incurred_on: date, category: 'use_of_home')
+    end
+
     it 'records a filed expense, its conversion to come' do
       project(*reviewed, save)
 

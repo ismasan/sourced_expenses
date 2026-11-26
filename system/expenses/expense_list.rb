@@ -22,13 +22,13 @@ module Expenses
 
     dep :db
 
-    Row = ::Data.define(:expense_id, :document_id, :machine, :description, :vendor, :total_cents, :currency,
+    Row = ::Data.define(:expense_id, :document_id, :source, :machine, :description, :vendor, :total_cents, :currency,
                         :incurred_on, :category, :category_chosen, :vat_treatment, :vat_confirmed,
                         :filing_country, :created_at, :updated_at) do
       def in?(path) = machine.include?(path)
     end
 
-    COLUMNS = %i[document_id machine description vendor total_cents currency incurred_on category
+    COLUMNS = %i[document_id source machine description vendor total_cents currency incurred_on category
                  category_chosen filing_country vat_treatment vat_confirmed created_at updated_at].freeze
 
     # The machine's paths are a JSON array: whether +path+ is one of them.
@@ -181,8 +181,11 @@ module Expenses
       end
     end
 
-    # Its figures, drafted, redrafted (its document read again) or entered: what they say, and the VAT treatment the rule suggests from
-    # them, unless a person has confirmed one.
+    # Its figures, drafted, redrafted (its document read again), entered or
+    # imported (or changed at its source while in review): what they say,
+    # and the VAT treatment suggested for them (the source's, or the
+    # rule's), unless a person has confirmed one. An imported expense's
+    # category is its source's, until a person chooses one.
     FIGURES = proc do |row, evt|
       p = evt.payload.to_h
       row[:created_at] ||= evt.created_at
@@ -191,10 +194,17 @@ module Expenses
         vendor: p[:vendor], currency: p[:currency], incurred_on: p[:incurred_on],
         total_cents: p[:net_price_cents] && (p[:net_price_cents] + p[:tax_amount_cents].to_i)
       )
-      row[:vat_treatment] = ExpenseState.suggested_vat_treatment(p, filing_country: p[:filing_country]) unless row[:vat_confirmed]
+      unless row[:vat_confirmed]
+        row[:vat_treatment] = ExpenseState.suggested_vat_treatment(p, filing_country: p[:filing_country],
+                                                                      source_vat_treatment: p[:vat_treatment])
+      end
+      row[:source] = p[:source] if p[:source]
+      row[:category] = p[:category] if p[:category] && !row[:category_chosen]
     end
     evolve Expense::ExpenseDrafted, &FIGURES
     evolve Expense::ExpenseRedrafted, &FIGURES
+    evolve Expense::ExpenseImported, &FIGURES
+    evolve Expense::ImportedExpenseChanged, &FIGURES
     evolve Expense::ExpenseEntered, &FIGURES
 
     evolve Expense::DocumentAttached do |row, evt|

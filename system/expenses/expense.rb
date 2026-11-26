@@ -12,15 +12,22 @@ module Expenses
   # Each source starts it with its own command, under an id of its choosing:
   # a scanned document drafts it (DraftExpenseFromDocument, with the
   # document's id: ExpenseDrafted and DocumentAttached), a person enters it
-  # (EnterExpense, a UUID: ExpenseEntered).
+  # (EnterExpense, a UUID: ExpenseEntered), another system's expense is
+  # imported (ImportExpense, the source's name and its id there, e.g.
+  # freeagent-123: ExpenseImported, then CategoryChosen,
+  # VatTreatmentConfirmed and ExpenseFiled: its source's books are trusted,
+  # so it's filed as it is there).
   #
-  #   initial ─DraftExpenseFromDocument | EnterExpense─▶ reviewing ─done─▶ reviewed ─SaveExpense─▶ filed ⟲ SaveExpense
+  #   initial ─DraftExpenseFromDocument | EnterExpense | ImportExpense─▶ reviewing ─done─▶ reviewed ─SaveExpense─▶ filed ⟲ SaveExpense
   #
   #   reviewing:  category  ─ChooseCategory──────▶ category_confirmed
   #               vat       ─ConfirmVatTreatment─▶ vat_confirmed
   #
   #   filed ─VoidExpense─▶ voided;  reviewing, reviewed ─DiscardExpense─▶ discarded
   #   reviewing, reviewed ⟲ DraftExpenseFromDocument (its attached document read again: a new draft)
+  #   initial ─ImportExpense─▶ filed (its source's category and VAT treatment, confirmed),
+  #                          or reviewing, for one without them (to choose here)
+  #   reviewing, reviewed, filed ⟲ ImportExpense (changed at its source: applied, and filed again once filed)
   #   reviewing, reviewed, filed ⟲ SuggestCategory | FailCategorization | ChooseCategory | ConfirmVatTreatment
   #
   # The model never writes the expense and never decides its tax treatment:
@@ -137,7 +144,9 @@ module Expenses
       attribute :reason, Types::String.present
     end
 
-    Category = Types::String.options(CATEGORIES.keys)
+    # A category's key: the baseline's (CATEGORIES), or any other, as
+    # Expenses.category_key makes them.
+    Category = Types::String[/\A[a-z0-9]+(?:_[a-z0-9]+)*\z/]
 
     # The model's category for the expense, from Expenses::Categorizer:
     # +probability+ is how likely it thinks its pick (0 to 1), and
@@ -163,6 +172,38 @@ module Expenses
     # A person's VAT treatment: for good, until they confirm another.
     ConfirmVatTreatment = Command(:confirm_vat_treatment) do
       attribute :treatment, Types::String.options(VAT_TREATMENTS)
+    end
+
+    VatTreatment = Types::String.options(VAT_TREATMENTS)
+
+    # Another system's expense, as it is there now: +source+ names the
+    # system (freeagent), +external_id+ is the expense's id there, and the
+    # expense's own id is made from both. +category+ and +vat_treatment+ are
+    # the source's, mapped onto ours where they can be: suggestions here, for
+    # a person to confirm. +source_category+ is the category's name there.
+    # The source's books are trusted: the first files the expense, its
+    # category and VAT treatment confirmed, if it has them (and a
+    # description), and otherwise starts it in review. Another applies what
+    # changed there, filing it again once filed: the source wins over a
+    # correction made here. The same again changes nothing.
+    ImportExpense = Command(:import_expense) do
+      attribute :expense_id, Types::ExpenseID
+      attribute :source, Types::String.present
+      attribute :external_id, Types::String.present
+      attribute :external_url, Types::String.nullable.default(nil)
+      attribute :filing_country, CountryCode
+      attribute :description, Types::String.nullable.default(nil)
+      attribute :net_price_cents, Integer
+      attribute :tax_amount_cents, Integer
+      attribute :tax_description, Types::String.nullable.default(nil)
+      attribute :currency, CurrencyCode
+      attribute :incurred_on, Date
+      attribute :supplier_country_code, CountryCode.nullable.default(nil)
+      attribute :reverse_charge, Types::Boolean.default(false)
+      attribute :payment_reference, Types::String.nullable.default(nil)
+      attribute :category, Category.nullable.default(nil)
+      attribute :source_category, Types::String.nullable.default(nil)
+      attribute :vat_treatment, VatTreatment.nullable.default(nil)
     end
 
     # ---- Events ----
@@ -195,6 +236,47 @@ module Expenses
       attribute :supplier_country_code, Types::String.nullable
       attribute :reverse_charge, Types::Boolean.nullable
       attribute :payment_reference, Types::String.nullable
+    end
+
+    # Another system's expense, its figures as they are there.
+    ExpenseImported = Event(:expense_imported) do
+      attribute :source, String
+      attribute :external_id, String
+      attribute :external_url, Types::String.nullable.default(nil)
+      attribute :filing_country, String
+      attribute :description, Types::String.nullable
+      attribute :net_price_cents, Integer
+      attribute :tax_amount_cents, Integer
+      attribute :tax_description, Types::String.nullable
+      attribute :currency, String
+      attribute :incurred_on, Date
+      attribute :supplier_country_code, Types::String.nullable
+      attribute :reverse_charge, Types::Boolean
+      attribute :payment_reference, Types::String.nullable
+      attribute :category, Types::String.nullable
+      attribute :source_category, Types::String.nullable
+      attribute :vat_treatment, Types::String.nullable
+    end
+
+    # Changed at its source while in review here: its new figures are the
+    # form.
+    ImportedExpenseChanged = Event(:imported_expense_changed) do
+      attribute :source, String
+      attribute :external_id, String
+      attribute :external_url, Types::String.nullable.default(nil)
+      attribute :filing_country, String
+      attribute :description, Types::String.nullable
+      attribute :net_price_cents, Integer
+      attribute :tax_amount_cents, Integer
+      attribute :tax_description, Types::String.nullable
+      attribute :currency, String
+      attribute :incurred_on, Date
+      attribute :supplier_country_code, Types::String.nullable
+      attribute :reverse_charge, Types::Boolean
+      attribute :payment_reference, Types::String.nullable
+      attribute :category, Types::String.nullable
+      attribute :source_category, Types::String.nullable
+      attribute :vat_treatment, Types::String.nullable
     end
 
     # A person's own figures.
@@ -317,7 +399,47 @@ module Expenses
       end
     end
 
+    # A complete import as its source has it: its category and VAT
+    # treatment confirmed (those that differ from what's in force: taken
+    # before any is appended, as appending evolves +doc+), and filed.
+    FILE_IMPORT = proc do |doc, cmd|
+      category, treatment = cmd.payload.category, cmd.payload.vat_treatment
+      choose = !doc.category_chosen? || doc.category != category
+      confirm = !doc.vat_treatment_confirmed? || doc.vat_treatment != treatment
+      event CategoryChosen, category: category if choose
+      event VatTreatmentConfirmed, treatment: treatment if confirm
+      event ExpenseFiled, cmd.payload
+    end
+
+    # Its source's expense again: changed there, or not. Only for the same
+    # source and id; the same figures again change nothing. A change that
+    # brings all it takes to file it files it, as its source has it, its
+    # category and VAT treatment confirmed: in review, or filed again once
+    # filed.
+    REIMPORT = proc do
+      command ImportExpense => Filed | nil do |doc, cmd|
+        next unless doc.import_changed?(cmd.payload.to_h.except(:expense_id))
+
+        filed = !doc.filed.nil?
+        event ImportedExpenseChanged, cmd.payload
+        next unless ExpenseState.complete_import?(cmd.payload.to_h)
+
+        instance_exec(doc, cmd, &FILE_IMPORT)
+        to Filed unless filed
+      end
+    end
+
     initial do
+      command ImportExpense => Filed | Reviewing do |doc, cmd|
+        event ExpenseImported, cmd.payload
+        if ExpenseState.complete_import?(cmd.payload.to_h)
+          instance_exec(doc, cmd, &FILE_IMPORT)
+          to Filed
+        else
+          to Reviewing
+        end
+      end
+
       command DraftExpenseFromDocument => Reviewing do |_doc, cmd|
         event ExpenseDrafted, cmd.payload
         event DocumentAttached, cmd.payload
@@ -356,6 +478,7 @@ module Expenses
       instance_exec(&CHANGE_REVIEW)
       instance_exec(&SUGGEST_CATEGORY)
       instance_exec(&REDRAFT)
+      instance_exec(&REIMPORT)
       command DiscardExpense => Discarded
     end
 
@@ -365,6 +488,7 @@ module Expenses
       instance_exec(&SUGGEST_CATEGORY)
       instance_exec(&CHANGE_REVIEW)
       instance_exec(&REDRAFT)
+      instance_exec(&REIMPORT)
       command DiscardExpense => Discarded
     end
 
@@ -373,6 +497,7 @@ module Expenses
     # draft changes nothing: what was filed stands.
     state Filed do
       command SaveExpense => Filed, &FILE_EXPENSE
+      instance_exec(&REIMPORT)
       instance_exec(&SUGGEST_CATEGORY)
       instance_exec(&CHANGE_REVIEW)
 
