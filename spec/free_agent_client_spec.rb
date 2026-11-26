@@ -40,15 +40,32 @@ RSpec.describe Integrations::FreeAgent::Client do
                 now:)
   end
 
-  # The form posted to the token endpoint, and its Basic auth.
-  def token_posts
-    posts = []
+  # Every request is made with Net::HTTP#request: the token endpoint's
+  # posts, answered from @token_responses, and the API's, recorded in
+  # +api_calls+ and answered by #answer.
+  let(:token_calls) { [] }
+  let(:api_calls) { [] }
+
+  before do
     allow(http).to receive(:request) do |request|
-      posts << { path: request.path, form: URI.decode_www_form(request.body).to_h, auth: request['Authorization'] }
-      @token_responses.shift
+      if request.path.end_with?('/token_endpoint')
+        token_calls << { path: request.path, form: URI.decode_www_form(request.body).to_h, auth: request['Authorization'] }
+        @token_responses.shift
+      else
+        api_calls << request
+        @api_answer.respond_to?(:call) ? @api_answer.call(request) : @api_answer
+      end
     end
-    posts
   end
+
+  # What the API answers: +response+ every time, or the block's for each request.
+  def answer(response = nil, &block) = @api_answer = block || response
+
+  # The form posted to the token endpoint, and its Basic auth.
+  def token_posts = token_calls
+
+  # An API request as [its method, its path].
+  def call(request) = [request.method, request.path]
 
   describe Integrations::FreeAgent::Tokens do
     it 'keeps one set of tokens, the latest' do
@@ -134,37 +151,34 @@ RSpec.describe Integrations::FreeAgent::Client do
 
     it 'reads a page of expenses changed since a time, with its access token' do
       connect!
-      asked = nil
-      allow(http).to receive(:get) do |path, headers|
-        asked = [path, headers]
-        ok({ 'expenses' => [expense] })
-      end
+      answer ok({ 'expenses' => [expense] })
 
       page = client.expenses(updated_since: Time.new(2026, 11, 20, 11, 0, 0, '+01:00'), page: 2)
 
       expect(page).to eq(described_class::Page.new(expenses: [expense], next_page: nil))
-      path, headers = asked
-      expect(path).to start_with('/v2/expenses?')
-      expect(URI.decode_www_form(URI(path).query).to_h)
+      request = api_calls.last
+      expect(request.method).to eq('GET')
+      expect(request.path).to start_with('/v2/expenses?')
+      expect(URI.decode_www_form(URI(request.path).query).to_h)
         .to eq('page' => '2', 'per_page' => '100', 'updated_since' => '2026-11-20T10:00:00Z')
-      expect(headers).to include('Authorization' => 'Bearer old-access', 'Accept' => 'application/json',
-                                 'User-Agent' => 'sourced-expenses')
+      expect([request['Authorization'], request['Accept'], request['User-Agent']])
+        .to eq(['Bearer old-access', 'application/json', 'sourced-expenses'])
     end
 
     it 'reads every expense without a time' do
       connect!
-      allow(http).to receive(:get).and_return(ok({ 'expenses' => [] }))
+      answer ok({ 'expenses' => [] })
 
       client.expenses
 
-      expect(http).to have_received(:get).with('/v2/expenses?page=1&per_page=100', anything)
+      expect(api_calls.map { call(it) }).to eq([['GET', '/v2/expenses?page=1&per_page=100']])
     end
 
     it 'finds the next page in the Link header' do
       connect!
       link = '<https://api.freeagent.com/v2/expenses?page=3&per_page=100>; rel="next", ' \
              '<https://api.freeagent.com/v2/expenses?page=9&per_page=100>; rel="last"'
-      allow(http).to receive(:get).and_return(ok({ 'expenses' => [expense] }, Link: link))
+      answer ok({ 'expenses' => [expense] }, Link: link)
 
       expect(client.expenses(page: 2).next_page).to eq(3)
     end
@@ -173,12 +187,12 @@ RSpec.describe Integrations::FreeAgent::Client do
       connect!(expired: true)
       @token_responses = [ok(token_answer(access: 'fresh', refresh: 'rotated'))]
       posts = token_posts
-      allow(http).to receive(:get).and_return(ok({ 'expenses' => [] }))
+      answer ok({ 'expenses' => [] })
 
       client.expenses
 
       expect(posts.map { it[:form] }).to eq([{ 'grant_type' => 'refresh_token', 'refresh_token' => 'old-refresh' }])
-      expect(http).to have_received(:get).with(anything, hash_including('Authorization' => 'Bearer fresh'))
+      expect(api_calls.map { it['Authorization'] }).to eq(['Bearer fresh'])
       expect(tokens.load).to have_attributes(access_token: 'fresh', refresh_token: 'rotated')
     end
 
@@ -187,21 +201,21 @@ RSpec.describe Integrations::FreeAgent::Client do
       @token_responses = [ok(token_answer(access: 'fresh', refresh: 'rotated'))]
       posts = token_posts
       answers = [response(Net::HTTPUnauthorized, '401'), ok({ 'expenses' => [expense] })]
-      allow(http).to receive(:get) { answers.shift }
+      answer { answers.shift }
 
       expect(client.expenses.expenses).to eq([expense])
       expect(posts.size).to eq(1)
-      expect(http).to have_received(:get).with(anything, hash_including('Authorization' => 'Bearer fresh'))
+      expect(api_calls.map { it['Authorization'] }).to eq(['Bearer old-access', 'Bearer fresh'])
     end
 
     it 'gives up when it is refused again' do
       connect!
       @token_responses = [ok(token_answer)]
       token_posts
-      allow(http).to receive(:get).and_return(response(Net::HTTPUnauthorized, '401'))
+      answer response(Net::HTTPUnauthorized, '401')
 
       expect { client.expenses }.to raise_error(Integrations::FreeAgent::Error, 'FreeAgent refused the access token: connect it again')
-      expect(http).to have_received(:get).twice
+      expect(api_calls.size).to eq(2)
     end
 
     it 'says it isn’t connected without tokens' do
@@ -216,7 +230,7 @@ RSpec.describe Integrations::FreeAgent::Client do
         response(Net::HTTPInternalServerError, '500') => 'FreeAgent answered 500',
         response(Net::HTTPOK, '200', '<html>') => 'FreeAgent sent an answer that could not be read'
       }.each do |answer, message|
-        allow(http).to receive(:get).and_return(answer)
+        answer(answer)
         expect { client.expenses }.to raise_error(Integrations::FreeAgent::Error, message)
       end
     end
@@ -233,11 +247,78 @@ RSpec.describe Integrations::FreeAgent::Client do
   describe '#web_url' do
     it 'is the company’s own site, from its subdomain, read once' do
       connect!
-      allow(http).to receive(:get).and_return(ok({ 'company' => { 'subdomain' => 'acme', 'name' => 'Acme Ltd' } }))
+      answer ok({ 'company' => { 'subdomain' => 'acme', 'name' => 'Acme Ltd' } })
 
       expect(client.web_url).to eq('https://acme.freeagent.com')
       client.web_url
-      expect(http).to have_received(:get).once.with('/v2/company', anything)
+      expect(api_calls.map { call(it) }).to eq([['GET', '/v2/company']])
+    end
+  end
+
+  describe 'writing expenses' do
+    let(:url) { 'https://api.freeagent.com/v2/expenses/77' }
+    let(:attributes) { { user: 'https://api.freeagent.com/v2/users/1', description: 'Lunch', gross_value: '-24.00' } }
+
+    it 'creates one, wrapped as FreeAgent takes it, and answers with its url' do
+      connect!
+      answer response(Net::HTTPCreated, '201', JSON.generate({ 'expense' => {} }), Location: url)
+
+      expect(client.create_expense(attributes)).to eq(url)
+      request = api_calls.last
+      expect(call(request)).to eq(['POST', '/v2/expenses'])
+      expect(request['Content-Type']).to eq('application/json')
+      expect(JSON.parse(request.body)).to eq('expense' => attributes.transform_keys(&:to_s))
+    end
+
+    it 'says why FreeAgent refused one' do
+      connect!
+      refused = JSON.generate({ 'errors' => { 'error' => { 'message' => 'Category is not valid' } } })
+      answer response(Net::HTTPUnprocessableEntity, '422', refused)
+
+      expect { client.create_expense(attributes) }
+        .to raise_error(Integrations::FreeAgent::Error, 'FreeAgent refused it: Category is not valid')
+    end
+
+    # A create that didn't answer may have been done: it's never tried again.
+    it 'says FreeAgent couldn’t be reached, distinctly, asking once' do
+      connect!
+      allow(Net::HTTP).to receive(:start).and_raise(Net::ReadTimeout)
+
+      expect { client.create_expense(attributes) }.to raise_error(Integrations::FreeAgent::Unreachable)
+      expect(Net::HTTP).to have_received(:start).once
+    end
+
+    it 'updates and deletes one at its url, a gone one counting as deleted' do
+      connect!
+      answer ok({})
+      client.update_expense(url, attributes)
+      expect(call(api_calls.last)).to eq(['PUT', '/v2/expenses/77'])
+      expect(JSON.parse(api_calls.last.body)).to eq('expense' => attributes.transform_keys(&:to_s))
+
+      client.delete_expense(url)
+      expect(call(api_calls.last)).to eq(['DELETE', '/v2/expenses/77'])
+
+      answer response(Net::HTTPNotFound, '404')
+      expect { client.delete_expense(url) }.not_to raise_error
+    end
+
+    it 'reads who it claims them for once: the connected person' do
+      connect!
+      answer ok({ 'user' => { 'url' => 'https://api.freeagent.com/v2/users/1', 'role' => 'Director' } })
+
+      2.times { expect(client.current_user_url).to eq('https://api.freeagent.com/v2/users/1') }
+      expect(api_calls.map { call(it) }).to eq([['GET', '/v2/users/me']])
+    end
+
+    it 'forgets who it was, and the company, once disconnected' do
+      connect!
+      answer ok({ 'user' => { 'url' => 'https://api.freeagent.com/v2/users/1' } })
+      client.current_user_url
+      client.disconnect
+      connect!
+      answer ok({ 'user' => { 'url' => 'https://api.freeagent.com/v2/users/2' } })
+
+      expect(client.current_user_url).to eq('https://api.freeagent.com/v2/users/2')
     end
   end
 
@@ -248,7 +329,7 @@ RSpec.describe Integrations::FreeAgent::Client do
 
     it 'reads every group of categories, by url, once' do
       connect!
-      allow(http).to receive(:get).and_return(ok({
+      answer(ok({
                                                    'admin_expenses_categories' => [category('285', 'Accommodation and Meals')],
                                                    'cost_of_sales_categories' => [category('101', 'Cost of Sales')],
                                                    'income_categories' => [],
@@ -262,7 +343,7 @@ RSpec.describe Integrations::FreeAgent::Client do
       expect(categories['https://api.freeagent.com/v2/categories/285'])
         .to eq(described_class::Category.new(url: 'https://api.freeagent.com/v2/categories/285', nominal_code: '285',
                                              description: 'Accommodation and Meals'))
-      expect(http).to have_received(:get).once.with('/v2/categories', anything)
+      expect(api_calls.map { call(it) }).to eq([['GET', '/v2/categories']])
     end
   end
 end

@@ -32,8 +32,10 @@ Sidereal.config.tap do |c|
             description: "Where FreeAgent sends a person back to once connected, as the app has it in the dashboard: this app's callback when unset (FREEAGENT_REDIRECT_URI)")
   c.declare('freeagent.tokens', Sidereal::Types::Interface[:load, :save, :clear],
             description: 'The OAuth tokens a person connected FreeAgent with, kept in the database')
-  c.declare('freeagent', Sidereal::Types::Interface[:expenses, :categories, :web_url, :configured?, :connected?, :disconnect],
-            description: "FreeAgent's API client, to import expenses")
+  c.declare('freeagent', Sidereal::Types::Interface[:expenses, :categories, :web_url, :configured?, :connected?, :disconnect,
+                                                          :current_user_url, :company_currency, :create_expense,
+                                                          :update_expense, :delete_expense],
+            description: "FreeAgent's API client, to import expenses and upload them")
 
   c.env(
     'FREEAGENT_CLIENT_ID' => 'freeagent.client_id',

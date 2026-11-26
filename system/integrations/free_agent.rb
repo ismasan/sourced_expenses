@@ -9,5 +9,9 @@ module Integrations
     # Something FreeAgent couldn't do, put for a person to read: not connected,
     # the tokens refused, rate limited, unreachable.
     Error = Class.new(StandardError)
+
+    # FreeAgent couldn't be reached, or didn't answer in time: what was asked
+    # may or may not have been done there.
+    Unreachable = Class.new(Error)
   end
 end

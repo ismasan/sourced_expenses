@@ -70,7 +70,12 @@ module Integrations
         @tokens.save(token_request(grant_type: 'authorization_code', code:, redirect_uri:))
       end
 
-      def disconnect = @tokens.clear
+      # Forgets the tokens, and what was read with them: another account may
+      # be connected next.
+      def disconnect
+        @tokens.clear
+        @company = @current_user_url = @categories = nil
+      end
 
       # Expenses updated since +updated_since+ (any, for nil), a page at a
       # time.
@@ -89,10 +94,55 @@ module Integrations
       # @return [String]
       # @raise [Error]
       def web_url
-        @web_url ||= begin
-          subdomain = parse(get('/company')).dig('company', 'subdomain') or raise Error, 'FreeAgent sent no company subdomain'
-          "https://#{subdomain}.#{sandbox? ? 'sandbox.' : ''}freeagent.com"
-        end
+        subdomain = company['subdomain'] or raise Error, 'FreeAgent sent no company subdomain'
+        "https://#{subdomain}.#{sandbox? ? 'sandbox.' : ''}freeagent.com"
+      end
+
+      # The company's own currency (its +currency+), or nil if FreeAgent sends
+      # none.
+      # @return [String, nil]
+      # @raise [Error]
+      def company_currency = company['currency']
+
+      # The company FreeAgent answers for: read once.
+      # @return [Hash]
+      # @raise [Error]
+      def company
+        @company ||= parse(get('/company')).fetch('company') { raise Error, 'FreeAgent sent no company' }
+      end
+
+      # The connected person's own url: who the expenses this app creates are
+      # claimed by. Read once.
+      # @return [String]
+      # @raise [Error]
+      def current_user_url
+        @current_user_url ||= parse(get('/users/me')).dig('user', 'url') or raise Error, 'FreeAgent sent no user'
+      end
+
+      # Creates an expense (+attributes+: FreeAgent's), claimed by
+      # +attributes[:user]+.
+      # @return [String] its url, from the Location FreeAgent answers with
+      # @raise [Unreachable] when it may or may not have been created
+      # @raise [Error]
+      def create_expense(attributes)
+        response = request(Net::HTTP::Post, '/expenses', body: { expense: attributes })
+        response['Location'] || parse(response).dig('expense', 'url') or raise Error, 'FreeAgent sent no url for the expense'
+      end
+
+      # Updates the expense at +url+ with +attributes+.
+      # @raise [Error]
+      def update_expense(url, attributes)
+        request(Net::HTTP::Put, url, body: { expense: attributes })
+        nil
+      end
+
+      # Deletes the expense at +url+: done already, if FreeAgent has none there.
+      # @raise [Error]
+      def delete_expense(url)
+        request(Net::HTTP::Delete, url)
+        nil
+      rescue Error => e
+        raise unless e.message == 'FreeAgent answered 404'
       end
 
       # Every category the company has, by url (an expense's +category+).
@@ -111,18 +161,29 @@ module Integrations
 
       private
 
-      def get(path, query = {}, retried: false)
+      def get(path, query = {}) = request(Net::HTTP::Get, path, query:)
+
+      # +method+ (a Net::HTTP request class) at +path+, with +body+ as JSON:
+      # the token refreshed first if it's about to expire, and once more if
+      # FreeAgent refuses it (nothing was done then, so it's safe to ask
+      # again). Never retried otherwise: a create that timed out may have
+      # been done.
+      def request(method, path, query: {}, body: nil, retried: false)
         token = access_token
-        uri = URI("#{@base_url}#{path}")
+        uri = URI(path.start_with?('http') ? path : "#{@base_url}#{path}")
         uri.query = URI.encode_www_form(query) if query.any?
-        response = http(uri) do |http|
-          http.get(uri.request_uri, 'Authorization' => "Bearer #{token.access_token}", 'Accept' => 'application/json',
-                                    'User-Agent' => USER_AGENT)
+        req = method.new(uri)
+        req['Authorization'] = "Bearer #{token.access_token}"
+        req['Accept'] = 'application/json'
+        req['User-Agent'] = USER_AGENT
+        if body
+          req['Content-Type'] = 'application/json'
+          req.body = JSON.generate(body)
         end
-        # Refused: the token may have been revoked or rotated under us. Once.
+        response = http(uri) { it.request(req) }
         if response.is_a?(Net::HTTPUnauthorized) && !retried
           refresh(token)
-          return get(path, query, retried: true)
+          return request(method, path, query:, body:, retried: true)
         end
 
         check(response)
@@ -157,7 +218,7 @@ module Integrations
         Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == 'https', open_timeout: @timeout,
                                             read_timeout: @timeout, &)
       rescue Timeout::Error, SystemCallError, SocketError, OpenSSL::SSL::SSLError, IOError
-        raise Error, 'FreeAgent could not be reached'
+        raise Unreachable, 'FreeAgent could not be reached'
       end
 
       def check(response)
@@ -166,8 +227,24 @@ module Integrations
         when Net::HTTPTooManyRequests
           raise Error, "FreeAgent is rate limiting requests: try again in #{response['Retry-After'] || 60} seconds"
         when Net::HTTPUnauthorized then raise Error, 'FreeAgent refused the access token: connect it again'
+        when Net::HTTPUnprocessableEntity, Net::HTTPBadRequest
+          raise Error, "FreeAgent refused it: #{refusal(response) || response.code}"
         else raise Error, "FreeAgent answered #{response.code}"
         end
+      end
+
+      # FreeAgent's reason for refusing a request, from its errors (one, or a
+      # list), or nil.
+      def refusal(response)
+        errors = JSON.parse(response.body.to_s)['errors']
+        list = case errors
+               when Hash then errors.key?('error') ? [errors['error']].flatten : errors.values
+               else Array(errors)
+               end
+        messages = list.filter_map { it.is_a?(Hash) ? it['message'] : it.to_s }
+        messages.join('; ') unless messages.empty?
+      rescue JSON::ParserError
+        nil
       end
 
       def parse(response)

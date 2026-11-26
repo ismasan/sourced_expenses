@@ -81,8 +81,8 @@ Sidereal.config.config!('exchange_rates') { FAKE_RATES }
 # +connects+ are the codes #connect was given, which raises +connect_error+
 # if set.
 class FakeFreeAgent
-  attr_reader :calls, :connects
-  attr_accessor :pages, :categories, :connected, :configured, :connect_error
+  attr_reader :calls, :connects, :writes
+  attr_accessor :pages, :categories, :connected, :configured, :connect_error, :write_error, :company_currency
 
   def initialize = reset!
 
@@ -94,6 +94,10 @@ class FakeFreeAgent
     @configured = true
     @connects = []
     @connect_error = nil
+    @writes = []
+    @write_error = nil
+    @company_currency = 'GBP'
+    @next_id = 900
   end
 
   def configured? = configured
@@ -114,6 +118,32 @@ class FakeFreeAgent
   def web_url = 'https://example.freeagent.com'
 
   def disconnect = @connected = false
+
+  def current_user_url = 'https://api.freeagent.test/v2/users/1'
+
+  # Writes, recorded as [:create | :update | :delete, url, attributes];
+  # +write_error+ raised instead, when set.
+  def create_expense(attributes)
+    raise write_error if write_error
+
+    url = "https://api.freeagent.test/v2/expenses/#{@next_id += 1}"
+    @writes << [:create, url, attributes]
+    url
+  end
+
+  def update_expense(url, attributes)
+    raise write_error if write_error
+
+    @writes << [:update, url, attributes]
+    nil
+  end
+
+  def delete_expense(url)
+    raise write_error if write_error
+
+    @writes << [:delete, url, nil]
+    nil
+  end
 
   def expenses(updated_since: nil, page: 1)
     @calls << { updated_since:, page: }
