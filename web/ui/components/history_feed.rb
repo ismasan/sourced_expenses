@@ -4,8 +4,10 @@ module UI
   module Components
     # Adapted from the sourced_machine demo's.
     #
-    # A stream's messages in log order, each linking to the page as it was
-    # once that message was in its history. The arrows step back and forth from
+    # A stream's messages in log order. Clicking one opens its trail
+    # (MessageTrail): the whole workflow it's part of, across streams, with a
+    # link to the page as it was once that message was in its history (where
+    # its own link goes, in a new tab). The arrows step back and forth from
     # the step on screen. Commands, transitions (which move a machine) and
     # data events (which only change its domain state) are marked apart.
     class HistoryFeed < Sidereal::Components::BaseComponent
@@ -46,6 +48,8 @@ module UI
             end
           end
 
+          MessageTrail.placeholder(self)
+
           if @messages.empty?
             p(class: 'history__empty') { 'No messages yet.' }
           else
@@ -80,7 +84,8 @@ module UI
         current = step == @current_step
         future = step > @current_step
         li(class: ['history__item', "history__item--#{kind}", ('is-current' if current), ('is-future' if future)]) do
-          a(class: 'history__link', href: @step_href.call(step), aria: { current: current ? 'step' : nil }, data: travel(step)) do
+          a(class: 'history__link', href: @step_href.call(step), aria: { current: current ? 'step' : nil },
+            title: 'Show its trail', data: trail(message, step)) do
             span(class: 'history__step') { step.to_s }
             span(class: 'history__body') do
               span(class: 'history__type') do
@@ -104,6 +109,12 @@ module UI
       # request with the page and push its URL) instead of loading it. The href
       # stays, for a new tab.
       def travel(step) = { 'on:click__prevent' => "@get('#{@step_href.call(step)}')" }
+
+      # A message's link opens its trail, which links to its step.
+      def trail(message, step)
+        query = URI.encode_www_form(at: @step_href.call(step))
+        { 'on:click__prevent' => "@get('/messages/#{message.id}/trail?#{query}')" }
+      end
 
       def kind_of(message)
         if message in Sourced::Command then :command

@@ -71,6 +71,7 @@ class App < Sidereal::App
   component UI::Components::FreeAgentDisconnect
   component UI::Components::FreeAgentUploadStatus
   component UI::Components::HistoryFeed
+  component UI::Components::MessageTrail
   component UI::Components::LedgerTotal
   component UI::Components::MonthChart
 
@@ -103,6 +104,20 @@ class App < Sidereal::App
 
   get '/documents/:document_id/diagram/at/:step' do |document_id:, step:|
     render_in_place(at(UI::DocumentDiagramPage, document_id, step))
+  end
+
+  # A message's trail (UI::Components::MessageTrail), in a dialog patched
+  # over the page it was clicked on: +at+ is that page at the message's
+  # step, linked from it. Anything but a Datastar request goes there.
+  get '/messages/:message_id/trail' do |message_id:|
+    at = request.params['at'].to_s
+    at = nil unless at.match?(%r{\A/[A-Za-z0-9/_-]*\z})
+    redirect(at || '/', status: 303) unless browser.sse?
+
+    entries = UI::Components::MessageTrail.entries(message_id)
+    browser.stream(heartbeat: false) do |sse|
+      sse.patch_elements UI::Components::MessageTrail.new(entries, selected: message_id, at:), mode: 'replace'
+    end
   end
 
   # The search box's preview of what's typed (UI::Components::Search),

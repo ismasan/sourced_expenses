@@ -1,0 +1,100 @@
+/* ---- A message's trail: its correlation's messages as a tree, in a dialog.
+   Neutral like the history it opens from; commands, checkpoints and data
+   told apart by the same marks, and by the weight of their edge. ---- */
+
+.trail {
+  margin: auto;
+  width: min(96vw, 56rem);
+  max-width: none;
+  max-height: 90vh;
+  padding: 0;
+  color: var(--ink);
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+}
+.trail[open] { display: flex; flex-direction: column; }
+.trail::backdrop { background: rgba(0, 0, 0, 0.6); }
+
+.trail__bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 0.6rem 0.75rem 1.25rem;
+  border-bottom: 2px solid var(--ink);
+}
+.trail__bar > * + * { margin-top: 0; }
+.trail__heading { flex: 1; min-width: 0; }
+.trail__title { margin: 0; font-size: 1.35rem; font-weight: 800; letter-spacing: -0.01em; }
+.trail__summary { margin: 0.1rem 0 0; font-size: 0.85rem; color: var(--ink-2); }
+.trail__at { font-size: 0.95rem; font-weight: 600; white-space: nowrap; }
+.trail__close {
+  width: 2.25rem;
+  height: 2.25rem;
+  justify-content: center;
+  padding: 0;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--ink);
+  background: none;
+  border-radius: var(--radius);
+}
+.trail__close:hover { background: var(--wash); }
+
+.trail__body { overflow: auto; padding: 1rem 1.25rem 1.5rem; background: var(--wash); }
+.trail__empty { color: var(--ink-2); }
+
+/* The tree: each message under the one that caused it, joined by rules. */
+.trail__tree,
+.trail__children { list-style: none; margin: 0; padding: 0; }
+/* A level in each rem: a scan's chain runs a dozen deep. */
+.trail__children { margin-left: 0.45rem; padding-left: 0.55rem; border-left: 1px solid var(--rule); }
+.trail__node { position: relative; margin: 0.5rem 0 0; }
+.trail__children > .trail__node::before {
+  content: "";
+  position: absolute;
+  top: 1.15rem;
+  left: -0.55rem;
+  width: 0.55rem;
+  border-top: 1px solid var(--rule);
+}
+
+.trail__card {
+  display: grid;
+  min-width: 22rem;
+  gap: 0.2rem;
+  padding: 0.55rem 0.75rem;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-left: 4px solid var(--ink);
+  border-radius: var(--radius);
+}
+.trail__card > * + * { margin-top: 0; }
+.trail__card--checkpoint { border-left-color: var(--closed); }
+.trail__card--data { border-left-width: 2px; }
+.trail__card--unknown { border-left-style: dashed; border-left-color: var(--closed); }
+.trail__card.is-selected { outline: 3px solid var(--working); outline-offset: 1px; }
+
+.trail__line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.6rem; }
+.trail__position { font-size: 0.8rem; font-weight: 700; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.trail__kind { font-size: 0.78rem; font-weight: 500; color: var(--ink-2); }
+.trail__card--checkpoint .trail__kind::before { content: "◆ "; }
+.trail__card--command .trail__kind::before { content: "▶ "; }
+.trail__type { flex: 1; min-width: 0; font-size: 0.95rem; font-weight: 700; overflow-wrap: anywhere; }
+.trail__time { font-size: 0.78rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+.trail__meta { display: flex; flex-wrap: wrap; gap: 0.2rem 0.75rem; font-size: 0.82rem; color: var(--ink-2); }
+.trail__meta:empty { display: none; }
+.trail__by { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; }
+.trail__record { font-weight: 600; }
+
+.trail__payload { font-size: 0.82rem; }
+.trail__payload summary { cursor: pointer; color: var(--ink-2); font-weight: 600; }
+.trail__payload pre {
+  margin: 0.35rem 0 0;
+  padding: 0.6rem 0.75rem;
+  overflow-x: auto;
+  font-size: 0.78rem;
+  background: var(--wash);
+  border-radius: var(--radius);
+}
