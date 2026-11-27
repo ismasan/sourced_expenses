@@ -39,6 +39,13 @@ body:has(.expenses-page) .topnav__bar { max-width: 66rem; }
 }
 .topnav__link:hover { border-bottom-color: var(--rule); }
 .topnav__link[aria-current="page"] { border-bottom-color: var(--ink); }
+/* A link shown as its icon alone: its text stays for screen readers, and
+   shows in the narrow menu. */
+.topnav__link--icon { display: flex; align-items: center; gap: 0.5rem; height: 100%; }
+.topnav__icon { display: block; flex: none; }
+.topnav__link--icon .topnav__link-label {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
 
 .topnav__toggle { display: none; }
 
@@ -90,4 +97,5 @@ body:has(.expenses-page) .topnav__bar { max-width: 66rem; }
   .topnav__link { padding: 0.75rem 0; border-block: 0; border-bottom: 1px solid var(--rule); }
   .topnav__link[aria-current="page"] { border-bottom-color: var(--rule); text-decoration: underline; }
   .topnav__links li:last-child .topnav__link { border-bottom: 0; }
+  .topnav__link--icon .topnav__link-label { position: static; width: auto; height: auto; clip-path: none; }
 }
