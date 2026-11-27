@@ -2,9 +2,9 @@
 
 require 'sourced/testing/rspec'
 
-module Integrations
-  class FreeAgentUpload
-    RSpec.describe FreeAgentUpload do
+module FreeAgent
+  class Upload
+    RSpec.describe Upload do
       include Sourced::Testing::RSpec
 
       let(:store) { Sidereal.config['sourced.store'] }
@@ -27,13 +27,13 @@ module Integrations
       def ucmd(klass, **payload) = ecmd(klass, **payload)
 
       def settings!(*commands)
-        account = FreeAgentSettings::ACCOUNT
+        account = Settings::ACCOUNT
         given = @settings || []
-        @settings = decided(FreeAgentSettings, { account: }, *commands.map { it.new(payload: { account: }) }, given:)
+        @settings = decided(Settings, { account: }, *commands.map { it.new(payload: { account: }) }, given:)
         store.append(@settings.drop(given.size))
       end
 
-      def uploads_on! = settings!(FreeAgentSettings::TurnUploadsOn)
+      def uploads_on! = settings!(Settings::TurnUploadsOn)
 
       def form(**overrides)
         { description: 'Train to Leeds', net_price_cents: 2000, tax_amount_cents: 400, currency: 'GBP',
@@ -54,7 +54,7 @@ module Integrations
       # +history+.
       def react(history, message)
         messages = nil
-        history.reduce(with_reactor(FreeAgentUpload, expense_id:)) { |gwt, msg| gwt.given(msg) }
+        history.reduce(with_reactor(Upload, expense_id:)) { |gwt, msg| gwt.given(msg) }
                .when(message).then { messages = it.messages }
         messages
       end
@@ -65,7 +65,7 @@ module Integrations
       # it settles (unless +settle+ is false).
       def feed(history, messages, settle: true)
         fed = messages.reduce(history) { |h, message| h + [message, *react(h, message)] }
-        entering = fed.drop(history.size).reverse.find { it.class.name.start_with?(FreeAgentUpload.name) }
+        entering = fed.drop(history.size).reverse.find { it.class.name.start_with?(Upload.name) }
         settle && entering ? settle(fed, entering:) : fed
       end
 
@@ -89,18 +89,18 @@ module Integrations
 
       # The upload, decided on one of its own commands (a person's, or a
       # timeout), then settled.
-      def own(history, command) = settle(decided(FreeAgentUpload, { expense_id: }, command, given: history))
+      def own(history, command) = settle(decided(Upload, { expense_id: }, command, given: history))
       def recorded(history, klass) = history.grep(klass).select { it.payload.destination == 'freeagent' }
 
       # The upload after the expense's history, as it arrives.
       def uploaded(expense_history) = feed([], expense_history)
-      def uploads(history) = history.grep(FreeAgentUpload::Uploading)
+      def uploads(history) = history.grep(Upload::Uploading)
 
-      def run(history) = FreeAgentUpload.new(expense_id:).tap { it.evolve(history) }
+      def run(history) = Upload.new(expense_id:).tap { it.evolve(history) }
       def value(history) = run(history).machine.value
 
       it 'is a valid chart' do
-        expect(FreeAgentUpload.to_h).to include(:states)
+        expect(Upload.to_h).to include(:states)
       end
 
       it 'creates an expense filed here on FreeAgent, keeping its url' do
@@ -130,7 +130,7 @@ module Integrations
         FAKE_FREEAGENT.connected = false
         expect(uploads(uploaded(filed_here))).to be_empty
 
-        settings!(FreeAgentSettings::TurnUploadsOff)
+        settings!(Settings::TurnUploadsOff)
         FAKE_FREEAGENT.connected = true
         expect(uploads(uploaded(filed_here))).to be_empty
         expect(FAKE_FREEAGENT.writes).to be_empty
@@ -154,7 +154,7 @@ module Integrations
                                         **form, supplier_country_code: nil, reverse_charge: false,
                                         category: 'travel', source_category: 'Travel', vat_treatment: 'domestic'))
 
-        expect(FreeAgentUpload.load(expense_id:).context[:imported]).to be(true)
+        expect(Upload.load(expense_id:).context[:imported]).to be(true)
       end
 
       # An expense drafted from a document whose file is +bytes+, filed.
@@ -280,7 +280,7 @@ module Integrations
 
         expect(value(failed)).to eq(Failed)
         expect(recorded(failed, E::ExpenseUploadFailed).map { [it.payload.reason, it.payload.unsure] })
-          .to eq([[FreeAgentUpload::TIMED_OUT, true]])
+          .to eq([[Upload::TIMED_OUT, true]])
       end
 
       it 'leaves alone a voided one it never uploaded' do
@@ -295,10 +295,10 @@ module Integrations
         uploads_on!
         done = uploaded(filed_here)
         uploads = recorded(done, E::ExpenseUploaded)
-        uploads.reduce(with_reactor(FreeAgentUploadList, expense_id:)) { |gwt, msg| gwt.given(msg) }.then! { nil }
+        uploads.reduce(with_reactor(UploadList, expense_id:)) { |gwt, msg| gwt.given(msg) }.then! { nil }
 
         id = uploads.first.payload.external_id
-        expect(FreeAgentUploadList.external_ids(Sidereal.config['db'])).to include(id)
+        expect(UploadList.external_ids(Sidereal.config['db'])).to include(id)
       end
     end
   end

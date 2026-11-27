@@ -1,20 +1,21 @@
 # frozen_string_literal: true
 
-module Integrations
+module FreeAgent
   # A FreeAgent account's settings, as a person sets them on its page: for
   # now, whether expenses filed here are uploaded to it
-  # (Integrations::FreeAgentUpload). Off until turned on.
+  # (Upload). Off until turned on.
   #
   #   initial, off ─TurnUploadsOn─▶ on ─TurnUploadsOff─▶ off
   #
   # Uploads only expenses filed while it's on: .uploads_on_since is when it
   # was last turned on, nil while it's off.
-  class FreeAgentSettings < Sourced::Machine
+  class Settings < Sourced::Machine
     partition_by account: Types::String.present
+    consumer_group 'freeagent.settings'
     message_prefix 'freeagent_settings'
 
-    # The one account there is, for now: FreeAgentImport's.
-    ACCOUNT = FreeAgentImport::ACCOUNT
+    # The one account there is, for now: Import's.
+    ACCOUNT = Import::ACCOUNT
 
     On = State(:on)
     Off = State(:off)

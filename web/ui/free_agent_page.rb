@@ -4,17 +4,17 @@ module UI
   # FreeAgent, as a source of expenses, among the integrations
   # (Components::IntegrationsLayout): how to set it up, connecting this app
   # to an account (App's /integrations/freeagent/connect and callback
-  # routes), the imports (Integrations::FreeAgentImport): the last run,
+  # routes), the imports (FreeAgent::Import): the last run,
   # and a button to start one, and whether expenses filed here are uploaded
-  # to it (Integrations::FreeAgentSettings, Integrations::FreeAgentUpload).
+  # to it (FreeAgent::Settings, FreeAgent::Upload).
   # Live: it follows the imports' events and the settings'.
   class FreeAgentPage < Page
     path '/integrations/freeagent'
     # Why connecting failed, from the callback.
     query_schema error?: Types::String.nullable
 
-    I = Integrations::FreeAgentImport
-    S = Integrations::FreeAgentSettings
+    I = FreeAgent::Import
+    S = FreeAgent::Settings
 
     on I, S
 
@@ -31,7 +31,7 @@ module UI
       new(Sidereal.config['freeagent'], history.machine, settings:, error: params[:error])
     end
 
-    # +settings+: FreeAgentSettings' snapshot (Sourced::Machine.load), or
+    # +settings+: FreeAgent::Settings' snapshot (Sourced::Machine.load), or
     # nil for its defaults.
     def initialize(client, import, settings: nil, error: nil)
       @client = client
@@ -150,7 +150,7 @@ module UI
     end
 
     # New or changed, and read again (each run reads from a little before
-    # where the last one finished: Integrations::FreeAgentImport::OVERLAP).
+    # where the last one finished: FreeAgent::Import::OVERLAP).
     # A run recorded before that was counted says how many it imported.
     def last_import_counts
       count, fresh = @run.values_at(:synced_count, :synced_fresh)
@@ -161,7 +161,7 @@ module UI
       again.positive? ? "#{text} (#{again} read again)" : text
     end
 
-    # When imports start by themselves: App's schedule (Integrations::FreeAgentImport::SCHEDULE),
+    # When imports start by themselves: App's schedule (FreeAgent::Import::SCHEDULE),
     # as declared, or that there's none.
     def render_schedule
       step = scheduled

@@ -117,9 +117,9 @@ stateDiagram-v2
 
 `bin/readme-diagrams` regenerates these from the code; the pre-commit hook runs it (enable with `git config core.hooksPath .githooks`).
 
-`Integrations::FreeAgentImport` (`system/integrations/free_agent_import.rb`, its FreeAgent client and mapping in `system/integrations/free_agent/`) imports a FreeAgent account's expenses, a run at a time. Entering `fetching` reads a page of the expenses changed there since the last run finished, dispatches an `ImportExpense` for each (`Integrations::FreeAgent::ExpenseMapping`) and `CompleteFetch` for itself, all in one reaction in its own consumer group. Where the next run starts moves only when one finishes. Another source would be another machine like it, sending `ImportExpense`.
+`FreeAgent::Import` (`system/freeagent/import.rb`, its FreeAgent client and mapping in `system/freeagent/lib/`) imports a FreeAgent account's expenses, a run at a time. Entering `fetching` reads a page of the expenses changed there since the last run finished, dispatches an `ImportExpense` for each (`FreeAgent::ExpenseMapping`) and `CompleteFetch` for itself, all in one reaction in its own consumer group. Where the next run starts moves only when one finishes. Another source would be another machine like it, sending `ImportExpense`.
 
-<!-- mermaid Integrations::FreeAgentImport -->
+<!-- mermaid FreeAgent::Import -->
 ```mermaid
 stateDiagram-v2
   [*] --> fetching : SyncFreeAgent
@@ -183,7 +183,7 @@ Expenses created or changed on [FreeAgent](https://www.freeagent.com) are import
 4. Connect your account on the FreeAgent page (`/integrations/freeagent`). Its tokens are kept in the database, never in the event store.
 5. Import: the app imports every day at 8am (server time; a named schedule in `web/app.rb`), and the page's button or `bin/sid expenses import freeagent` start one at any time. The first import reads everything, unless `--since` says from when, so run that one from the command line.
 
-`bin/sid expenses import --categories freeagent` lists FreeAgent's categories and which of the baseline's each is. One that is a baseline category under another name goes in `Integrations::FreeAgent::ExpenseMapping::ALIASES`; the rest are their own.
+`bin/sid expenses import --categories freeagent` lists FreeAgent's categories and which of the baseline's each is. One that is a baseline category under another name goes in `FreeAgent::ExpenseMapping::ALIASES`; the rest are their own.
 
 ## Docker
 
@@ -229,7 +229,7 @@ bin/sid expenses list --state reviewing --category-status suggested --json |
 
 | Path | |
 | --- | --- |
-| `system/` | Messages, machines, reactors, read models (no web): `expenses/` the expenses (`Expenses`), `documents/` reading uploaded documents into them (`Documents`), `integrations/` importing them from other systems (`Integrations`) |
+| `system/` | Messages, machines, reactors, read models (no web): `expenses/` the expenses (`Expenses`), `documents/` reading uploaded documents into them (`Documents`), `freeagent/` importing them from FreeAgent and uploading them to it (`FreeAgent`; its reactors there, their helpers in `freeagent/lib/`) |
 | `web/app.rb`, `web/ui/` | Web app, pages and components. Each page or component has its stylesheet beside it (`top_nav.rb`, `top_nav.css`); `layout.css` has the shared rules. `web/app.rb` installs them, in the order of the cascade |
 | `cli/` | The app's `bin/sid expenses …` commands |
 | `config/components/` | Components (`db`, clients…) declared with `Sidereal.config` |

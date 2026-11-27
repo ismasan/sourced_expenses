@@ -11,7 +11,7 @@ module Expenses
     def app = App
 
     let(:store) { Sidereal.config['sourced.store'] }
-    let(:import_id) { Integrations::FreeAgentImport::ACCOUNT }
+    let(:import_id) { FreeAgent::Import::ACCOUNT }
 
     # The one account's imports live in one partition: each example's go
     # when it's done.
@@ -23,7 +23,7 @@ module Expenses
 
     # The imports after +commands+, in the store.
     def imports!(*commands)
-      decided(Integrations::FreeAgentImport, { import_id: }, *commands).tap { store.append(it) }
+      decided(FreeAgent::Import, { import_id: }, *commands).tap { store.append(it) }
     end
 
     def page
@@ -51,21 +51,21 @@ module Expenses
     end
 
     it 'shows the last import, how many it found new or changed, and where the next starts' do
-      imports!(icmd(Integrations::FreeAgentImport::SyncFreeAgent),
-               icmd(Integrations::FreeAgentImport::CompleteFetch, page: 1, count: 3, fresh: 3, latest_updated_at: Time.utc(2026, 11, 20, 10)))
+      imports!(icmd(FreeAgent::Import::SyncFreeAgent),
+               icmd(FreeAgent::Import::CompleteFetch, page: 1, count: 3, fresh: 3, latest_updated_at: Time.utc(2026, 11, 20, 10)))
 
       expect(page).to include('Waiting for the next import', ': 3 new or changed<', 'Changes since 20 Nov 2026', 'Import now')
     end
 
     it 'says which it read again, and when none was new or changed' do
-      sync = Integrations::FreeAgentImport::SyncFreeAgent
-      fetched = Integrations::FreeAgentImport::CompleteFetch
+      sync = FreeAgent::Import::SyncFreeAgent
+      fetched = FreeAgent::Import::CompleteFetch
       imports!(icmd(sync), icmd(fetched, page: 1, count: 3, fresh: 1, latest_updated_at: Time.utc(2026, 11, 20, 10)))
       expect(page).to include(': 1 new or changed (2 read again)')
     end
 
     it 'says how many a run recorded before it counted them imported' do
-      import = Integrations::FreeAgentImport
+      import = FreeAgent::Import
       history = decided(import, { import_id: }, icmd(import::SyncFreeAgent),
                         icmd(import::CompleteFetch, page: 1, count: 2, latest_updated_at: Time.utc(2026, 11, 20, 10)))
       # As stored before +fresh+ was counted: none on its events.
@@ -80,7 +80,7 @@ module Expenses
     end
 
     it 'shows the last failure, and still offers an import' do
-      imports!(icmd(Integrations::FreeAgentImport::SyncFreeAgent), icmd(Integrations::FreeAgentImport::FailFetch, reason: 'FreeAgent could not be reached'))
+      imports!(icmd(FreeAgent::Import::SyncFreeAgent), icmd(FreeAgent::Import::FailFetch, reason: 'FreeAgent could not be reached'))
 
       expect(page).to include('The last import failed', 'Last failure', 'FreeAgent could not be reached', 'Import now')
     end
@@ -101,7 +101,7 @@ module Expenses
     end
 
     it 'offers no import while one is running' do
-      imports!(icmd(Integrations::FreeAgentImport::SyncFreeAgent))
+      imports!(icmd(FreeAgent::Import::SyncFreeAgent))
 
       expect(page).to include('Importing… 0 so far')
       expect(last_response.body).not_to include('Import now')
@@ -112,7 +112,7 @@ module Expenses
     end
 
     describe 'uploads' do
-      let(:settings) { Integrations::FreeAgentSettings }
+      let(:settings) { FreeAgent::Settings }
       def settings!(*commands)
         account = settings::ACCOUNT
         decided(settings, { account: }, *commands.map { it.new(payload: { account: }) }).tap { store.append(it) }
@@ -143,7 +143,7 @@ module Expenses
       post '/commands', { command: { type: 'freeagent_imports.sync_freeagent', _cid: 'x', payload: { import_id: } } },
            'HTTP_DATASTAR_REQUEST' => 'true', 'HTTP_ACCEPT' => 'text/event-stream'
 
-      synced = store.read(Sourced::Selector[Integrations::FreeAgentImport::SyncFreeAgent].by(:import_id).bind(import_id:)).messages
+      synced = store.read(Sourced::Selector[FreeAgent::Import::SyncFreeAgent].by(:import_id).bind(import_id:)).messages
       expect(synced.size).to eq(1)
     end
 
@@ -151,7 +151,7 @@ module Expenses
       it 'is offered while connected, an import running or not, and not otherwise' do
         expect(page).to include('Disconnect FreeAgent', 'web.disconnect_freeagent', 'remove it there too')
 
-        imports!(icmd(Integrations::FreeAgentImport::SyncFreeAgent))
+        imports!(icmd(FreeAgent::Import::SyncFreeAgent))
         expect(page).to include('Importing…', 'Disconnect FreeAgent')
 
         FAKE_FREEAGENT.connected = false
@@ -230,7 +230,7 @@ module Expenses
         follow_redirect!
         expect(last_response.body).to include('FreeAgent didn’t connect: access_denied')
 
-        FAKE_FREEAGENT.connect_error = Integrations::FreeAgent::Error.new('FreeAgent refused the connection: connect it again')
+        FAKE_FREEAGENT.connect_error = FreeAgent::Error.new('FreeAgent refused the connection: connect it again')
         state = connect_state
         get '/integrations/freeagent/callback', code: 'expired', state: state
         follow_redirect!

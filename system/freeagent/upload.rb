@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module Integrations
+module FreeAgent
   # Uploads an expense filed here to FreeAgent, keeps it up to date as it's
   # corrected here, and deletes it there when it's voided here: a machine
   # per expense, so one expense's filings are taken in turn. How each went
@@ -21,14 +21,14 @@ module Integrations
   #            └after 5m: TimeOutDelete─▶ not_deleted
   #
   # Uploads only expenses filed while uploads are on
-  # (FreeAgentSettings.uploads_on_since) and FreeAgent is connected: one
+  # (Settings.uploads_on_since) and FreeAgent is connected: one
   # filed before they were turned on, or while they're off, is left alone,
   # recording nothing. Never one imported from FreeAgent: that one is
   # FreeAgent's (its corrections are made there).
   #
   # Entering uploading creates the expense on FreeAgent the first time
   # (Client#create_expense) and updates it from then on, with what's filed
-  # now (FreeAgent::UploadMapping). One FreeAgent couldn't take says why,
+  # now (UploadMapping). One FreeAgent couldn't take says why,
   # and so does one it couldn't be reached for, which may have been created
   # there all the same (+unsure+): never tried again by itself, for that
   # reason. A person retries it from its page.
@@ -37,12 +37,13 @@ module Integrations
   # upload has taken it: FreeAgent keeps it through later updates. One that
   # can't go is uploaded without it, the expense recording why.
   #
-  # The FreeAgent expenses it creates are FreeAgentUploadList's, for the
+  # The FreeAgent expenses it creates are UploadList's, for the
   # importer to leave alone.
-  class FreeAgentUpload < Sourced::Machine
+  class Upload < Sourced::Machine
     extend Sidereal::Deps
 
     partition_by expense_id: Types::ExpenseID
+    consumer_group 'freeagent.upload'
     message_prefix 'freeagent_uploads'
 
     dep :freeagent, :file_store
@@ -50,7 +51,7 @@ module Integrations
     E = Expenses::Expense
 
     # Its name, as the expense records where it was uploaded.
-    DESTINATION = FreeAgent::ExpenseMapping::SOURCE
+    DESTINATION = ExpenseMapping::SOURCE
 
     # How long a call to FreeAgent may take, before it's given up on.
     TIMEOUT = '5m'
@@ -178,10 +179,10 @@ module Integrations
           dispatch E::RecordUpload, expense_id:, destination: DESTINATION, external_id: id,
                                     external_url: run[:external_url] || page_url(id),
                                     attachment: attachment&.fetch(:file_name), attachment_problem:
-        rescue FreeAgent::Unreachable => e
+        rescue Unreachable => e
           dispatch E::RecordUploadFailure, expense_id:, destination: DESTINATION, reason: unreachable_reason(e, run),
                                            unsure: run[:external_id].nil?
-        rescue FreeAgent::Error => e
+        rescue Error => e
           dispatch E::RecordUploadFailure, expense_id:, destination: DESTINATION, reason: e.message
         end
       end
@@ -226,7 +227,7 @@ module Integrations
         begin
           freeagent.delete_expense("/expenses/#{run[:external_id]}")
           dispatch E::RecordUploadDeletion, expense_id:, destination: DESTINATION
-        rescue FreeAgent::Error => e
+        rescue Error => e
           dispatch E::RecordUploadFailure, expense_id:, destination: DESTINATION, reason: e.message
         end
       end
@@ -259,14 +260,14 @@ module Integrations
 
     # What's filed now, as FreeAgent's attributes. One that can't be
     # mapped, whatever the reason, is refused before anything is written.
-    # @raise [FreeAgent::Error]
+    # @raise [Error]
     def attributes_for(doc)
-      FreeAgent::UploadMapping.attributes(doc, user: freeagent.current_user_url, categories: freeagent.categories,
+      UploadMapping.attributes(doc, user: freeagent.current_user_url, categories: freeagent.categories,
                                                company_currency: freeagent.company_currency)
-    rescue FreeAgent::Error
+    rescue Error
       raise
     rescue StandardError => e
-      raise FreeAgent::UploadMapping::Refused, "It couldn’t be put the way FreeAgent takes it (#{e.class})"
+      raise UploadMapping::Refused, "It couldn’t be put the way FreeAgent takes it (#{e.class})"
     end
 
     # Its document's file as FreeAgent's attachment, or why it can't be
@@ -278,8 +279,8 @@ module Integrations
       document = Sourced.load(Documents::Document, document_id: doc.document_id).first.context
       return unless document.file_ref
 
-      [FreeAgent::UploadMapping.attachment(document, file_store:), nil]
-    rescue FreeAgent::UploadMapping::NoAttachment => e
+      [UploadMapping.attachment(document, file_store:), nil]
+    rescue UploadMapping::NoAttachment => e
       [nil, e.message]
     rescue StandardError => e
       [nil, "Its file couldn’t be read (#{e.class}): attach it on FreeAgent"]
@@ -287,14 +288,14 @@ module Integrations
 
     # Its page on FreeAgent, or nil: a link isn't worth failing for.
     def page_url(id)
-      FreeAgent::ExpenseMapping.page_url(freeagent.web_url, freeagent.current_user_url, id)
-    rescue FreeAgent::Error
+      ExpenseMapping.page_url(freeagent.web_url, freeagent.current_user_url, id)
+    rescue Error
       nil
     end
 
     # Whether uploads were on, FreeAgent connected, when +filed+ was filed.
     def uploads_on_for?(filed)
-      since = FreeAgentSettings.uploads_on_since
+      since = Settings.uploads_on_since
       !since.nil? && filed.created_at >= since && freeagent.connected?
     end
 

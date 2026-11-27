@@ -25,7 +25,7 @@ module UI
     # Every event the expense's machine evolves, its states included, its
     # document's (a rescan shows here as it goes), and its upload to
     # FreeAgent's.
-    on E, D, Integrations::FreeAgentUpload
+    on E, D, FreeAgent::Upload
 
     include ExpenseFields
 
@@ -81,7 +81,7 @@ module UI
 
     # Where it is on FreeAgent, if it was uploaded.
     def render_upload
-      upload = Integrations::FreeAgentUpload.load(expense_id: @doc.expense_id)
+      upload = FreeAgent::Upload.load(expense_id: @doc.expense_id)
       render Components::FreeAgentUploadStatus.new(@doc.expense_id, upload)
     end
 

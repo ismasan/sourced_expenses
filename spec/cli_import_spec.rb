@@ -18,7 +18,7 @@ RSpec.describe CLI::Expenses::Import do
 
   def run(*arguments) = described_class.new(arguments, output: out).call
 
-  def syncs = store.read_all(limit: 10_000).to_a.select { it.is_a?(Integrations::FreeAgentImport::SyncFreeAgent) }
+  def syncs = store.read_all(limit: 10_000).to_a.select { it.is_a?(FreeAgent::Import::SyncFreeAgent) }
 
   it 'starts an import, saying where to follow it' do
     expect { run('freeagent') }.to change { syncs.size }.by(1)
@@ -37,8 +37,8 @@ RSpec.describe CLI::Expenses::Import do
   it 'lists FreeAgent’s categories and which of ours each is, importing nothing' do
     url = 'https://api.freeagent.com/v2/categories/'
     FAKE_FREEAGENT.categories = {
-      "#{url}285" => Integrations::FreeAgent::Client::Category.new(url: "#{url}285", nominal_code: '285', description: 'Accommodation and Meals'),
-      "#{url}999" => Integrations::FreeAgent::Client::Category.new(url: "#{url}999", nominal_code: '999', description: 'Widgets')
+      "#{url}285" => FreeAgent::Client::Category.new(url: "#{url}285", nominal_code: '285', description: 'Accommodation and Meals'),
+      "#{url}999" => FreeAgent::Client::Category.new(url: "#{url}999", nominal_code: '999', description: 'Widgets')
     }
 
     expect { run('--categories', 'freeagent') }.not_to(change { syncs.size })

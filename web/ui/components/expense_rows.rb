@@ -11,7 +11,7 @@ module UI
       stylesheet 'ui/components/submission_list.css', path: 'submission_list.css'
       file 'ui/components/freeagent.svg', path: 'freeagent.svg'
 
-      FREEAGENT = Integrations::FreeAgent::ExpenseMapping::SOURCE
+      FREEAGENT = FreeAgent::ExpenseMapping::SOURCE
 
       def initialize(rows)
         @rows = rows

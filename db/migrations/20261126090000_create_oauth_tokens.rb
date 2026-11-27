@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# OAuth tokens for the systems expenses are imported from (Integrations::FreeAgent::Tokens):
+# OAuth tokens for the systems expenses are imported from (FreeAgent::Tokens):
 # one row per provider. Kept here, never in the event store: commands and
 # events are shown in the history feed and the Sourced dashboard.
 Sequel.migration do

@@ -2,7 +2,7 @@
 
 # Expense tracking: an expense is drafted (from a scanned document:
 # Documents), entered by hand, or imported from another system
-# (Integrations); a person reviews it and files it, and a plain rule (not
+# (FreeAgent); a person reviews it and files it, and a plain rule (not
 # the model) infers its VAT treatment. The model suggests its category
 # (Categorizer); a person has the last word.
 # After https://gist.github.com/julik/405662cc3106fe73ae2e46073f483b62
@@ -23,7 +23,7 @@ module Expenses
   # The baseline of accounting categories an expense is booked under, and
   # what goes in each: the descriptions are what Expenses::CategoryJudge
   # shows the model. FreeAgent's own expense categories, by its names, so
-  # an expense uploaded there (Integrations::FreeAgentUpload) finds its
+  # an expense uploaded there (FreeAgent::Upload) finds its
   # category by name, and one imported from there comes back under the same
   # key: each key is its name's (.category_key).
   #

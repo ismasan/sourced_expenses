@@ -2,12 +2,12 @@
 
 module UI
   module Components
-    # Where an expense filed here is on FreeAgent (Integrations::FreeAgentUpload,
+    # Where an expense filed here is on FreeAgent (FreeAgent::Upload,
     # whose state follows what the expense records), on its page, after
     # FreeAgent's logo: uploading, there (with a link), why it isn't (and a button
     # to try again), deleted there. Nothing for one it never uploaded.
     class FreeAgentUploadStatus < Sidereal::Components::BaseComponent
-      U = Integrations::FreeAgentUpload
+      U = FreeAgent::Upload
 
       file 'ui/components/freeagent.svg', path: 'freeagent.svg'
       css <<~CSS

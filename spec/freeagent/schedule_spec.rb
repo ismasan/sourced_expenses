@@ -4,7 +4,7 @@
 # import'`), fired by a scheduler of its own with a clock of the spec's:
 # what it appends to the store, and when.
 RSpec.describe 'The daily FreeAgent import' do
-  let(:import) { Integrations::FreeAgentImport }
+  let(:import) { FreeAgent::Import }
 
   # What a scheduler appends, instead of the store.
   let(:store) do

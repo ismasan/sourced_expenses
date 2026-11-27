@@ -247,7 +247,7 @@ module Expenses
     end
 
     describe 'uploaded to FreeAgent' do
-      let(:uploader) { Integrations::FreeAgentUpload }
+      let(:uploader) { FreeAgent::Upload }
       # Its upload, entered (a filing claimed), then moved to +to+ by +event+
       # (what the expense recorded), in the store.
       def upload!(event, to:)

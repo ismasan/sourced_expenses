@@ -84,9 +84,9 @@ module CLI
     # `bin/sid expenses import freeagent`: starts an import of the FreeAgent
     # expenses created or changed since the last one (all of them, the first
     # time, unless --since says from when), for a scheduler such as cron to
-    # run. The running app does the import (Integrations::FreeAgentImport): this
+    # run. The running app does the import (FreeAgent::Import): this
     # only starts it. --categories lists FreeAgent's categories instead, and
-    # which of ours each is (Integrations::FreeAgent::ExpenseMapping), so its ALIASES can be
+    # which of ours each is (FreeAgent::ExpenseMapping), so its ALIASES can be
     # filled in.
     #
     #   bin/sid expenses import --since 2026-01-01 freeagent
@@ -118,18 +118,18 @@ module CLI
       private
 
       def start(since)
-        import = ::Integrations::FreeAgentImport
+        import = FreeAgent::Import
         Sidereal.dispatch!(import::SyncFreeAgent.new(payload: { import_id: import::ACCOUNT, since: }))
         terminal.print_line :title, 'Importing from FreeAgent ', :reset, (since ? "since #{since.to_date}  " : ''), :key, page_url
       end
 
       def print_categories(client)
         client.categories.values.sort_by(&:nominal_code).each do |category|
-          ours = ::Integrations::FreeAgent::ExpenseMapping.ours(category.description)
+          ours = FreeAgent::ExpenseMapping.ours(category.description)
           terminal.print_line :key, category.nominal_code.ljust(8), :reset, category.description.ljust(44),
                               (ours ? ::Expenses.category_label(ours) : "its own (#{::Expenses.category_key(category.description)})")
         end
-      rescue ::Integrations::FreeAgent::Error => e
+      rescue FreeAgent::Error => e
         raise Sidereal::CLI::Error, e.message
       end
 

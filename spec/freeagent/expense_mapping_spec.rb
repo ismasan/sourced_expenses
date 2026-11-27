@@ -1,12 +1,12 @@
 # frozen_string_literal: true
 
-RSpec.describe Integrations::FreeAgent::ExpenseMapping do
+RSpec.describe FreeAgent::ExpenseMapping do
   let(:meals_url) { 'https://api.freeagent.com/v2/categories/285' }
   let(:other_url) { 'https://api.freeagent.com/v2/categories/999' }
   let(:categories) do
     {
-      meals_url => Integrations::FreeAgent::Client::Category.new(url: meals_url, nominal_code: '285', description: 'Accommodation and Meals'),
-      other_url => Integrations::FreeAgent::Client::Category.new(url: other_url, nominal_code: '999', description: 'Widgets For Sale')
+      meals_url => FreeAgent::Client::Category.new(url: meals_url, nominal_code: '285', description: 'Accommodation and Meals'),
+      other_url => FreeAgent::Client::Category.new(url: other_url, nominal_code: '999', description: 'Widgets For Sale')
     }
   end
 

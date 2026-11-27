@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Integrations::FreeAgentUploadList: each expense this app created on
+# FreeAgent::UploadList: each expense this app created on
 # FreeAgent, by its id there, so importing never brings one back as an
 # expense of its own.
 Sequel.migration do

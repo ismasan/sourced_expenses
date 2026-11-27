@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module Integrations
+module FreeAgent
   # Imports a FreeAgent account's expenses, a run at a time: each run reads
   # the expenses updated there since the last run finished, a page at a
   # time, and imports each into an Expense (ImportExpense, under
@@ -13,7 +13,7 @@ module Integrations
   #                                                   └after 5m: TimeOutFetch────▶ failed
   #
   # Entering fetching reads a page (the `freeagent` client), dispatches an
-  # ImportExpense for each expense on it (FreeAgent::ExpenseMapping) and
+  # ImportExpense for each expense on it (ExpenseMapping) and
   # CompleteFetch with how far it got, or FailFetch with why not, all in
   # one reaction. The machine's own consumer group makes the call: a slow
   # FreeAgent holds up nothing else.
@@ -25,11 +25,12 @@ module Integrations
   #
   # Its events record each run: SyncStarted (from when), PageFetched,
   # SyncCompleted (the new cursor), SyncFailed. FreeAgent's tokens are never
-  # in them: they're FreeAgent::Tokens'.
-  class FreeAgentImport < Sourced::Machine
+  # in them: they're Tokens'.
+  class Import < Sourced::Machine
     extend Sidereal::Deps
 
     partition_by import_id: Types::String.present
+    consumer_group 'freeagent.import'
     message_prefix 'freeagent_imports'
 
     dep :freeagent, :db, 'expenses.filing_country' => 'filing_country'
@@ -200,9 +201,9 @@ module Integrations
         import_id = entered.payload.import_id
         begin
           page = freeagent.expenses(updated_since: run[:updated_since], page: run[:page])
-          # Those uploaded from here (FreeAgentUpload) are expenses here
+          # Those uploaded from here (Upload) are expenses here
           # already: left out, counted neither as imported nor as skipped.
-          ours = FreeAgentUploadList.external_ids(db)
+          ours = UploadList.external_ids(db)
           theirs = page.expenses.reject { ours.include?(it['url'].to_s.split('/').last) }
           categories = theirs.empty? ? {} : freeagent.categories
           web_url = theirs.empty? ? nil : web_url()
@@ -218,7 +219,7 @@ module Integrations
           dispatch CompleteFetch, import_id:, page: run[:page], count: imported.size, fresh:,
                                   skipped: theirs.size - imported.size, latest_updated_at: latest,
                                   next_page: page.next_page
-        rescue FreeAgent::Error => e
+        rescue Error => e
           dispatch FailFetch, import_id:, reason: e.message
         end
       end
@@ -254,7 +255,7 @@ module Integrations
     # one that isn't an expense here, or one FreeAgent sent without what an
     # expense needs (no date, say), so it can't hold the run up.
     def import_for(expense, categories, web_url)
-      payload = FreeAgent::ExpenseMapping.payload(expense, categories:, filing_country:, web_url:) or return
+      payload = ExpenseMapping.payload(expense, categories:, filing_country:, web_url:) or return
       command = Expenses::Expense::ImportExpense.new(payload:)
       command if command.valid?
     rescue KeyError, ArgumentError, TypeError, Date::Error
@@ -265,7 +266,7 @@ module Integrations
     # or nil: a link isn't worth failing the run for.
     def web_url
       freeagent.web_url
-    rescue FreeAgent::Error
+    rescue Error
       nil
     end
 

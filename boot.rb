@@ -20,7 +20,10 @@ Dotenv.load
 #            UI::WelcomePage and web/ui/components/hello.rb defines
 #            UI::Components::Hello.
 LOADER = Zeitwerk::Loader.new
-LOADER.inflector.inflect('ui' => 'UI', 'llm' => 'LLM')
+LOADER.inflector.inflect('ui' => 'UI', 'llm' => 'LLM', 'freeagent' => 'FreeAgent')
+# A namespace's helpers, in its lib/, are its own: system/freeagent/lib/client.rb
+# defines FreeAgent::Client.
+LOADER.collapse(File.expand_path('system/*/lib', __dir__))
 LOADER.push_dir(File.expand_path('system', __dir__))
 LOADER.push_dir(File.expand_path('web', __dir__))
 LOADER.setup

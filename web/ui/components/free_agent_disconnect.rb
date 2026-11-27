@@ -5,11 +5,11 @@ module UI
     # Disconnecting FreeAgent, at the bottom of its page while it's
     # connected: folded away, so it takes two clicks, with what it does and
     # doesn't. Its handler forgets the tokens FreeAgent issued
-    # (Integrations::FreeAgent::Client#disconnect) and reloads the page,
+    # (FreeAgent::Client#disconnect) and reloads the page,
     # which offers to connect again.
     #
     # What's imported stays; the daily import is skipped while it's
-    # disconnected (Integrations::FreeAgentImport); connecting again carries
+    # disconnected (FreeAgent::Import); connecting again carries
     # on from where the last import finished.
     class FreeAgentDisconnect < Sidereal::Components::BaseComponent
       # Web only: never stored itself.

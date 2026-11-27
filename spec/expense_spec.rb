@@ -301,7 +301,7 @@ module Expenses
 
         let(:expense_id) { 'freeagent-123' }
 
-        # A FreeAgent expense, as Integrations::FreeAgent::ExpenseMapping makes it: a UK
+        # A FreeAgent expense, as FreeAgent::ExpenseMapping makes it: a UK
         # lunch, with no supplier country, booked as domestic VAT there.
         def import(**overrides)
           { source: 'freeagent', external_id: '123', filing_country: 'GB', description: 'Pret - Lunch',

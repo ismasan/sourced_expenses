@@ -75,7 +75,7 @@ end
 FAKE_RATES = FakeExchangeRates.new
 Sidereal.config.config!('exchange_rates') { FAKE_RATES }
 # FreeAgent without the network: +pages+ are its expenses' pages (arrays of
-# FreeAgent's JSON objects, page 1 first), or an Integrations::FreeAgent::Error to raise;
+# FreeAgent's JSON objects, page 1 first), or an FreeAgent::Error to raise;
 # +categories+, by url. +calls+ are the pages asked for.
 # Not +configured+ (no OAuth identifier) or not +connected+ as set;
 # +connects+ are the codes #connect was given, which raises +connect_error+
@@ -149,7 +149,7 @@ class FakeFreeAgent
     @calls << { updated_since:, page: }
     raise pages if pages.is_a?(Exception)
 
-    Integrations::FreeAgent::Client::Page.new(expenses: pages.fetch(page - 1, []), next_page: page < pages.size ? page + 1 : nil)
+    FreeAgent::Client::Page.new(expenses: pages.fetch(page - 1, []), next_page: page < pages.size ? page + 1 : nil)
   end
 end
 FAKE_FREEAGENT = FakeFreeAgent.new

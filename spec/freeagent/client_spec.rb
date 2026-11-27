@@ -2,9 +2,9 @@
 
 require 'json'
 
-RSpec.describe Integrations::FreeAgent::Client do
+RSpec.describe FreeAgent::Client do
   let(:db) { Sidereal.config['db'] }
-  let(:tokens) { Integrations::FreeAgent::Tokens.new(db:) }
+  let(:tokens) { FreeAgent::Tokens.new(db:) }
   let(:client) { described_class.new(client_id: 'app-id', client_secret: 'app-secret', tokens:) }
   let(:http) { instance_double(Net::HTTP) }
   # Every Net::HTTP.start: [host, use_ssl].
@@ -67,7 +67,7 @@ RSpec.describe Integrations::FreeAgent::Client do
   # An API request as [its method, its path].
   def call(request) = [request.method, request.path]
 
-  describe Integrations::FreeAgent::Tokens do
+  describe FreeAgent::Tokens do
     it 'keeps one set of tokens, the latest' do
       now = Time.utc(2026, 11, 26, 9)
       expect(tokens.load).to be_nil
@@ -81,7 +81,7 @@ RSpec.describe Integrations::FreeAgent::Client do
     end
 
     it 'counts a token as expired a minute before it is' do
-      token = Integrations::FreeAgent::Tokens::Token.new(access_token: 'a', refresh_token: 'r', expires_at: Time.utc(2026, 1, 1, 12))
+      token = FreeAgent::Tokens::Token.new(access_token: 'a', refresh_token: 'r', expires_at: Time.utc(2026, 1, 1, 12))
 
       expect(token.expired?(Time.utc(2026, 1, 1, 11, 58))).to be(false)
       expect(token.expired?(Time.utc(2026, 1, 1, 11, 59, 30))).to be(true)
@@ -141,7 +141,7 @@ RSpec.describe Integrations::FreeAgent::Client do
       token_posts
 
       expect { client.connect(code: 'stale', redirect_uri: 'x') }
-        .to raise_error(Integrations::FreeAgent::Error, 'FreeAgent refused the connection: connect it again')
+        .to raise_error(FreeAgent::Error, 'FreeAgent refused the connection: connect it again')
       expect(tokens.load).to be_nil
     end
   end
@@ -214,12 +214,12 @@ RSpec.describe Integrations::FreeAgent::Client do
       token_posts
       answer response(Net::HTTPUnauthorized, '401')
 
-      expect { client.expenses }.to raise_error(Integrations::FreeAgent::Error, 'FreeAgent refused the access token: connect it again')
+      expect { client.expenses }.to raise_error(FreeAgent::Error, 'FreeAgent refused the access token: connect it again')
       expect(api_calls.size).to eq(2)
     end
 
     it 'says it isn’t connected without tokens' do
-      expect { client.expenses }.to raise_error(Integrations::FreeAgent::Error, 'FreeAgent isn’t connected')
+      expect { client.expenses }.to raise_error(FreeAgent::Error, 'FreeAgent isn’t connected')
     end
 
     it 'says what went wrong, for a person to read' do
@@ -231,7 +231,7 @@ RSpec.describe Integrations::FreeAgent::Client do
         response(Net::HTTPOK, '200', '<html>') => 'FreeAgent sent an answer that could not be read'
       }.each do |answer, message|
         answer(answer)
-        expect { client.expenses }.to raise_error(Integrations::FreeAgent::Error, message)
+        expect { client.expenses }.to raise_error(FreeAgent::Error, message)
       end
     end
 
@@ -239,7 +239,7 @@ RSpec.describe Integrations::FreeAgent::Client do
       connect!
       [Errno::ECONNREFUSED, SocketError, Net::OpenTimeout].each do |error|
         allow(Net::HTTP).to receive(:start).and_raise(error)
-        expect { client.expenses }.to raise_error(Integrations::FreeAgent::Error, 'FreeAgent could not be reached'), error.name
+        expect { client.expenses }.to raise_error(FreeAgent::Error, 'FreeAgent could not be reached'), error.name
       end
     end
   end
@@ -276,7 +276,7 @@ RSpec.describe Integrations::FreeAgent::Client do
       answer response(Net::HTTPUnprocessableEntity, '422', refused)
 
       expect { client.create_expense(attributes) }
-        .to raise_error(Integrations::FreeAgent::Error, 'FreeAgent refused it: Category is not valid')
+        .to raise_error(FreeAgent::Error, 'FreeAgent refused it: Category is not valid')
     end
 
     # A create that didn't answer may have been done: it's never tried again.
@@ -284,7 +284,7 @@ RSpec.describe Integrations::FreeAgent::Client do
       connect!
       allow(Net::HTTP).to receive(:start).and_raise(Net::ReadTimeout)
 
-      expect { client.create_expense(attributes) }.to raise_error(Integrations::FreeAgent::Unreachable)
+      expect { client.create_expense(attributes) }.to raise_error(FreeAgent::Unreachable)
       expect(Net::HTTP).to have_received(:start).once
     end
 

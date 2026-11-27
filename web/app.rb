@@ -11,7 +11,7 @@ class App < Sidereal::App
 
   E = Expenses::Expense
   D = Documents::Document
-  I = Integrations::FreeAgentImport
+  I = FreeAgent::Import
 
   # Ids are the digest of the bytes, so a file never changes under its URL.
   IMMUTABLE = 'private, max-age=31536000, immutable'
@@ -49,8 +49,8 @@ class App < Sidereal::App
   # any its current state doesn't accept.
   handle D::Rescan, D::EnterManually, D::DiscardDocument,
          I::SyncFreeAgent,
-         Integrations::FreeAgentSettings::TurnUploadsOn, Integrations::FreeAgentSettings::TurnUploadsOff,
-         Integrations::FreeAgentUpload::RetryUpload, Integrations::FreeAgentUpload::RetryDelete,
+         FreeAgent::Settings::TurnUploadsOn, FreeAgent::Settings::TurnUploadsOff,
+         FreeAgent::Upload::RetryUpload, FreeAgent::Upload::RetryDelete,
          E::SaveExpense, E::DiscardExpense, E::VoidExpense, E::ConfirmVatTreatment, E::ChooseCategory
 
   # The components the pages render, for their stylesheets and the commands
@@ -135,7 +135,7 @@ class App < Sidereal::App
   # Every day at 8am, the server's local time: an import of what changed on
   # FreeAgent since the last one, the same SyncFreeAgent the FreeAgent
   # page's button and `bin/sid expenses import freeagent` send. The
-  # scheduler appends it to the store itself, for Integrations::FreeAgentImport
+  # scheduler appends it to the store itself, for FreeAgent::Import
   # to take. Not connected yet, the run fails, saying so on the FreeAgent
   # page. Schedules tick on the leader process alone, so it's one import
   # however many processes run; a morning the app isn't running is skipped,
@@ -162,7 +162,7 @@ class App < Sidereal::App
   end
 
   # Back from FreeAgent: the code it sent traded for tokens (kept by
-  # Integrations::FreeAgent::Tokens), then the FreeAgent page, saying why not if it failed.
+  # FreeAgent::Tokens), then the FreeAgent page, saying why not if it failed.
   get '/integrations/freeagent/callback' do
     params = request.params
     expected = session.delete('freeagent_state')
@@ -173,7 +173,7 @@ class App < Sidereal::App
     unless error
       begin
         freeagent.connect(code: params['code'].to_s, redirect_uri: App.freeagent_redirect_uri(request.base_url))
-      rescue Integrations::FreeAgent::Error => e
+      rescue FreeAgent::Error => e
         error = e.message
       end
     end

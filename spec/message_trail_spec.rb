@@ -32,7 +32,7 @@ RSpec.describe UI::Components::MessageTrail do
   end
   let!(:recorded) do
     drafted.correlate(Expenses::Expense::RecordUpload.new(payload: { expense_id:, destination: 'freeagent', external_id: '9' }))
-           .with_metadata(producer: 'integrations.free_agent_upload')
+           .with_metadata(producer: 'freeagent.upload')
   end
   let!(:other) { Expenses::Expense::DiscardExpense.new(payload: { expense_id: SecureRandom.hex(16) }) }
 
@@ -43,7 +43,7 @@ RSpec.describe UI::Components::MessageTrail do
 
     expect(entries.map(&:id)).to eq([upload, uploaded, drafted, recorded].map(&:id))
     expect(entries.map(&:kind)).to eq(%i[command data command command])
-    expect(entries.last).to have_attributes(producer: 'integrations.free_agent_upload', payload: include('external_id' => '9'))
+    expect(entries.last).to have_attributes(producer: 'freeagent.upload', payload: include('external_id' => '9'))
     expect(entries.first.created_at).to be_a(Time)
     expect(described_class.entries(SecureRandom.uuid)).to eq([])
   end
@@ -76,7 +76,7 @@ RSpec.describe UI::Components::MessageTrail do
 
       expect(body).to include('datastar-patch-elements', 'mode replace', 'dialog id="message-trail"', 'el.showModal()',
                               '4 messages, 2 streams', 'documents.upload_document', 'expenses.record_upload',
-                              'by integrations.free_agent_upload', "href=\"/expenses/#{expense_id}\"",
+                              'by freeagent.upload', "href=\"/expenses/#{expense_id}\"",
                               "href=\"/documents/#{document_id}\"", 'Page at this step',
                               "@get('/documents/#{document_id}/at/2')")
       expect(body.scan('is-selected').size).to eq(1)

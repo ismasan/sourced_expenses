@@ -2,9 +2,9 @@
 
 require 'sourced/testing/rspec'
 
-module Integrations
-  class FreeAgentImport
-    RSpec.describe FreeAgentImport do
+module FreeAgent
+  class Import
+    RSpec.describe Import do
       include Sourced::Testing::RSpec
 
       let(:import_id) { 'freeagent' }
@@ -12,14 +12,14 @@ module Integrations
 
       before do
         FAKE_FREEAGENT.categories = {
-          category_url => Integrations::FreeAgent::Client::Category.new(url: category_url, nominal_code: '285',
+          category_url => FreeAgent::Client::Category.new(url: category_url, nominal_code: '285',
                                                           description: 'Accommodation and Meals')
         }
       end
 
       def cmd(klass, **payload) = klass.new(payload: { import_id:, **payload })
-      def history(*commands, given: []) = decided(FreeAgentImport, { import_id: }, *commands, given:)
-      def run(history) = FreeAgentImport.new(import_id:).tap { it.evolve(history) }
+      def history(*commands, given: []) = decided(Import, { import_id: }, *commands, given:)
+      def run(history) = Import.new(import_id:).tap { it.evolve(history) }
       def value(history) = run(history).machine.value
 
       # What the machine dispatches claiming the last state event in
@@ -27,7 +27,7 @@ module Integrations
       def dispatched_entering(history)
         *before, entered = history
         messages = nil
-        before.reduce(with_reactor(FreeAgentImport, import_id:)) { |gwt, msg| gwt.given(msg) }
+        before.reduce(with_reactor(Import, import_id:)) { |gwt, msg| gwt.given(msg) }
               .when(entered).then { |result| messages = result.messages }
         messages
       end
@@ -61,20 +61,20 @@ module Integrations
         # state encoded through the snapshot type's JSON codec (as
         # Sourced::Store#write_snapshot does), and decoded back.
         def through_snapshot(history)
-          decoder, encoder = Plumb::Codec::JSON.for(FreeAgentImport.snapshot_config.type)
+          decoder, encoder = Plumb::Codec::JSON.for(Import.snapshot_config.type)
           json = JSON.dump(encoder.parse(run(history).snapshot_state))
-          FreeAgentImport.new(import_id:).tap { it.restore_snapshot_state(decoder.parse(JSON.parse(json))) }
+          Import.new(import_id:).tap { it.restore_snapshot_state(decoder.parse(JSON.parse(json))) }
         end
 
         it 'are taken every SNAPSHOT_EVERY messages, at their version' do
-          expect(FreeAgentImport.snapshot_config).to have_attributes(every: FreeAgentImport::SNAPSHOT_EVERY,
-                                                                     version: FreeAgentImport::SNAPSHOT_VERSION)
+          expect(Import.snapshot_config).to have_attributes(every: Import::SNAPSHOT_EVERY,
+                                                                     version: Import::SNAPSHOT_VERSION)
         end
 
         it 'keep where the next run starts, its times as times, and the last failure' do
           FAKE_FREEAGENT.pages = [[expense(1)]]
           done = sync
-          FAKE_FREEAGENT.pages = Integrations::FreeAgent::Error.new('FreeAgent could not be reached')
+          FAKE_FREEAGENT.pages = FreeAgent::Error.new('FreeAgent could not be reached')
           failed = sync(given: done)
           restored = through_snapshot(failed)
 
@@ -94,7 +94,7 @@ module Integrations
       end
 
       it 'is a valid chart' do
-        expect(FreeAgentImport.to_h).to include(:states)
+        expect(Import.to_h).to include(:states)
       end
 
       it 'imports every page, then waits for the next run' do
@@ -170,7 +170,7 @@ module Integrations
       it 'fails without moving the cursor, and starts again from it next time' do
         FAKE_FREEAGENT.pages = [[expense(1)]]
         first = sync
-        FAKE_FREEAGENT.pages = Integrations::FreeAgent::Error.new('FreeAgent is rate limiting requests: try again in 60 seconds')
+        FAKE_FREEAGENT.pages = FreeAgent::Error.new('FreeAgent is rate limiting requests: try again in 60 seconds')
         failed = sync(given: first)
 
         expect(value(failed)).to eq(Failed)
@@ -223,16 +223,16 @@ module Integrations
 
       it 'reads nothing for a fetching entered before the one it is in (a group catching up)' do
         import_id = "freeagent-#{SecureRandom.hex(4)}"
-        first_page = decided(FreeAgentImport, { import_id: }, SyncFreeAgent.new(payload: { import_id: }))
-        second_page = decided(FreeAgentImport, { import_id: },
+        first_page = decided(Import, { import_id: }, SyncFreeAgent.new(payload: { import_id: }))
+        second_page = decided(Import, { import_id: },
                               CompleteFetch.new(payload: { import_id:, page: 1, count: 1, next_page: 2 }), given: first_page)
         Sidereal.config['sourced.store'].append(second_page)
 
         # Only its timeout, which Sourced refuses once it's delivered: the
         # machine has left that entry.
-        expect(reacted(FreeAgentImport, first_page.last, import_id:).map(&:class)).to eq([TimeOutFetch])
+        expect(reacted(Import, first_page.last, import_id:).map(&:class)).to eq([TimeOutFetch])
         expect(FAKE_FREEAGENT.calls).to be_empty
-        expect(reacted(FreeAgentImport, second_page.last, import_id:).grep(CompleteFetch).size).to eq(1)
+        expect(reacted(Import, second_page.last, import_id:).grep(CompleteFetch).size).to eq(1)
       end
     end
   end

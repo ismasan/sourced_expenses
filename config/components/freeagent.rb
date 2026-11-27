@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# FreeAgent (Integrations::FreeAgent::Client), to import expenses from. Its
+# FreeAgent (FreeAgent::Client), to import expenses from. Its
 # app's OAuth identifier and secret, from the FreeAgent Developer Dashboard
 # (https://dev.freeagent.com):
 #
@@ -19,7 +19,7 @@
 #
 # Without the identifier and secret the app still boots: the FreeAgent page
 # says how to set it up. The tokens a person connects with are kept in the
-# database (Integrations::FreeAgent::Tokens). Integrations::FreeAgentImport
+# database (FreeAgent::Tokens). FreeAgent::Import
 # gets the client with `dep :freeagent`; specs replace it with a fake.
 Sidereal.config.tap do |c|
   c.declare('freeagent.client_id', Sidereal::Types::String.nullable,
@@ -44,8 +44,8 @@ Sidereal.config.tap do |c|
     'FREEAGENT_REDIRECT_URI' => 'freeagent.redirect_uri'
   )
 
-  c.config!('freeagent.tokens', ['db']) { |db| Integrations::FreeAgent::Tokens.new(db:) }
+  c.config!('freeagent.tokens', ['db']) { |db| FreeAgent::Tokens.new(db:) }
   c.config!('freeagent', ['freeagent.client_id', 'freeagent.client_secret', 'freeagent.sandbox', 'freeagent.tokens']) do |client_id, client_secret, sandbox, tokens|
-    Integrations::FreeAgent::Client.new(client_id:, client_secret:, sandbox: sandbox == true, tokens:)
+    FreeAgent::Client.new(client_id:, client_secret:, sandbox: sandbox == true, tokens:)
   end
 end

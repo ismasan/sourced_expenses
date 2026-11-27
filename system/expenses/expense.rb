@@ -26,7 +26,7 @@ module Expenses
   #   filed ─VoidExpense─▶ voided;  reviewing, reviewed ─DiscardExpense─▶ discarded
   #   filed, voided ⟲ RecordUpload | RecordUploadFailure | RecordUploadDeletion
   #     (another system it was uploaded to, saying how that went:
-  #     Integrations::FreeAgentUpload)
+  #     FreeAgent::Upload)
   #   reviewing, reviewed ⟲ DraftExpenseFromDocument (its attached document read again: a new draft)
   #   initial ─ImportExpense─▶ filed (its source's category and VAT treatment, confirmed),
   #                          or reviewing, for one without them (to choose here)

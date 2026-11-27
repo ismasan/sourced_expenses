@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
-RSpec.describe Integrations::FreeAgent::UploadMapping do
+RSpec.describe FreeAgent::UploadMapping do
   let(:travel_url) { 'https://api.freeagent.com/v2/categories/365' }
   let(:materials_url) { 'https://api.freeagent.com/v2/categories/366' }
   let(:user) { 'https://api.freeagent.com/v2/users/1' }
   let(:categories) do
     {
-      travel_url => Integrations::FreeAgent::Client::Category.new(url: travel_url, nominal_code: '365', description: 'Travel'),
-      materials_url => Integrations::FreeAgent::Client::Category.new(url: materials_url, nominal_code: '366', description: 'Materials')
+      travel_url => FreeAgent::Client::Category.new(url: travel_url, nominal_code: '365', description: 'Travel'),
+      materials_url => FreeAgent::Client::Category.new(url: materials_url, nominal_code: '366', description: 'Materials')
     }
   end
 
@@ -69,7 +69,7 @@ RSpec.describe Integrations::FreeAgent::UploadMapping do
     # As FreeAgent answers with it: the VAT worked out from the rate.
     back = sent.transform_keys(&:to_s).merge('url' => 'https://api.freeagent.com/v2/expenses/9', 'receipt_reference' => 'R-1',
                                              'sales_tax_value' => (gross * rate / (100 + rate)).round(2).to_s('F'))
-    payload = Integrations::FreeAgent::ExpenseMapping.payload(back, categories:, filing_country: 'GB')
+    payload = FreeAgent::ExpenseMapping.payload(back, categories:, filing_country: 'GB')
 
     expect(payload).to include(net_price_cents: 2000, tax_amount_cents: 400, currency: 'GBP', incurred_on: Date.new(2026, 11, 20),
                                category: 'travel', vat_treatment: 'domestic', description: 'Train to Leeds',
