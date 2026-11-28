@@ -51,7 +51,7 @@ module Documents
     # "today" for the scan: the prompts resolve ambiguous dates towards it,
     # and passing it in keeps decisions deterministic.
     UploadDocument = Command(:upload_document) do
-      attribute :document_id, Types::DocumentID
+      reference :document_id, Types::DocumentID
       attribute :filename, Types::String.present
       attribute :content_type, Types::String.present
       attribute :file_ref, Types::String.present

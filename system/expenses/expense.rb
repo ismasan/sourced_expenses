@@ -71,8 +71,8 @@ module Expenses
     # document; another for the same document, while it's in review,
     # redrafts it (the document read again). The same again changes nothing.
     DraftExpenseFromDocument = Command(:draft_expense_from_document) do
-      attribute :expense_id, Types::ExpenseID
-      attribute :document_id, Types::DocumentID
+      reference :expense_id, Types::ExpenseID
+      reference :document_id, Types::DocumentID
       attribute :filing_country, CountryCode
       attribute :vendor, Types::String.nullable.default(nil)
       attribute :description, Types::String.nullable.default(nil)
@@ -90,7 +90,7 @@ module Expenses
     # Only starts one: the same again changes nothing, and a correction is
     # the review's SaveExpense.
     EnterExpense = Command(:enter_expense) do
-      attribute :expense_id, Types::ExpenseID
+      reference :expense_id, Types::ExpenseID
       attribute :filing_country, CountryCode
       attribute :description, Types::String.present
       attribute :net_price_cents, Integer
@@ -214,7 +214,7 @@ module Expenses
     # changed there, filing it again once filed: the source wins over a
     # correction made here. The same again changes nothing.
     ImportExpense = Command(:import_expense) do
-      attribute :expense_id, Types::ExpenseID
+      reference :expense_id, Types::ExpenseID
       attribute :source, Types::String.present
       attribute :external_id, Types::String.present
       attribute :external_url, Types::String.nullable.default(nil)
@@ -322,7 +322,7 @@ module Expenses
 
     # Where it came from: the uploaded document it was read from.
     DocumentAttached = Event(:document_attached) do
-      attribute :document_id, String
+      reference :document_id, String
     end
 
     ExpenseFiled = Event(:expense_filed) do

@@ -63,7 +63,7 @@ module FreeAgent
     # connected: there's nothing to read, so it's skipped, recording
     # nothing (the daily schedule's, before anyone connects).
     SyncFreeAgent = Command(:sync_freeagent) do
-      attribute :import_id, Types::String.present
+      reference :import_id, Types::String.present
       attribute :since, Types::Time.nullable.default(nil)
     end
 

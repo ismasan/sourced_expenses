@@ -90,7 +90,7 @@ class WorkQueue
   Start = Types::Hash[type: Types::String.present, payload: Types::Hash]
 
   ITEM = proc do
-    attribute :queue_name, Types::String.present
+    reference :queue_name, Types::String.present
     attribute :item_id, Types::String.present
   end
 
